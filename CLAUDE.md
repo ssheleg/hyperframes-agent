@@ -1,3 +1,16 @@
+# HyperFrames Agent (this repository)
+
+This is `ssheleg/hyperframes-agent`, our own line of HyperFrames. Read [`fork/README.md`](fork/README.md) before
+any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDOFF.md) for the current state.
+
+- `main` is our line: an upstream release tag plus our patches. Never rewritten, never force-pushed. An upstream
+  release comes in by `git merge --no-ff v<new>` (fork/README.md, "Taking an upstream release").
+- `upstream` mirrors `heygen-com/hyperframes` `main`; it only fast-forwards.
+- Releases: `fork/release.sh <n> [--publish]`, tag `fork-v<base>-sshlg.<n>`, a tarball on GitHub Releases, never npm.
+  The inherited GitHub workflows are disabled; do not re-enable `Publish to npm`, `Publish catalog` or `Sync skills to ClawHub`.
+- The repository is public: no private agent's name, path, port or data goes into it.
+- A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`.
+
 # Hyperframes
 
 Open-source video rendering framework: write HTML, render video.

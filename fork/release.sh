@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds, checks and (with --publish) releases one package of the fork line:
+# Builds, checks and (with --publish) releases one package of HyperFrames Agent (fork/README.md):
 # the `hyperframes` CLI as a tarball attached to a GitHub Release. Never publishes to npm.
 #
 #   fork/release.sh <n>              build + check, leave the tarball in fork/out/
@@ -29,9 +29,9 @@ done
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
-REPO="${FORK_REPO:-sshlg/heygen-hyperframes-vr}"
+REPO="${FORK_REPO:-ssheleg/hyperframes-agent}"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-[ "$BRANCH" = "fork/main" ] || { echo "release from fork/main, not $BRANCH" >&2; exit 1; }
+[ "$BRANCH" = "main" ] || { echo "release from main, not $BRANCH" >&2; exit 1; }
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "the tree has uncommitted changes" >&2; exit 1; }
 
 BASE="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' --abbrev=0)"
@@ -94,6 +94,7 @@ STAGE="$STAGE" BASE="$BASE" COMMIT="$COMMIT" REPO="$REPO" LABEL="$LABEL" node -e
   const p = process.env.STAGE + "/package.json";
   const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
   pkg.name = "hyperframes"; // the name upstream publishes the CLI under
+  pkg.repository = { type: "git", url: "https://github.com/" + process.env.REPO, directory: "packages/cli" };
   pkg.hyperframesFork = { repository: process.env.REPO, base: process.env.BASE, release: process.env.LABEL, commit: process.env.COMMIT };
   fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
 '
@@ -123,12 +124,12 @@ log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 [ "$PUBLISH" = 1 ] || { log "not published (no --publish)"; exit 0; }
 
 log "publish"
-git fetch -q origin fork/main 2>/dev/null || true
-if git rev-parse -q --verify refs/remotes/origin/fork/main >/dev/null; then
-  git merge-base --is-ancestor origin/fork/main HEAD || { echo "origin/fork/main is not an ancestor of HEAD: the line is never rewritten" >&2; exit 1; }
+git fetch -q origin main 2>/dev/null || true
+if git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
+  git merge-base --is-ancestor origin/main HEAD || { echo "origin/main is not an ancestor of HEAD: the line is never rewritten" >&2; exit 1; }
 fi
 git tag -a "$TAG" -m "hyperframes $VERSION: upstream $BASE plus the fork's patches" "$COMMIT"
-git push -q origin "HEAD:refs/heads/fork/main" "refs/tags/$TAG"
+git push -q origin "HEAD:refs/heads/main" "refs/tags/$TAG"
 NOTES="$(tmpdir notes)/notes.md"
 {
   echo "The \`hyperframes\` CLI \`$VERSION\`: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."

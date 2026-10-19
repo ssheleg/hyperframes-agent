@@ -1,3 +1,9 @@
+> **HyperFrames Agent** (`ssheleg/hyperframes-agent`): our own line of the HyperFrames engine, started from
+> `heygen-com/hyperframes`. `main` is our line (an upstream release plus our patches), `upstream` mirrors HeyGen's
+> `main`; releases are tarballs on this repository's GitHub Releases, never npm. The CLI is still `hyperframes`.
+> Rules, versions and the release script: [`fork/README.md`](fork/README.md); state and next task:
+> [`fork/HANDOFF.md`](fork/HANDOFF.md). The text below is upstream's.
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/logo/dark.svg">
