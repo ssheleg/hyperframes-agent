@@ -112,6 +112,8 @@ DEAD=99999999
 : > "$SMOKE/home/.hyperframes/running/$DEAD"
 GOT="$(cd "$SMOKE" && HOME="$SMOKE/home" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --version)"
 case "$GOT" in *"$VERSION"*) ;; *) echo "smoke: --version printed '$GOT', expected $VERSION" >&2; exit 1 ;; esac
+# --version exits before the CLI registers itself; --help goes through the start that sweeps markers.
+(cd "$SMOKE" && HOME="$SMOKE/home" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --help >/dev/null)
 [ ! -e "$SMOKE/home/.hyperframes/running/$DEAD" ] || { echo "smoke: the marker of dead pid $DEAD survived a start" >&2; exit 1; }
 FORK_FIELD="$(node -p 'JSON.stringify(require(process.argv[1]).hyperframesFork)' "$SMOKE/node_modules/hyperframes/package.json")"
 case "$FORK_FIELD" in *"$COMMIT"*) ;; *) echo "smoke: the installed package.json lacks hyperframesFork.commit" >&2; exit 1 ;; esac
