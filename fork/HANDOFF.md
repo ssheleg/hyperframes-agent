@@ -13,13 +13,13 @@ publish tarball releases that consumers pin.
   mirrors HeyGen's `main`.
 - Latest release `fork-v0.8.174-sshlg.1` (sha256 `7d53662e673cb3a63ce82239fe0c2804e9707d544386789553e67d89d16efafc`);
   the previous one, `fork-v0.8.170-sshlg.1`, stays published.
-- Consumers still pin `fork-v0.8.170-sshlg.1` on their default branches; each moves its pin after measuring the
-  render against it.
+- Frame Agent's `main` pins `fork-v0.8.174-sshlg.1` (its BL-166).
 - The sixteen inherited workflows are disabled (repository settings).
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open; we do not wait for it.
 
 ## Next task
 
-Read upstream `v0.8.175` (released after `v0.8.174`) and decide whether to take it (fork/README.md, "Taking an
-upstream release"). If it is taken: `fork/release.sh 1 --publish` for `fork-v0.8.175-sshlg.1` and update this file.
+Read upstream `v0.8.175`..`v0.8.177` (16 commits after `v0.8.174`: whisper for non-English transcription, faster
+`check`, graded video renders chunked within the worker limit, HLG reference white) and take `v0.8.177` (fork/README.md,
+"Taking an upstream release"). Then `fork/release.sh 1 --publish` for `fork-v0.8.177-sshlg.1` and update this file.
 Before acting on this section, check it against Git: a tag it names as future may already exist.
