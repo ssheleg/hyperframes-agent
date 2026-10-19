@@ -39,6 +39,7 @@ export async function runProgress(args: ProgressArgs): Promise<void> {
     console.log(JSON.stringify(progress, null, 2));
     return;
   }
+  for (const warning of progress.warnings) console.warn(c.warn(warning));
 
   const pct = Math.round(progress.overallProgress * 100);
   console.log(`${c.dim("Status:")}    ${statusColor(progress.status)}`);

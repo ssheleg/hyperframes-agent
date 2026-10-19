@@ -19,10 +19,14 @@ function server(
   place: { platform?: NodeJS.Platform; installed?: () => boolean } = {},
 ) {
   const app = new Hono();
-  const open = vi.fn((_dir: string): DesktopOpenResult => OPENED);
+  const open = vi.fn((_dir: string, _cta?: string): DesktopOpenResult => OPENED);
   mountDesktopRoutes(app, "/films/a", { ready, open, ...place });
-  const post = (headers: Record<string, string>) =>
-    app.request("/api/open-in-desktop", { method: "POST", headers });
+  const post = (headers: Record<string, string>, body?: unknown) =>
+    app.request("/api/open-in-desktop", {
+      method: "POST",
+      headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
   return { app, open, post };
 }
 
@@ -32,7 +36,13 @@ describe("open-in-desktop routes", () => {
       await server(false, { installed: () => false }).app.request("/api/open-in-desktop")
     ).json();
     const downloadUrl = desktopDownloadUrl();
-    expect(body).toEqual({ available: downloadUrl !== null, handoff: false, downloadUrl });
+    expect(body).toEqual({
+      available: downloadUrl !== null,
+      handoff: false,
+      downloadUrl,
+      os: process.platform,
+      installed: false,
+    });
   });
 
   it("shows the button where the app is installed even without a download (Windows)", async () => {
@@ -42,8 +52,31 @@ describe("open-in-desktop routes", () => {
           "/api/open-in-desktop",
         )
       ).json();
-    expect(await get(true)).toEqual({ available: true, handoff: true, downloadUrl: null });
+    expect(await get(true)).toEqual({
+      available: true,
+      handoff: true,
+      downloadUrl: null,
+      os: "win32",
+      installed: true,
+    });
     expect(await get(false)).toMatchObject({ available: false });
+  });
+
+  it("offers the hand-off only where the app is installed, so a press without it goes to the download", async () => {
+    const get = async (installed: boolean) =>
+      (
+        await server(true, { platform: "darwin", installed: () => installed }).app.request(
+          "/api/open-in-desktop",
+        )
+      ).json();
+    expect(await get(true)).toMatchObject({ available: true, handoff: true });
+    expect(await get(false)).toEqual({
+      available: true,
+      handoff: false,
+      downloadUrl: desktopDownloadUrl("darwin"),
+      os: "darwin",
+      installed: false,
+    });
   });
 
   it("refuses a POST from another site, or through a rebound host name", async () => {
@@ -67,7 +100,20 @@ describe("open-in-desktop routes", () => {
   it("once live, opens this server's project for Studio's own POST", async () => {
     const { open, post } = server(true);
     expect(await (await post(STUDIO)).json()).toEqual(OPENED);
-    expect(open).toHaveBeenCalledWith("/films/a");
+    expect(open).toHaveBeenCalledWith("/films/a", undefined);
+  });
+
+  it("passes the press's page id on to the hand-off, and drops anything that is not one", async () => {
+    const { open, post } = server(true);
+    const id = "3f2b8c1e-9a4d-4e7b-8c21-5d6e7f8a9b0c";
+    await post(STUDIO, { cta: id });
+    await post(STUDIO, { cta: "../../etc/passwd" });
+    await post(STUDIO, { cta: 42 });
+    expect(open.mock.calls).toEqual([
+      ["/films/a", id],
+      ["/films/a", undefined],
+      ["/films/a", undefined],
+    ]);
   });
 });
 

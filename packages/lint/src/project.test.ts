@@ -1032,6 +1032,18 @@ describe("audio-aware project rules", () => {
       );
       expect(codes).not.toContain("duplicate_audio_track");
     });
+
+    it("stays quiet for back-to-back clips whose start plus duration only rounds past the next start", async () => {
+      // 21.03 + 0.1 is 21.130000000000003 in floating point.
+      const clip = (id: string, start: string, duration: string) =>
+        `<audio id="${id}" src="a.mp3" data-start="${start}" data-duration="${duration}" data-track-index="0"></audio>`;
+      const codes = await codesFor(
+        composition(
+          clip("m1", "0", "21.03") + clip("m2", "21.03", "0.1") + clip("m3", "21.13", "5"),
+        ),
+      );
+      expect(codes).not.toContain("duplicate_audio_track");
+    });
   });
 
   describe("audio_file_without_element", () => {

@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export class HistoryBusyError extends Error {
-  constructor(readonly pid: number) {
+  constructor(
+    readonly pid: number,
+    readonly url?: string,
+  ) {
     super(`This project's history is open in another process (pid ${pid}).`);
     this.name = "HistoryBusyError";
   }
@@ -70,18 +73,44 @@ function evictDeadOwner(file: string): boolean {
   }
 }
 
+/** The owner's url sits beside owner.pid, so readers of owner.pid from older versions see no change. */
+function advertise(urlFile: string, url: string | undefined): void {
+  if (!url) return rmSync(urlFile, { force: true });
+  const draft = `${urlFile}-${process.pid}-${randomUUID()}.tmp`;
+  writeFileSync(draft, JSON.stringify({ pid: process.pid, url }));
+  renameSync(draft, urlFile);
+}
+
+/** The url `pid` advertised, only while `pid` is alive and still holds `file`. */
+function servedBy(file: string, urlFile: string, pid: number): string | undefined {
+  try {
+    const said = JSON.parse(readFileSync(urlFile, "utf-8")) as { pid?: unknown; url?: unknown };
+    const live = said.pid === pid && alive(pid) && ownerOf(file) === pid;
+    return live && typeof said.url === "string" ? said.url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * One process at a time keeps a project's history open (a second opener would fork the log). Waits up to `waitMs`
- * for the owner to close, takes over a dead owner's lock.
+ * for the owner to close, takes over a dead owner's lock. `url` is where this process serves the history's routes.
  */
-export async function takeHistoryOwnership(home: string, waitMs: number): Promise<() => void> {
+export async function takeHistoryOwnership(
+  home: string,
+  waitMs: number,
+  url?: string,
+): Promise<() => void> {
   const file = join(home, "owner.pid");
+  const urlFile = join(home, "owner-url.json");
   const deadline = Date.now() + waitMs;
   mkdirSync(home, { recursive: true });
   for (;;) {
     if (claim(file)) {
+      advertise(urlFile, url);
       let held = true;
       return () => {
+        if (held && servedBy(file, urlFile, process.pid)) rmSync(urlFile, { force: true });
         if (held) releaseOwn(file);
         held = false;
       };
@@ -89,7 +118,7 @@ export async function takeHistoryOwnership(home: string, waitMs: number): Promis
     const pid = ownerOf(file);
     if (pid === null) continue;
     if (!alive(pid) && evictDeadOwner(file)) continue;
-    if (Date.now() >= deadline) throw new HistoryBusyError(pid);
+    if (Date.now() >= deadline) throw new HistoryBusyError(pid, servedBy(file, urlFile, pid));
     await new Promise((settle) => setTimeout(settle, 50));
   }
 }

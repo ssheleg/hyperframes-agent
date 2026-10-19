@@ -37,6 +37,7 @@ interface PlayerProps {
   portrait?: boolean;
   style?: React.CSSProperties;
   suppressLoadingOverlay?: boolean;
+  noLoadTimeout?: boolean;
 }
 
 interface HyperframesPlayerElement extends HTMLElement {
@@ -154,6 +155,7 @@ export const Player = forwardRef<HTMLIFrameElement, PlayerProps>(
       portrait,
       style,
       suppressLoadingOverlay,
+      noLoadTimeout,
     },
     ref,
   ) => {
@@ -224,6 +226,7 @@ export const Player = forwardRef<HTMLIFrameElement, PlayerProps>(
           setCompositionLoading(true);
           loadStartedAtRef.current = performance.now();
           loadIdRef.current += 1;
+          player.removeAttribute("no-load-timeout");
           player.setAttribute("src", retryUrl.pathname + retryUrl.search);
         };
         retryPreviewRef.current = retryPreview;
@@ -331,6 +334,7 @@ export const Player = forwardRef<HTMLIFrameElement, PlayerProps>(
         player.setAttribute("shader-capture-scale", "1");
         player.setAttribute("shader-loading", "player");
         player.setAttribute("low-power-idle", "");
+        player.toggleAttribute("no-load-timeout", noLoadTimeout === true);
         player.setAttribute("width", String(portrait ? 1080 : 1920));
         player.setAttribute("height", String(portrait ? 1920 : 1080));
         player.style.width = "100%";

@@ -42,9 +42,9 @@ const EXPECTED_RESOURCE_COUNTS: Record<string, number> = {
   "AWS::CloudWatch::Alarm": 3,
   "AWS::Logs::LogGroup": 1,
   // CDK emits IAM roles for both the function and the state machine, plus
-  // a managed policy for the bucket grant.
+  // a managed policy for the bucket grant and one for the Distributed Map children.
   "AWS::IAM::Role": 2,
-  "AWS::IAM::Policy": 2,
+  "AWS::IAM::Policy": 3,
 };
 
 // Top-level state names emitted by ASL. The Map state's inner
@@ -86,7 +86,7 @@ const EXPECTED_NON_RETRYABLE_ERRORS = new Set([
   "ChromeBinaryUnavailableError",
 ]);
 
-function doSynth(): {
+function doSynth(reservedConcurrency?: number): {
   template: Template;
   definition: { States: Record<string, unknown>; StartAt: string };
 } {
@@ -94,7 +94,10 @@ function doSynth(): {
   writeFileSync(join(zipDir, "handler.zip"), "fake zip bytes");
   const app = new App();
   const stack = new Stack(app, "TestStack");
-  new HyperframesRenderStack(stack, "Render", { handlerZipPath: join(zipDir, "handler.zip") });
+  new HyperframesRenderStack(stack, "Render", {
+    handlerZipPath: join(zipDir, "handler.zip"),
+    reservedConcurrency,
+  });
   const template = Template.fromStack(stack);
   const stateMachine = Object.values(
     template.findResources("AWS::StepFunctions::StateMachine"),
@@ -279,6 +282,18 @@ describe("HyperframesRenderStack — snapshot", () => {
     }
   });
 
+  it("lets the render function abort the multipart uploads its S3 stitch starts", () => {
+    const cdkPolicies = JSON.stringify(SYNTHED.template.findResources("AWS::IAM::Policy"));
+    expect(cdkPolicies).toContain("s3:Abort*");
+    const samFunction = requireRecordProperty(readSamResources(), "RenderFunction", "SAM function");
+    const samProperties = requireRecordProperty(
+      samFunction,
+      "Properties",
+      "SAM function properties",
+    );
+    expect(JSON.stringify(samProperties.Policies)).toContain("s3:AbortMultipartUpload");
+  });
+
   it("keeps same-named Lambda tasks in different branches apart", () => {
     const task = (format: string) => ({
       Type: "Task",
@@ -294,6 +309,126 @@ describe("HyperframesRenderStack — snapshot", () => {
     });
     expect(Object.keys(tasks).sort()).toEqual(["Fan/0/RenderChunk", "Fan/1/RenderChunk"]);
     expect(sentPayload(tasks["Fan/1/RenderChunk"]).Format).toBe("webm");
+  });
+
+  it("runs every chunk in a Distributed Map with STANDARD children in CDK and SAM", () => {
+    for (const definition of [SYNTHED.definition, readSamDefinition()]) {
+      for (const name of ["RenderChunks", "RenderChunksV2"]) {
+        const map = requireRecord(definition.States[name], `${name} state`);
+        const processor = requireRecordProperty(map, "ItemProcessor", `${name} processor`);
+        expect({ name, config: processor.ProcessorConfig }).toEqual({
+          name,
+          config: { Mode: "DISTRIBUTED", ExecutionType: "STANDARD" },
+        });
+        expect(map.Label).toBe(name);
+        expect(map.MaxConcurrencyPath).toBe("$.Plan.MaxChunkConcurrency");
+        // Any failed chunk must still fail the render.
+        expect(Object.keys(map).filter((key) => key.startsWith("ToleratedFailure"))).toEqual([]);
+      }
+    }
+  });
+
+  it("caps chunk fan-out at the concurrency the plan returns, in CDK and SAM", () => {
+    for (const definition of [SYNTHED.definition, readSamDefinition()]) {
+      for (const name of ["Plan", "PlanV2"]) {
+        const selector = requireRecordProperty(
+          requireRecord(definition.States[name], `${name} state`),
+          "ResultSelector",
+          `${name} result selector`,
+        );
+        expect(selector["MaxChunkConcurrency.$"]).toBe("$.Payload.MaxChunkConcurrency");
+      }
+    }
+  });
+
+  it("tells the plan the reserved concurrency and lets it read the account's, in CDK and SAM", () => {
+    const cdkFunction = (synthed: ReturnType<typeof doSynth>) =>
+      Object.values(synthed.template.findResources("AWS::Lambda::Function"))[0] as {
+        Properties: { Environment: { Variables: Record<string, unknown> } };
+      };
+    const reservedEnv = (synthed: ReturnType<typeof doSynth>) =>
+      cdkFunction(synthed).Properties.Environment.Variables.HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY;
+    expect(reservedEnv(SYNTHED)).toBe("-1");
+    expect(reservedEnv(doSynth(300))).toBe("300");
+    const cdkActions = Object.values(SYNTHED.template.findResources("AWS::IAM::Policy"))
+      .flatMap(policyStatements)
+      .flatMap((statement) => statement.Action);
+    expect(cdkActions).toContain("lambda:GetAccountSettings");
+
+    const samFunction = requireRecordProperty(
+      requireRecordProperty(readSamResources(), "RenderFunction", "SAM RenderFunction"),
+      "Properties",
+      "SAM function properties",
+    ) as { Environment: { Variables: Record<string, unknown> }; Policies: unknown[] };
+    // The YAML parser drops the !Ref tag and keeps its argument.
+    expect(samFunction.Environment.Variables.HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY).toBe(
+      "ReservedConcurrency",
+    );
+    const samActions = samFunction.Policies.flatMap((policy) =>
+      ((policy as { Statement?: Record<string, unknown>[] }).Statement ?? []).map((s) => s.Action),
+    );
+    expect(samActions).toContain("lambda:GetAccountSettings");
+  }, 30000);
+
+  it("fails at once when a chunk cannot fit the worker timeout, in CDK and SAM", () => {
+    for (const definition of [SYNTHED.definition, readSamDefinition()]) {
+      for (const name of ["Plan", "PlanV2"]) {
+        const errors = new Set<string>();
+        collectNonRetryableErrors(definition.States[name], errors);
+        expect({ name, terminal: errors.has("CHUNK_EXCEEDS_WORKER_TIMEOUT") }).toEqual({
+          name,
+          terminal: true,
+        });
+      }
+    }
+  });
+
+  it("gives Lambda throttles a minutes-long backoff ahead of the catch-all, in CDK and SAM", () => {
+    for (const definition of [SYNTHED.definition, readSamDefinition()]) {
+      for (const [taskName, task] of Object.entries(lambdaTasks(definition.States))) {
+        expect({ taskName, ...throttleRetry(task) }).toEqual({
+          taskName,
+          beforeCatchAll: true,
+          MaxAttempts: 10,
+          JitterStrategy: "FULL",
+        });
+      }
+    }
+  });
+
+  it("lets the state machine role start, describe and stop its own child executions", () => {
+    const cdkActions = Object.values(SYNTHED.template.findResources("AWS::IAM::Policy")).flatMap(
+      (policy) => policyStatements(policy).flatMap((statement) => [statement.Action].flat()),
+    );
+    const samRole = requireRecord(readSamResources().RenderStateMachineRole, "SAM role");
+    const samPolicies = requireRecordProperty(samRole, "Properties", "SAM role properties")
+      .Policies as Record<string, unknown>[];
+    const samStatements = samPolicies.flatMap(
+      (policy) =>
+        requireRecordProperty(policy, "PolicyDocument", "SAM policy document").Statement as Record<
+          string,
+          unknown
+        >[],
+    );
+    const samActions = samStatements.flatMap((statement) => [statement.Action].flat());
+    for (const action of [
+      "states:StartExecution",
+      "states:DescribeExecution",
+      "states:StopExecution",
+    ]) {
+      expect({
+        action,
+        cdk: cdkActions.includes(action),
+        sam: samActions.includes(action),
+      }).toEqual({
+        action,
+        cdk: true,
+        sam: true,
+      });
+    }
+    expect(samStatements.map((statement) => statement.Resource)).toContainEqual(
+      "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-render",
+    );
   });
 
   it("materializes null audio in the synthesized CDK v2 assembly payload", () => {
@@ -331,6 +466,19 @@ function collectNonRetryableErrors(state: unknown, out: Set<string>): void {
       for (const err of retry.ErrorEquals) out.add(err);
     }
   }
+}
+
+/** Where a task's throttle retrier sits and how hard it retries. */
+function throttleRetry(task: unknown): Record<string, unknown> {
+  const retriers = requireRecord(task, "task").Retry as Record<string, unknown>[];
+  const errors = retriers.map((retrier) => (retrier.ErrorEquals as string[]).join());
+  const at = errors.indexOf("Lambda.TooManyRequestsException");
+  const { MaxAttempts, JitterStrategy } = retriers[at] ?? {};
+  return {
+    beforeCatchAll: at >= 0 && at < errors.indexOf("States.ALL"),
+    MaxAttempts,
+    JitterStrategy,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -433,7 +581,13 @@ function getV1TaskStates(definition: {
   };
 }
 
-function readSamDefinition(): { States: Record<string, unknown> } {
+function policyStatements(policy: unknown): Record<string, unknown>[] {
+  const properties = requireRecordProperty(requireRecord(policy, "policy"), "Properties", "props");
+  const document = requireRecordProperty(properties, "PolicyDocument", "policy document");
+  return document.Statement as Record<string, unknown>[];
+}
+
+function readSamResources(): Record<string, unknown> {
   const source = readFileSync(
     new URL("../../../../examples/aws-lambda/template.yaml", import.meta.url),
     "utf8",
@@ -443,7 +597,11 @@ function readSamDefinition(): { States: Record<string, unknown> } {
   // warnings for the intentionally unresolved `!Ref`/`!GetAtt` tags.
   const parsed: unknown = parseYaml(source, { logLevel: "silent" });
   const root = requireRecord(parsed, "SAM template");
-  const resources = requireRecordProperty(root, "Resources", "SAM resources");
+  return requireRecordProperty(root, "Resources", "SAM resources");
+}
+
+function readSamDefinition(): { States: Record<string, unknown> } {
+  const resources = readSamResources();
   const stateMachine = requireRecordProperty(
     resources,
     "RenderStateMachine",

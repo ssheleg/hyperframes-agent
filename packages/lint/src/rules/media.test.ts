@@ -233,6 +233,18 @@ describe("media rules", () => {
     );
   });
 
+  it("accepts color grading on a canvas", async () => {
+    const html = `
+<html><body>
+  <div id="root" data-composition-id="c1" data-width="1920" data-height="1080">
+    <canvas id="drawn" width="1920" height="1080" data-color-grading='{"preset":"skin-soft"}'></canvas>
+  </div>
+  <script>window.__timelines = {};</script>
+</body></html>`;
+    const result = await lintHyperframeHtml(html);
+    expect(result.findings.filter((f) => f.code.startsWith("color_grading_"))).toEqual([]);
+  });
+
   it("reports warning for media with preload=none", async () => {
     const html = `
 <html><body>

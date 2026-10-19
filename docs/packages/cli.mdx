@@ -215,6 +215,12 @@ link-local and special-use addresses are refused. IPv6-only sites are currently
 unsupported. Plain WebSocket upgrades are refused; slow or refused resources
 may be absent from the capture.
 
+Capture needs direct internet access. Since 0.8.164 it does not use
+`HTTPS_PROXY` or `HTTP_PROXY`: its own proxy dials each checked public address
+itself. Where the only way out is a proxy, as in some sandboxes and corporate
+networks, every page fails with `net::ERR_TUNNEL_CONNECTION_FAILED`, even though
+`curl` reaches the same site through that proxy.
+
 Capture uses a temporary browser profile with non-proxied WebRTC UDP disabled.
 The profile and proxy are removed when the browser closes. The Chromium sandbox
 is retained on macOS and Windows; Linux retains the container compatibility
@@ -475,7 +481,7 @@ npx hyperframes media-treatment --selector '#hero' --clear
 | `--all`                | Print the exhaustive capability catalog                               |
 | `--project <dir>`      | Project directory (default: current directory)                        |
 | `--file <path>`        | Composition file (default `index.html`)                               |
-| `--selector <css>`     | CSS selector; every matched `<img>` or `<video>` gets the patch       |
+| `--selector <css>`     | CSS selector; every matched `<img>`, `<video>` or `<canvas>` gets the patch |
 | `--selector-index <n>` | Zero-based match index to patch only one of several matches           |
 | `--grading <json>`     | Validated colour-grading patch                                        |
 | `--apply`              | Apply the patch                                                       |
@@ -1119,6 +1125,7 @@ npx hyperframes timeline split '#outro' 6.5
 npx hyperframes timeline set '#music' volume=0.5
 npx hyperframes timeline duplicate '#intro' --at 3
 npx hyperframes timeline delete '#outro' --json
+npx hyperframes timeline delete '#outro' --start 6 --end 7   # cut one second out
 ```
 
 | Command                     | What it does                                                                                                                              |
@@ -1126,7 +1133,7 @@ npx hyperframes timeline delete '#outro' --json
 | `move <ref> <time>`         | Start the clip at `<time>`, keeping its length                                                                                            |
 | `trim <ref>`                | Change the clip's `--start`, `--end`, or `--duration` (at least one)                                                                      |
 | `split <ref> <time>`        | Cut the clip in two at `<time>`                                                                                                           |
-| `delete <ref>`              | Remove the clip                                                                                                                           |
+| `delete <ref>`              | Remove the clip, or only its `--start` to `--end` range, keeping the parts before and after                                               |
 | `set <ref> <field>=<value>` | Set `volume`, `rate` (playback rate) or `track` (a whole number)                                                                          |
 | `duplicate <ref>`           | Copy the clip to `--at <time>` (default: right after the clip)                                                                            |
 | `apply <file>`              | Apply a JSON array of edits, such as `[{"verb": "move", "ref": "#intro", "time": "+1"}]`, all or nothing. Pass `-` to read it from stdin. |
@@ -1135,13 +1142,14 @@ npx hyperframes timeline delete '#outro' --json
 
 A time is seconds (`4.5`), an offset from the clip's start (`+1`, `-0.5`),
 frames (`30f`), `end`, or an anchor on another clip: `after:#intro`,
-`before:#intro`, `start-of:#intro` or `end-of:#intro`.
+`before:#intro`, `start-of:#intro` or `end-of:#intro`. A flag an edit command does not
+use is refused before anything is written.
 
 | Flag          | Applies to                                                     | Description                                                   |
 | ------------- | -------------------------------------------------------------- | ------------------------------------------------------------- |
 | `--plan`      | `move`, `trim`, `split`, `delete`, `set`, `duplicate`, `apply` | Print the result and the diff without writing                 |
 | `--overwrite` | `move`, `trim`                                                 | Allow the clip to overlap a neighbour on its track            |
-| `--snap`      | `move`, `trim`, `split`, `duplicate`                           | Round times to whole frames. Needs `data-fps` on the project. |
+| `--snap`      | `move`, `trim`, `split`, `delete`, `duplicate`                 | Round times to whole frames. Needs `data-fps` on the project. |
 | `--at`        | `duplicate`                                                    | Where the copy starts                                         |
 | `--dir`       | all edit commands                                              | Project directory (default: current)                          |
 | `--json`      | all edit commands                                              | Machine-readable result, with the receipt `undo` takes        |
@@ -1821,7 +1829,7 @@ Lifecycle and control:
 | `--callback-id`     | Opaque tracking ID echoed in webhook payloads                                                                   |
 | `--asset-id`        | Skip zip and upload; submit an already-uploaded composition. Mutually exclusive with the project dir and `--url`. |
 | `--url`             | Submit a public HTTPS zip URL. Same mutual exclusion as `--asset-id`.                                            |
-| `--poll-interval`   | Poll cadence in seconds (default 10)                                                                            |
+| `--poll-interval`   | Poll cadence in seconds (default 2)                                                                             |
 | `--max-wait`        | Maximum poll duration in minutes (default 60)                                                                   |
 | `--idempotency-key` | `Idempotency-Key` for safe retries. 1–255 characters from `[A-Za-z0-9_:.-]`.                                     |
 | `--json`            | Machine-readable JSON instead of human progress                                                                 |
@@ -1926,7 +1934,7 @@ deploy:
 | `--stack-name`    | `hyperframes-default`                | CloudFormation stack name                                |
 | `--region`        | `AWS_REGION`, else `us-east-1`       | AWS region                                               |
 | `--profile`       | `AWS_PROFILE`                        | AWS profile name                                         |
-| `--concurrency`   | `8`                                  | Lambda reserved concurrency                              |
+| `--concurrency`   | none                                 | Lambda reserved concurrency. Without it, a new stack reserves none and each render runs up to 90% of the account's unreserved concurrency; a redeploy keeps the stack's current reservation; `none` removes it |
 | `--memory`        | `10240`                              | Lambda memory in MB                                      |
 | `--chrome-source` | `sparticuz`                          | `sparticuz` or `chrome-headless-shell`                   |
 | `--skip-build`    | off                                  | Reuse the existing `handler.zip`                         |
@@ -1943,7 +1951,7 @@ And these drive `render` and `render-batch`:
 | `--quality`             | `standard`                          | `draft`, `standard`, or `high`                                                                                    |
 | `--output-resolution`   | —                                   | Supersample via Chrome `deviceScaleFactor` to a preset (`1080p`, `4k`, `uhd`, `hd`, `landscape-4k`, …) without changing layout |
 | `--chunk-size`          | auto                                | Frames per chunk. By default each chunk is sized to finish inside the Lambda timeout                              |
-| `--max-parallel-chunks` | auto                                | Chunks per render. By default one wave across the deploy's `--concurrency` (16 if unknown), widened when a chunk would outrun the Lambda timeout |
+| `--max-parallel-chunks` | auto                                | Chunks per render. By default one wave across the deploy's `--concurrency` (or 90% of the account's unreserved concurrency), widened when a chunk would outrun the Lambda timeout |
 | `--target-chunk-frames` | —                                   | Ceiling on frames per chunk. The planner adds chunks — up to `--max-parallel-chunks` — to stay under it, and short videos still collapse to fewer. Ignored when `--chunk-size` is set. |
 | `--variables`           | —                                   | JSON object reaching every chunk worker as `window.__hfVariables`                                                  |
 | `--variables-file`      | —                                   | Read those from a JSON file                                                                                       |
@@ -2049,7 +2057,8 @@ batch does not try to spawn 10,000 executions and trip your account limits. It
 is orchestrator-side only, and cannot enforce your account's Lambda concurrency
 quota — pick a value from that quota and the reserved concurrency you set at
 `lambda deploy --concurrency=<N>`. It is not `--max-parallel-chunks`, which caps
-chunks inside one render.
+chunks inside one render. Without a reserved concurrency every render in the
+batch sizes itself to the whole account, so reserve one before a large batch.
 
 ### `lambda progress <renderId | executionArn>`
 

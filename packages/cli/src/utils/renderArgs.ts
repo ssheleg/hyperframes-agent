@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG, resolvePageNavigationTimeout } from "@hyperframes/engine";
 import { failUsage } from "./commandResult.js";
 /**
  * Pure parsers for `hyperframes render` argv that aren't already shared
@@ -118,20 +119,13 @@ export function resolveBrowserTimeoutMsArg(raw: string | undefined): number | un
   return result.value;
 }
 
-/**
- * Navigation budget shared by snapshot/check/inspect browser diagnostics.
- *
- * The environment variable remains the historical global override. Callers
- * with their own timeout knob can supply a minimum without shortening that
- * override or the existing 10-second default.
- */
-export function resolveDiagnosticNavigationTimeoutMs(
-  env: Record<string, string | undefined> = process.env,
-  minimumTimeoutMs = 0,
-): number {
-  const parsed = Number(env.PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS);
-  const configured = Number.isFinite(parsed) && parsed > 0 ? parsed : 10_000;
-  return Math.max(configured, minimumTimeoutMs);
+/** The page-load budget render uses, raised to a command's own longer `--timeout`. */
+export function pageNavigationTimeoutMs(minimumTimeoutMs = 0): number {
+  const configured = resolvePageNavigationTimeout();
+  return Math.max(
+    configured > 0 ? configured : DEFAULT_CONFIG.pageNavigationTimeout,
+    minimumTimeoutMs,
+  );
 }
 
 // ── --composition ──────────────────────────────────────────────────────

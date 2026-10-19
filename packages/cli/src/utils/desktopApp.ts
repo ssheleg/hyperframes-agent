@@ -1,8 +1,10 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, win32 } from "node:path";
+import { isHyperframesProject } from "@hyperframes/core";
 import { addCatchUpNote, markSeen, readSeen } from "./appHistory.js";
+import { createProjectConfig } from "./projectConfig.js";
 import { writeRecord } from "./projectRecords.js";
 
 // The HyperFrames desktop app (not "Studio"): `open -b` on macOS, its executable elsewhere; released, then Canary.
@@ -32,6 +34,8 @@ export interface AgentSession {
 }
 
 export const AGENT_HANDOFF_FILE = join(".hyperframes", "agent-handoff.json");
+/** The Studio page's telemetry `tab_id`, left for the app to report its first open and export against. */
+const DESKTOP_CTA_RECORD = "desktop-cta.json";
 
 // ponytail: Claude Code, then Codex, then Grok; an agent started inside another's shell carries both, unsorted.
 export function agentSession(env: NodeJS.ProcessEnv = process.env): AgentSession | null {
@@ -131,6 +135,17 @@ function leaveHandoff(dir: string, session: AgentSession | null): AgentSession |
   return session;
 }
 
+function markBareIndexAsProject(dir: string): void {
+  try {
+    if (existsSync(join(dir, "index.html")) && !isHyperframesProject(readdirSync(dir)))
+      createProjectConfig(dir);
+  } catch (error) {
+    console.warn(
+      `◇  Couldn't add hyperframes.json to ${dir}, so the app may not open it: ${error}`,
+    );
+  }
+}
+
 // ponytail: success on Windows and Linux means the spawn started, not that the app took the folder; wait for the
 // app's own acknowledgement if a broken install ever needs reporting.
 export function openInDesktop(
@@ -142,8 +157,10 @@ export function openInDesktop(
     launch = launchApp,
     installed = () => desktopInstalled({ platform }),
     env = process.env,
+    cta,
     ...where
   }: AppLookup & {
+    cta?: string;
     ready?: boolean;
     open?: (bundleId: string, dir: string) => boolean;
     launch?: (executable: string, dir: string) => boolean;
@@ -157,12 +174,16 @@ export function openInDesktop(
     reason,
     downloadUrl: desktopDownloadUrl(platform) ?? STUDIO_PAGE,
   });
-  const opened = (canary: boolean): DesktopOpenResult => ({
-    opened: true,
-    app: canary ? "HyperFrames Canary" : "the HyperFrames desktop app",
-    handedOver: leaveHandoff(dir, agentSession(env)),
-  });
+  const opened = (canary: boolean): DesktopOpenResult => {
+    if (cta) writeRecord(dir, DESKTOP_CTA_RECORD, JSON.stringify({ cta, at: Date.now() }));
+    return {
+      opened: true,
+      app: canary ? "HyperFrames Canary" : "the HyperFrames desktop app",
+      handedOver: leaveHandoff(dir, agentSession(env)),
+    };
+  };
   if (!ready) return notOpened("handoff-unavailable");
+  markBareIndexAsProject(dir);
   if (platform === "darwin") {
     const bundleId = DESKTOP_BUNDLE_IDS.find((id) => open(id, dir));
     if (!bundleId) return notOpened(installed() ? "open-failed" : "not-installed");
@@ -200,6 +221,10 @@ export function desktopInstalled({
   return DESKTOP_BUNDLE_IDS.some(spotlight);
 }
 
+export function insideHostApp(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.HYPERFRAMES_DESKTOP_PROJECT);
+}
+
 /** The app line render and preview print; null inside the app, or with nothing here to open or download. */
 export function desktopHint(
   dir: string,
@@ -215,7 +240,7 @@ export function desktopHint(
     platform?: NodeJS.Platform;
   } = {},
 ): string | null {
-  if (env.HYPERFRAMES_DESKTOP_PROJECT) return null;
+  if (insideHostApp(env)) return null;
   if (ready && (installed ?? desktopInstalled({ platform, env })))
     return `Keep editing by chatting with Framey in the desktop app: ${openCommandFor(dir)}`;
   const url = desktopDownloadUrl(platform);

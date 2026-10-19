@@ -16,6 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,17 +26,19 @@ import {
   PlanVideosMetadataError,
   type AssembleResult,
   type ChunkResult,
+  type DistributedRenderConfig,
   type PlanResult,
   type PlanV2ArtifactPublisher,
   type PlanV2Manifest,
   publishPlanV2FromExecutionPlan,
 } from "@hyperframes/producer/distributed";
+import { resolveMaxParallelChunks } from "../../producer/src/services/distributed/plan.js";
 import { recomputePlanHashFromPlanDir } from "../../producer/src/services/render/stages/freezePlan.js";
 import type { AssembleEvent, LambdaEvent, PlanEvent, RenderChunkEvent } from "./events.js";
 import { handler, unwrapEvent } from "./handler.js";
 
 interface FakeS3Op {
-  kind: "download" | "upload";
+  kind: "download" | "upload" | "copy";
   uri: string;
   bytes?: number;
 }
@@ -63,12 +66,19 @@ class FakeS3Client {
     const cmdName = op.constructor?.name ?? "";
     const uri = `s3://${op.input.Bucket}/${op.input.Key}`;
     if (cmdName === "GetObjectCommand") {
-      const bytes = this.objects.get(uri) ?? Buffer.alloc(0);
+      const bytes = this.sliceRange(
+        this.objects.get(uri) ?? Buffer.alloc(0),
+        (command as { input: { Range?: string } }).input.Range,
+      );
       this.ops.push({ kind: "download", uri, bytes: bytes.length });
       // Mock the AWS SDK stream contract just enough for pipeline() to
       // pump bytes into a write stream.
       const { Readable } = await import("node:stream");
-      return { Body: Readable.from([bytes]) };
+      return {
+        Body: Object.assign(Readable.from([bytes]), {
+          transformToByteArray: async () => new Uint8Array(bytes),
+        }),
+      };
     }
     if (cmdName === "HeadObjectCommand") {
       const bytes = this.objects.get(uri);
@@ -104,7 +114,36 @@ class FakeS3Client {
       if (metadata) this.metadata.set(uri, metadata);
       return {};
     }
+    if (cmdName === "CreateMultipartUploadCommand") return { UploadId: "upload-1" };
+    if (cmdName === "UploadPartCommand") {
+      const input = (command as { input: { Body: Buffer; PartNumber: number } }).input;
+      this.parts.set(input.PartNumber, input.Body);
+      return { ETag: `"part-${input.PartNumber}"` };
+    }
+    if (cmdName === "UploadPartCopyCommand") {
+      const input = (
+        command as { input: { CopySource: string; CopySourceRange?: string; PartNumber: number } }
+      ).input;
+      const source = `s3://${decodeURI(input.CopySource)}`;
+      this.ops.push({ kind: "copy", uri: source });
+      const bytes = this.objects.get(source) ?? Buffer.alloc(0);
+      this.parts.set(input.PartNumber, this.sliceRange(bytes, input.CopySourceRange));
+      return { CopyPartResult: { ETag: `"part-${input.PartNumber}"` } };
+    }
+    if (cmdName === "CompleteMultipartUploadCommand") {
+      const parts = (command as { input: { MultipartUpload: { Parts: { PartNumber: number }[] } } })
+        .input.MultipartUpload.Parts;
+      this.objects.set(uri, Buffer.concat(parts.map((part) => this.parts.get(part.PartNumber)!)));
+      return {};
+    }
     return {};
+  }
+
+  parts = new Map<number, Buffer>();
+
+  private sliceRange(bytes: Buffer, range?: string): Buffer {
+    const match = /^bytes=(\d+)-(\d+)$/.exec(range ?? "");
+    return match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes;
   }
 }
 
@@ -239,6 +278,7 @@ describe("handler dispatch", () => {
     expect(result.PlanHash).toBe("fakehash");
     expect(result.ChunkCount).toBe(4);
     expect(planMock).toHaveBeenCalledTimes(1);
+    expect((planMock.mock.calls[0] as unknown[])[3]).toEqual({ chunksCarryAudio: true });
     expect(renderChunkMock).not.toHaveBeenCalled();
     expect(assembleMock).not.toHaveBeenCalled();
     // Plan should have downloaded the project zip and uploaded the plan tar.
@@ -282,6 +322,131 @@ describe("handler dispatch", () => {
       ).catch(() => undefined);
     }
     expect(seen).toEqual([900, 300]);
+  });
+
+  describe("chunk concurrency when the render does not set one", () => {
+    const THIRTY_MIN_FRAMES = 54_000;
+    const MP_1080P = (1920 * 1080) / 1_000_000;
+
+    function fakeLambda(reply: () => Promise<unknown>) {
+      const send = mock(reply);
+      return { send, client: { send } as unknown as import("@aws-sdk/client-lambda").LambdaClient };
+    }
+
+    async function planThirtyMinutes(lambda: { client: unknown }, workerConcurrency?: number) {
+      const tmpRoot = makeTmpRoot();
+      const s3 = new FakeS3Client();
+      s3.objects.set("s3://bucket/project.tar.gz", await makeMinimalProjectTar());
+      const warnings: string[] = [];
+      const log = { warn: (m: string) => warnings.push(m), error() {}, info() {}, debug() {} };
+      let planned: DistributedRenderConfig | undefined;
+      const result = await handler(
+        {
+          Action: "plan",
+          PlanProtocol: "v1",
+          ProjectS3Uri: "s3://bucket/project.tar.gz",
+          PlanOutputS3Prefix: "s3://bucket/renders/conc/",
+          Config: { fps: 30, width: 1920, height: 1080, format: "mp4", workerConcurrency },
+        },
+        {
+          s3: s3 as unknown as import("@aws-sdk/client-s3").S3Client,
+          lambda: lambda.client as import("@aws-sdk/client-lambda").LambdaClient,
+          primitives: {
+            plan: mock(async (_dir: string, config: DistributedRenderConfig, planDir: string) => {
+              planned = config;
+              mkdirSync(planDir, { recursive: true });
+              writeFileSync(join(planDir, "plan.json"), "{}");
+              return {
+                planDir,
+                planProtocol: CURRENT_PLAN_PROTOCOL,
+                planHash: "h",
+                // The real sizing rule, so the cap and the chunk count are tested together.
+                chunkCount: resolveMaxParallelChunks(config, THIRTY_MIN_FRAMES, MP_1080P, log),
+                totalFrames: THIRTY_MIN_FRAMES,
+                fps: 30 as const,
+                width: 1920,
+                height: 1080,
+                format: "mp4" as const,
+                ffmpegVersion: "6.0",
+                producerVersion: "0.0.0-test",
+              };
+            }) as unknown as typeof import("@hyperframes/producer/distributed").plan,
+            renderChunk: mock(async () => {
+              throw new Error("unused");
+            }) as unknown as typeof import("@hyperframes/producer/distributed").renderChunk,
+            assemble: mock(async () => {
+              throw new Error("unused");
+            }) as unknown as typeof import("@hyperframes/producer/distributed").assemble,
+          },
+          tmpRoot,
+          skipChromeResolution: true,
+          getRemainingTimeInMillis: () => 900_000,
+        },
+      );
+      if (result.Action !== "plan") throw new Error("unreachable");
+      return { result, planned, warnings };
+    }
+
+    it("runs every chunk at once when the account has room", async () => {
+      const lambda = fakeLambda(async () => ({
+        AccountLimit: { UnreservedConcurrentExecutions: 1000 },
+      }));
+      const { result, planned, warnings } = await planThirtyMinutes(lambda);
+      expect(planned?.workerConcurrency).toBe(900);
+      expect(result.ChunkCount).toBe(204);
+      expect(result.MaxChunkConcurrency).toBe(result.ChunkCount);
+      expect(warnings).toEqual([]);
+    });
+
+    it("caps at 90% of a small account and says the render runs in waves", async () => {
+      const lambda = fakeLambda(async () => ({
+        AccountLimit: { UnreservedConcurrentExecutions: 10 },
+      }));
+      const { result, warnings } = await planThirtyMinutes(lambda);
+      expect(result.MaxChunkConcurrency).toBe(9);
+      expect(result.ChunkCount).toBe(21);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain("in 3 waves");
+      expect(warnings[0]).toContain("--concurrency 21");
+    });
+
+    it("falls back to 16 at once and logs why when the account cannot be read", async () => {
+      const lambda = fakeLambda(async () => {
+        const denied = new Error("not authorized to perform: lambda:GetAccountSettings");
+        denied.name = "AccessDeniedException";
+        throw denied;
+      });
+      const logged = spyOn(console, "log").mockImplementation(() => undefined);
+      try {
+        const { result, planned } = await planThirtyMinutes(lambda);
+        expect(planned?.workerConcurrency).toBe(16);
+        expect(result.MaxChunkConcurrency).toBe(16);
+        const lines = logged.mock.calls.map((call) => String(call[0]));
+        const fallback = lines.find((line) => line.includes('"source":"fallback"'));
+        expect(fallback).toContain('"level":"WARN"');
+        expect(fallback).toContain("AccessDeniedException");
+        expect(fallback).toContain("planning for 16 chunks at once");
+      } finally {
+        logged.mockRestore();
+      }
+    });
+
+    it("keeps an explicit concurrency, then the reserved one, without asking the account", async () => {
+      const lambda = fakeLambda(async () => ({
+        AccountLimit: { UnreservedConcurrentExecutions: 1000 },
+      }));
+      const explicit = await planThirtyMinutes(lambda, 64);
+      expect(explicit.planned?.workerConcurrency).toBe(64);
+      expect(explicit.result.MaxChunkConcurrency).toBe(64);
+      process.env.HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY = "32";
+      try {
+        const reserved = await planThirtyMinutes(lambda);
+        expect(reserved.result.MaxChunkConcurrency).toBe(32);
+      } finally {
+        delete process.env.HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY;
+      }
+      expect(lambda.send).not.toHaveBeenCalled();
+    });
   });
 
   it("normalizes producer workflow codes to Step Functions error names", async () => {
@@ -730,6 +895,90 @@ describe("handler dispatch", () => {
     ).toBe(true);
   });
 
+  async function planStitched(chunkCount: number) {
+    const tmpRoot = makeTmpRoot();
+    const s3 = new FakeS3Client();
+    s3.objects.set("s3://bucket/project.tar.gz", await makeMinimalProjectTar());
+    const assembleMock = mock(
+      async (_p: string, _c: readonly string[], _a: string | null, outputPath: string) => {
+        writeFileSync(outputPath, "LOCAL-JOIN");
+        return { outputPath, durationMs: 1, framesEncoded: 30 * chunkCount, fileSize: 10 };
+      },
+    );
+    const planV2WithPublisherMock = mock(
+      async (_dir: string, _config: unknown, publisher: PlanV2ArtifactPublisher) => {
+        const v1Dir = join(tmpRoot, "v1");
+        makeMinimalV1PlanDir(v1Dir, true, { chunkCount, chunksCarryAudio: true });
+        return publishPlanV2FromExecutionPlan(v1Dir, publisher);
+      },
+    );
+    const deps = {
+      s3: s3 as unknown as import("@aws-sdk/client-s3").S3Client,
+      primitives: {
+        planV2WithPublisher:
+          planV2WithPublisherMock as unknown as typeof import("@hyperframes/producer/distributed").planV2WithPublisher,
+        assemble:
+          assembleMock as unknown as typeof import("@hyperframes/producer/distributed").assemble,
+      },
+      tmpRoot,
+      skipChromeResolution: true,
+    };
+    const planned = await handler(
+      {
+        Action: "plan",
+        ProjectS3Uri: "s3://bucket/project.tar.gz",
+        PlanOutputS3Prefix: "s3://bucket/renders/f/",
+        Config: { fps: 30, width: 640, height: 360, format: "mp4" },
+      },
+      deps,
+    );
+    if (!("PlanProtocol" in planned) || planned.PlanProtocol !== "v2")
+      throw new Error("expected v2");
+    const assemble = (chunkS3Uris: string[]) =>
+      handler(
+        {
+          Action: "assemble",
+          PlanV2ManifestS3Uri: planned.PlanV2ManifestS3Uri,
+          PlanV2ArtifactS3Prefix: planned.PlanV2ArtifactS3Prefix,
+          PlanHash: planned.PlanHash,
+          ChunkS3Uris: chunkS3Uris,
+          AudioS3Uri: null,
+          OutputS3Uri: "s3://bucket/renders/f/output.mp4",
+          Format: "mp4",
+        },
+        deps,
+      );
+    return { s3, assembleMock, assemble };
+  }
+
+  it.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)(
+    "stitches mp4 chunks inside S3 instead of joining them locally",
+    async () => {
+      const { s3, assembleMock, assemble } = await planStitched(2);
+      const chunks = [0, 1].map((index) => {
+        const path = join(makeTmpRoot(), "chunk.mp4");
+        const lavfi = ["testsrc2=size=64x48:rate=30:duration=1", "sine=duration=1"];
+        const muxed = spawnSync("ffmpeg", [
+          ...["-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", lavfi[0]!],
+          ...["-f", "lavfi", "-i", lavfi[1]!, "-c:v", "libx264", "-bf", "0", "-c:a", "aac"],
+          ...["-shortest", "-y", path],
+        ]);
+        if (muxed.status !== 0) throw new Error(String(muxed.stderr));
+        const uri = `s3://bucket/renders/f/chunks/000${index}.mp4`;
+        s3.objects.set(uri, readFileSync(path));
+        return uri;
+      });
+      const result = await assemble(chunks);
+      const output = s3.objects.get("s3://bucket/renders/f/output.mp4")!;
+      expect(output.toString("latin1", 4, 8)).toBe("ftyp");
+      expect(
+        output.toString("latin1", output.readUInt32BE(0) + 4, output.readUInt32BE(0) + 8),
+      ).toBe("moov");
+      expect(result).toMatchObject({ FramesEncoded: 60, FileSize: output.length });
+      expect(assembleMock).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects unknown plan protocol values", async () => {
     const tmpRoot = makeTmpRoot();
     const s3 = new FakeS3Client();
@@ -903,14 +1152,19 @@ async function makeMinimalPlanTar(): Promise<Buffer> {
   return rf(tarPath);
 }
 
-function makeMinimalV1PlanDir(dir: string, withAudio: boolean): void {
+function makeMinimalV1PlanDir(
+  dir: string,
+  withAudio: boolean,
+  options: { chunkCount?: number; chunksCarryAudio?: boolean } = {},
+): void {
+  const chunkCount = options.chunkCount ?? 1;
   mkdirSync(join(dir, "meta"), { recursive: true });
   mkdirSync(join(dir, "compiled"), { recursive: true });
   writeFileSync(join(dir, "compiled", "index.html"), "<html>aws v2 fixture</html>");
   const planJson = {
     planHash: "a".repeat(64),
-    chunkCount: 1,
-    totalFrames: 30,
+    chunkCount,
+    totalFrames: 30 * chunkCount,
     dimensions: { fpsNum: 30, fpsDen: 1, width: 640, height: 360, format: "mp4" },
     ffmpegVersion: "6.0",
     producerVersion: "test",
@@ -919,9 +1173,18 @@ function makeMinimalV1PlanDir(dir: string, withAudio: boolean): void {
   writeFileSync(join(dir, "plan.json"), JSON.stringify(planJson));
   writeFileSync(
     join(dir, "meta", "chunks.json"),
-    JSON.stringify([{ index: 0, startFrame: 0, endFrame: 30 }]),
+    JSON.stringify(
+      Array.from({ length: chunkCount }, (_, index) => ({
+        index,
+        startFrame: index * 30,
+        endFrame: (index + 1) * 30,
+      })),
+    ),
   );
-  writeFileSync(join(dir, "meta", "encoder.json"), "{}");
+  writeFileSync(
+    join(dir, "meta", "encoder.json"),
+    options.chunksCarryAudio ? JSON.stringify({ chunksCarryAudio: true }) : "{}",
+  );
   if (withAudio) writeFileSync(join(dir, "audio.m4a"), "AAC");
   planJson.planHash = recomputePlanHashFromPlanDir(dir);
   writeFileSync(join(dir, "plan.json"), JSON.stringify(planJson));

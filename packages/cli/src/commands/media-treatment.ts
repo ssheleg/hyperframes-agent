@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import {
   HF_COLOR_GRADING_ATTR,
   HF_COLOR_GRADING_HUE_CURVE_KEYS,
@@ -10,15 +10,15 @@ import {
   serializeHfColorGrading,
 } from "@hyperframes/core";
 import {
+  COLOR_GRADING_SOURCE_TAGS,
   isColorGradingVariableRef,
   validateColorGradingContract,
 } from "@hyperframes/parsers/color-grading-contract";
 import {
   cleanAssetUrl,
   isRemoteOrInlineUrl,
-  resolveExistingLocalAsset,
+  resolveAuthoredAssetFile,
 } from "@hyperframes/parsers/asset-resolution";
-import { rewriteAssetPath } from "@hyperframes/parsers/asset-paths";
 import {
   isHTMLElement,
   parseSourceDocument as parseMutableSource,
@@ -48,6 +48,7 @@ export function getMediaTreatmentCapabilityOverview() {
     version: capabilities.version,
     targetTags: capabilities.targetTags,
     colorSpace: capabilities.colorSpace,
+    example: capabilities.example,
     families: [
       family("correction", "Adjust", "Fix exposure, tonal balance, color casts, and saturation."),
       family(
@@ -138,7 +139,7 @@ export function getMediaTreatmentCapabilityDetail(id: string): unknown {
     };
   }
 
-  const adjustment = capabilities.adjustments.find(({ key }) => key === id);
+  const adjustment = capabilities.adjust.find(({ key }) => key === id);
   if (adjustment) {
     return {
       id,
@@ -150,7 +151,7 @@ export function getMediaTreatmentCapabilityDetail(id: string): unknown {
     };
   }
 
-  const finishing = capabilities.finishing.find(({ key }) => key === id);
+  const finishing = capabilities.details.find(({ key }) => key === id);
   if (finishing) {
     return {
       id,
@@ -194,7 +195,8 @@ export function getMediaTreatmentCapabilityDetail(id: string): unknown {
     correction: {
       id,
       description: "Fix exposure, tonal balance, color casts, and saturation.",
-      controls: capabilities.adjustments,
+      controls: capabilities.adjust,
+      apply: { adjust: capabilities.example.adjust },
     },
     wheels: {
       id,
@@ -273,7 +275,8 @@ export function getMediaTreatmentCapabilityDetail(id: string): unknown {
     finishing: {
       id,
       description: "Vignette and deterministic film-grain controls.",
-      controls: capabilities.finishing,
+      controls: capabilities.details,
+      apply: { details: capabilities.example.details },
     },
     palettes: {
       id,
@@ -342,9 +345,11 @@ interface ApplyMediaTreatmentOptions {
   clear?: boolean;
 }
 
+type GradingSourceTag = (typeof COLOR_GRADING_SOURCE_TAGS)[number];
+
 interface MediaTreatmentTargetResult {
   selectorIndex: number;
-  tag: "img" | "video";
+  tag: GradingSourceTag;
   changed: boolean;
   value: string | null;
   before: unknown;
@@ -441,7 +446,7 @@ function queryIncludingTemplates(root: Document | Element, selector: string): El
   return [];
 }
 
-type MediaTarget = { element: Element; selectorIndex: number; tag: "img" | "video" };
+type MediaTarget = { element: Element; selectorIndex: number; tag: GradingSourceTag };
 
 function selectMediaElements(
   document: Document,
@@ -461,9 +466,11 @@ function selectMediaElements(
   const indexes = selectorIndex === undefined ? matches.keys() : [selectorIndex];
   return Array.from(indexes, (index) => {
     const element = matches[index]!;
-    const tag = element.tagName.toLowerCase();
-    if (tag !== "img" && tag !== "video") {
-      throw new Error(`Color grading requires an <img> or <video>; selector matched <${tag}>`);
+    const tag = element.tagName.toLowerCase() as GradingSourceTag;
+    if (!COLOR_GRADING_SOURCE_TAGS.includes(tag)) {
+      throw new Error(
+        `Color grading requires a <video>, <img> or <canvas>; selector matched <${tag}>`,
+      );
     }
     if (!isHTMLElement(element)) {
       throw new Error(`Color grading requires an HTML <${tag}>; selector matched one inside <svg>`);
@@ -546,14 +553,10 @@ export function resolveMediaTreatmentSource(
       "Media analysis requires a local project asset; freeze remote media with media-use first",
     );
   }
-  const cleanSource = cleanAssetUrl(sourceUrl);
-  if (!cleanSource) throw new Error("Selected media has no analyzable local src");
-  const projectRelative = cleanSource.startsWith("/")
-    ? cleanSource
-    : rewriteAssetPath(compositionFile, cleanSource, (path) => existsSync(join(projectDir, path)));
-  const asset = resolveExistingLocalAsset(projectDir, projectRelative);
-  if (!asset) throw new Error(`Media file not found: ${source}`);
-  return asset.resolved;
+  if (!cleanAssetUrl(sourceUrl)) throw new Error("Selected media has no analyzable local src");
+  const file = resolveAuthoredAssetFile(projectDir, compositionFile, sourceUrl);
+  if (!file) throw new Error(`Media file not found: ${source}`);
+  return file;
 }
 
 function parseGrading(

@@ -317,6 +317,30 @@ describe("describeProject", () => {
     expect(row!.mediaStart).toBe(0.2);
   });
 
+  it("probes a nested scene's media where preview loads it: a root asset with a percent-encoded name", async () => {
+    const probed: string[] = [];
+    const { rows } = await rowsOf(
+      `<div data-composition-id="m" data-duration="5">
+        <div id="scene" data-composition-src="compositions/bed.html" data-start="0" data-duration="5"></div>
+      </div>`,
+      false,
+      (root) => {
+        mkdirSync(join(root, "assets"));
+        copyFileSync(REAL_AUDIO, join(root, "assets", "music bed.mp3"));
+        writeFileSync(
+          join(root, "compositions", "bed.html"),
+          `<template><div data-composition-id="bed"><audio id="bed" src="assets/music%20bed.mp3" data-start="0"></audio></div></template>`,
+        );
+      },
+      async (file, tag) => {
+        probed.push(`${tag}:${basename(file)}`);
+        return POP_SECONDS();
+      },
+    );
+    expect(probed).toEqual(["audio:music bed.mp3"]);
+    expect(rows.find((r) => r.id === "bed")).toMatchObject({ durationSource: "media" });
+  });
+
   it("takes a media leaf's duration from the probe when none is authored", async () => {
     const probed: string[] = [];
     const {

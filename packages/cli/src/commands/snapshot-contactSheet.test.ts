@@ -152,7 +152,7 @@ describe("snapshot contact sheet failures", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("keeps the captured frames when another process holds history", async () => {
+  it("keeps and records the captured frames when another process holds history", async () => {
     const args = {
       rawArgs: [
         project,
@@ -181,12 +181,13 @@ describe("snapshot contact sheet failures", () => {
         expect(readFileSync(frame)).toEqual(Buffer.from("replaced PNG"));
       }
       const after = JSON.parse(readFileSync(statePath, "utf8"));
-      expect(after.snapshots.unversioned).toEqual([]);
-      expect(after.snapshots.latest).toBeNull();
-      expect(console.error).not.toHaveBeenCalled();
-      expect(console.warn).toHaveBeenCalledWith(
-        expect.stringContaining("Snapshots were not recorded"),
+      expect(after.snapshots.unversioned.map((record: { image: string }) => record.image)).toEqual(
+        ["0.5", "1"].map((time, index) =>
+          join(project, "snapshots", `frame-0${index}-at-${time}s.png`),
+        ),
       );
+      expect(console.error).not.toHaveBeenCalled();
+      expect(console.warn).not.toHaveBeenCalledWith(expect.stringContaining("not recorded"));
     } finally {
       historyDeps.ownerWaitMs = previousWait;
       await held.close();

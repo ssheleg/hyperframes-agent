@@ -110,7 +110,11 @@ export default defineCommand({
     profile: { type: "string", description: "AWS profile name (default: AWS_PROFILE env)" },
 
     // deploy
-    concurrency: { type: "string", description: "Lambda reserved concurrency (default: 8)" },
+    concurrency: {
+      type: "string",
+      description:
+        "Lambda reserved concurrency, or none to remove it (default: keep the stack's; a new stack reserves none and each render runs up to 90% of the account's unreserved concurrency)",
+    },
     "chrome-source": {
       type: "string",
       description: "sparticuz | chrome-headless-shell (default: sparticuz)",
@@ -253,11 +257,12 @@ export default defineCommand({
     switch (subcommand) {
       case "deploy": {
         const { runDeploy } = await import("./lambda/deploy.js");
+        const { parseReservedConcurrency } = await import("./lambda/sam.js");
         await runDeploy({
           stackName,
           region: args.region as string | undefined,
           awsProfile: args.profile as string | undefined,
-          reservedConcurrency: parsePositiveInt(args.concurrency, "--concurrency"),
+          reservedConcurrency: parseReservedConcurrency(args.concurrency),
           chromeSource: parseChromeSource(args["chrome-source"]),
           lambdaMemoryMb: parsePositiveInt(args.memory, "--memory"),
           skipBuild: Boolean(args["skip-build"]),

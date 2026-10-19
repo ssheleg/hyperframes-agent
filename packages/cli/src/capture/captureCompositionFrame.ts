@@ -18,7 +18,7 @@ import {
 import { windowsChromeCrashRemediation } from "../browser/windowsCrash.js";
 import { resolveCompositionViewportFromHtml } from "../utils/compositionViewport.js";
 import { normalizeErrorMessage } from "../utils/errorMessage.js";
-import { resolveDiagnosticNavigationTimeoutMs } from "../utils/renderArgs.js";
+import { pageNavigationTimeoutMs } from "../utils/renderArgs.js";
 import { gotoWhenSent } from "./navigateForCapture.js";
 
 const SHADER_TRANSITIONS_TIMEOUT_MS = 90_000;
@@ -42,6 +42,7 @@ export const DENSE_GEOMETRY_SEEK_OPTIONS = {
   waitForFontsMs: 0,
   settleMs: 0,
   waitForVideoFrames: false,
+  skipWebglDraws: true,
 } as const;
 
 export interface SeekCompositionTimelineOptions {
@@ -52,6 +53,8 @@ export interface SeekCompositionTimelineOptions {
   waitForFontsMs?: number;
   settleMs?: number;
   waitForVideoFrames?: boolean;
+  // Box-only reads: software GL spends about a second per frame on draws nothing here looks at.
+  skipWebglDraws?: boolean;
 }
 
 type SeekBarrierOptions = { videoFrames: boolean };
@@ -61,7 +64,12 @@ type CompositionPageFunction =
   | (() => unknown)
   | ((value: number) => unknown)
   | ((barrier: SeekBarrierOptions) => unknown)
-  | ((value: number, fallbackToBridgeAndTimelines: boolean, exactTime: boolean) => unknown);
+  | ((
+      value: number,
+      fallbackToBridgeAndTimelines: boolean,
+      exactTime: boolean,
+      skipWebglDraws: boolean,
+    ) => unknown);
 
 export interface CompositionEvaluationPage {
   evaluate(
@@ -69,6 +77,7 @@ export interface CompositionEvaluationPage {
     value?: number | SeekBarrierOptions,
     fallbackToBridgeAndTimelines?: boolean,
     exactTime?: boolean,
+    skipWebglDraws?: boolean,
   ): Promise<unknown>;
 }
 
@@ -85,8 +94,7 @@ export interface SettledCompositionPage {
 }
 
 export interface OpenSettledCompositionPageOptions {
-  // Separate from the post-navigation render-ready budget. Diagnostic callers
-  // without their own navigation knob keep the historical 10-second minimum.
+  // Separate from the post-navigation render-ready budget; can only lengthen render's page-load budget.
   navigationTimeoutMs?: number;
   renderReadyTimeoutMs: number;
   renderReadyWarningSuffix: string;
@@ -272,11 +280,7 @@ export async function openSettledCompositionPage(
     await page.setViewport(viewport);
     if (answer) await answerPageInProcess(page, url, answer);
     await options.beforeNavigate?.(page);
-    await gotoWhenSent(
-      page,
-      url,
-      resolveDiagnosticNavigationTimeoutMs(process.env, options.navigationTimeoutMs),
-    );
+    await gotoWhenSent(page, url, pageNavigationTimeoutMs(options.navigationTimeoutMs));
     await assertWebGpuAdapterAvailable(page, requiresWebGpu, softwareWebGpu);
     const renderReadyTimedOut = !(await waitForCompositionSettle(page, options));
     return { browser: chromeBrowser, page, renderReadyTimedOut };
@@ -297,7 +301,7 @@ export async function seekCompositionTimeline(
   await page.evaluate(
     // Serialized into the page; the seek-target cascade must stay one function.
     // fallow-ignore-next-line complexity
-    (t: number, fallbackToBridgeAndTimelines: boolean, exactTime: boolean) => {
+    (t: number, fallbackToBridgeAndTimelines: boolean, exactTime: boolean, skipDraws: boolean) => {
       const getProperty = (target: unknown, key: string): unknown => {
         if ((typeof target !== "object" || target === null) && typeof target !== "function") {
           return undefined;
@@ -318,33 +322,85 @@ export async function seekCompositionTimeline(
       const playerSeek = getProperty(player, "seek");
       const hf = Reflect.get(window, "__hf");
       const bridgeSeek = getProperty(hf, "seek");
-
-      // Prefer renderSeek because it also runs the runtime's data-start/data-duration
-      // visibility sync; raw timeline seeks leave off-window clips visible to audits.
-      if (call(renderSeek, player, exactTime ? [safe, { exact: true }] : [safe])) {
-        // Preferred runtime target handled the seek.
-      } else if (fallbackToBridgeAndTimelines && call(bridgeSeek, hf, [safe])) {
-        // Producer bridge handled the seek.
-      } else if (call(playerSeek, player, [safe])) {
-        // Legacy player target handled the seek.
-      } else if (fallbackToBridgeAndTimelines) {
-        const timelines = Reflect.get(window, "__timelines");
-        if (typeof timelines === "object" && timelines !== null) {
-          for (const key of Object.keys(timelines)) {
-            const timeline = Reflect.get(timelines, key);
-            call(getProperty(timeline, "pause"), timeline, []);
-            call(getProperty(timeline, "seek"), timeline, [safe]);
-          }
-        }
-      }
-
       const gsap = Reflect.get(window, "gsap");
       const ticker = getProperty(gsap, "ticker");
-      call(getProperty(ticker, "tick"), ticker, []);
+
+      // fallow-ignore-next-line complexity
+      const seekTo = (time: number): void => {
+        // Prefer renderSeek because it also runs the runtime's data-start/data-duration
+        // visibility sync; raw timeline seeks leave off-window clips visible to audits.
+        if (call(renderSeek, player, exactTime ? [time, { exact: true }] : [time])) {
+          // Preferred runtime target handled the seek.
+        } else if (fallbackToBridgeAndTimelines && call(bridgeSeek, hf, [time])) {
+          // Producer bridge handled the seek.
+        } else if (call(playerSeek, player, [time])) {
+          // Legacy player target handled the seek.
+        } else if (fallbackToBridgeAndTimelines) {
+          const timelines = Reflect.get(window, "__timelines");
+          if (typeof timelines === "object" && timelines !== null) {
+            for (const key of Object.keys(timelines)) {
+              const timeline = Reflect.get(timelines, key);
+              call(getProperty(timeline, "pause"), timeline, []);
+              call(getProperty(timeline, "seek"), timeline, [time]);
+            }
+          }
+        }
+        call(getProperty(ticker, "tick"), ticker, []);
+      };
+
+      const gateSlot = Symbol.for("hyperframes.webglDrawGate");
+      let gate = Reflect.get(window, gateSlot) as { skip: boolean; skipped: boolean } | undefined;
+      if (skipDraws && !gate) {
+        const installed = { skip: false, skipped: false };
+        for (const name of ["WebGLRenderingContext", "WebGL2RenderingContext"]) {
+          const proto = getProperty(Reflect.get(window, name), "prototype");
+          if (!proto) continue;
+          for (const method of [
+            "clear",
+            "drawArrays",
+            "drawElements",
+            "drawArraysInstanced",
+            "drawElementsInstanced",
+            "drawRangeElements",
+            "blitFramebuffer",
+          ]) {
+            const draw = getProperty(proto, method);
+            if (typeof draw !== "function") continue;
+            Reflect.set(proto, method, function (this: unknown, ...args: unknown[]) {
+              if (!installed.skip) return Reflect.apply(draw, this, args);
+              installed.skipped = true;
+              return undefined;
+            });
+          }
+        }
+        Reflect.set(window, gateSlot, installed);
+        gate = installed;
+      }
+      const seekWithoutDraws = (time: number): void => {
+        if (!gate) return seekTo(time);
+        gate.skip = true;
+        try {
+          seekTo(time);
+        } finally {
+          gate.skip = false;
+        }
+      };
+
+      if (skipDraws) {
+        seekWithoutDraws(safe);
+        return;
+      }
+      // A skipped draw left the canvas stale and a same-time seek redraws nothing: step off first.
+      if (gate?.skipped) {
+        seekWithoutDraws(safe >= 0.001 ? safe - 0.001 : safe + 0.001);
+        gate.skipped = false;
+      }
+      seekTo(safe);
     },
     timeSeconds,
     options.fallbackToBridgeAndTimelines === true,
     options.exactTime === true,
+    options.skipWebglDraws === true,
   );
 
   await page.evaluate(

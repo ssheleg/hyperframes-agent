@@ -64,6 +64,7 @@ Set `autoplay muted` only when playback should start without a user gesture.
 | `assets-loading-ui` | `player` or `none` | `player` | `none` hides the loading-assets card; asset events still fire |
 | `low-power-idle` | boolean | false | While paused, check in once a second, not every 80 ms (many-player pages) |
 | `disable-click-to-play` | boolean | false | A click on the player no longer plays or pauses, so the page can handle it |
+| `no-load-timeout` | boolean | false | A slow load never fails at 8 s, so the page owns the deadline; script and runtime errors still fail at once |
 | `range-start` | number | — | Film second where playback starts, loops back to and parks when paused (`rangeStart`) |
 | `range-end` | number | — | Film second the range ends before: it stops or loops on the frame before it (`rangeEnd`) |
 

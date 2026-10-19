@@ -16,7 +16,7 @@ import { failCommand } from "../../utils/commandResult.js";
  *      `project: {type:"asset_id", asset_id}` shape.
  *   5. If `--no-wait`: print the `render_id` and exit immediately.
  *      Otherwise poll `GET /v3/hyperframes/renders/{id}` every
- *      `--poll-interval` (default 10s, max 60min). `--callback-url`
+ *      `--poll-interval` (default 2s, max 60min). `--callback-url`
  *      can be combined with either mode: the webhook always fires when
  *      the server-side render terminates, independent of whether the
  *      CLI is still polling.

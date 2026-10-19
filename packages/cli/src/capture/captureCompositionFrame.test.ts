@@ -107,7 +107,7 @@ describe("seekCompositionTimeline", () => {
 
     expect(waitForFunction).not.toHaveBeenCalled();
     expect(evaluate).toHaveBeenCalledTimes(4);
-    expect(evaluate).toHaveBeenNthCalledWith(1, expect.any(Function), 1.25, false, false);
+    expect(evaluate).toHaveBeenNthCalledWith(1, expect.any(Function), 1.25, false, false, false);
     expect(evaluate).toHaveBeenNthCalledWith(2, expect.any(Function), { videoFrames: true });
     expect(evaluate.mock.calls[2]?.[0]).toContain("window.setTimeout(finish, 100)");
     // Post-seek font settle: a seek can reveal glyphs whose unicode-range
@@ -212,7 +212,7 @@ describe("seekCompositionTimeline", () => {
 
     expect(waitForFunction).toHaveBeenCalledWith(expect.any(Function), { timeout: 500 });
     expect(evaluate).toHaveBeenCalledTimes(2);
-    expect(evaluate).toHaveBeenCalledWith(expect.any(Function), 3, true, false);
+    expect(evaluate).toHaveBeenCalledWith(expect.any(Function), 3, true, false, false);
   });
 
   it("supports layout's ordered double-frame, bounded font, and sleep settles", async () => {
@@ -229,7 +229,7 @@ describe("seekCompositionTimeline", () => {
     await pending;
 
     expect(evaluate).toHaveBeenCalledTimes(4);
-    expect(evaluate).toHaveBeenNthCalledWith(1, expect.any(Function), 4, true, false);
+    expect(evaluate).toHaveBeenNthCalledWith(1, expect.any(Function), 4, true, false, false);
     expect(evaluate).toHaveBeenNthCalledWith(2, expect.any(Function), { videoFrames: true });
     expect(evaluate).toHaveBeenNthCalledWith(3, expect.any(Function));
     expect(evaluate).toHaveBeenNthCalledWith(4, expect.any(Function), 500);

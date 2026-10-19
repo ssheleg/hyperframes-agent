@@ -58,7 +58,10 @@ describe("a browser inside an agent's macOS seatbelt", () => {
     const { puppeteer, launches } = recordingPuppeteer([]);
     await launchManagedBrowser(puppeteer, { args: ["--headless"] });
     expect(launches).toHaveLength(1);
-    expect(launches[0]).toMatchObject({ pipe: true, args: ["--headless", "--single-process"] });
+    expect(launches[0]).toMatchObject({
+      pipe: true,
+      args: ["--headless", "--single-process", "--disable-gpu-compositing"],
+    });
   });
 
   it("relaunches as one process over a pipe when an unnamed sandbox refuses the mach service", async () => {
@@ -66,6 +69,19 @@ describe("a browser inside an agent's macOS seatbelt", () => {
     const { puppeteer, launches } = recordingPuppeteer([SEATBELT_LAUNCH_FAILURE]);
     await expect(launchManagedBrowser(puppeteer, { args: ["--headless"] })).resolves.toBeDefined();
     expect(launches.map((options) => options.pipe ?? false)).toEqual([false, true]);
-    expect(launches[1]!.args).toEqual(["--headless", "--single-process"]);
+    expect(launches[1]!.args).toEqual([
+      "--headless",
+      "--single-process",
+      "--disable-gpu-compositing",
+    ]);
+  });
+});
+
+describe("a browser launch that never settles", () => {
+  it("gives up at its timeout, as when Chrome dies while puppeteer waits for its first targets", async () => {
+    const stuck = { launch: () => new Promise<Browser>(() => {}) } as unknown as PuppeteerNode;
+    await expect(launchManagedBrowser(stuck, { timeout: 50 })).rejects.toThrow(
+      "The browser did not finish starting within 50 ms.",
+    );
   });
 });

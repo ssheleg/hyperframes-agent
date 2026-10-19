@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { LaunchOptions, PuppeteerNode } from "puppeteer-core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const probe = vi.hoisted(() => ({ options: [] as LaunchOptions[] }));
 
@@ -30,9 +30,25 @@ describe("the GPU probe where nothing may listen", () => {
     await resolveManagedGpuMode("auto", "/chrome");
     expect(probe.options[0]).toMatchObject({
       pipe: true,
-      args: ["--headless", "--single-process"],
+      args: ["--headless", "--single-process", "--disable-gpu-compositing"],
     });
     expect(probe.options[1]!.pipe).toBeUndefined();
     expect(probe.options[1]!.args).toEqual(["--headless"]);
+  });
+});
+
+describe("the GPU probe inside an agent's macOS seatbelt", () => {
+  const platform = process.platform;
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    Object.defineProperty(process, "platform", { value: platform });
+  });
+
+  it("answers software without starting a Chrome the seatbelt would crash", async () => {
+    vi.stubEnv("CODEX_SANDBOX", "seatbelt");
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    probe.options.length = 0;
+    await expect(resolveManagedGpuMode("auto", "/chrome")).resolves.toBe("software");
+    expect(probe.options).toEqual([]);
   });
 });

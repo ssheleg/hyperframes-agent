@@ -4,7 +4,7 @@
  *
  * The probe interval polls every 200 ms until one of:
  *   - An adapter or the document resolves with a positive duration, or
- *   - 40 attempts (~8 s) expire without a result.
+ *   - 40 attempts (~8 s) expire without a result, unless the host owns the deadline.
  *
  * The `CompositionProbe` class owns the interval; the caller must call
  * `stop()` on disconnect or src change.
@@ -38,6 +38,7 @@ export interface ProbeCallbacks {
   /** Called when runtime is successfully injected (informational). */
   onRuntimeInjected?: () => void;
   resolveRuntimeUrl?: () => string;
+  hostOwnsDeadline?: () => boolean;
 }
 
 /**
@@ -121,20 +122,20 @@ export class CompositionProbe {
           };
         }
       }
+      outcome ??= this._deadlineOutcome(attempts);
       if (outcome) {
         this.stop();
         if (outcome.kind === "error") {
           this._failure = { document: this._iframe.contentDocument };
           this._callbacks.onError(outcome.message);
         } else this._callbacks.onReady(outcome.result);
-        return;
-      }
-      if (attempts >= 40) {
-        this.stop();
-        this._failure = { document: this._iframe.contentDocument };
-        this._callbacks.onError("Composition timeline not found after 8s");
       }
     }, 200);
+  }
+
+  private _deadlineOutcome(attempts: number): ProbeOutcome {
+    if (attempts < 40 || this._callbacks.hostOwnsDeadline?.()) return null;
+    return { kind: "error", message: "Composition timeline not found after 8s" };
   }
 
   private _poll(attempts: number): ProbeOutcome {

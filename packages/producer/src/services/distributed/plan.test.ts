@@ -17,10 +17,23 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyConcreteGpuScreenshotClamp, buildChromeArgs } from "@hyperframes/engine";
+import {
+  applyConcreteGpuScreenshotClamp,
+  buildChromeArgs,
+  FFMPEG_PATH_ENV,
+  getFfmpegBinary,
+} from "@hyperframes/engine";
 import { recomputePlanHashFromPlanDir } from "../render/stages/freezePlan.js";
 import { defaultLogger } from "../../logger.js";
 import { RenderQualityError } from "../renderOrchestrator.js";
@@ -257,17 +270,20 @@ describe("resolveMaxParallelChunks", () => {
     expect(resolveMaxParallelChunks(worker, 3600, MP_1080P, log)).toBeLessThan(64);
   });
 
-  it("explicit chunking flags win and no worker inputs keeps the old default", () => {
+  it("explicit maxParallelChunks wins and no worker inputs keeps the old default", () => {
     const worker = { workerTimeoutSeconds: LAMBDA_LIMIT, workerConcurrency: 200 };
     const args = [THIRTY_MIN_30FPS, MP_1080P] as const;
     expect(resolveMaxParallelChunks({ ...worker, maxParallelChunks: 4 }, ...args)).toBe(4);
-    expect(resolveMaxParallelChunks({ ...worker, chunkSize: 240 }, ...args)).toBe(
-      DEFAULT_MAX_PARALLEL_CHUNKS,
-    );
-    expect(resolveMaxParallelChunks({ ...worker, targetChunkFrames: 300 }, ...args)).toBe(
-      DEFAULT_MAX_PARALLEL_CHUNKS,
-    );
     expect(resolveMaxParallelChunks({}, ...args)).toBe(DEFAULT_MAX_PARALLEL_CHUNKS);
+    expect(resolveMaxParallelChunks({ chunkSize: 240 }, ...args)).toBe(DEFAULT_MAX_PARALLEL_CHUNKS);
+  });
+
+  it("caps pinned chunking at one wave across the worker concurrency", () => {
+    const worker = { workerTimeoutSeconds: LAMBDA_LIMIT, workerConcurrency: 900 };
+    const maxParallel = resolveMaxParallelChunks({ ...worker, chunkSize: 30 }, 1800, MP_1080P);
+    expect(resolveChunkPlan(1800, 30, maxParallel).chunkCount).toBe(60);
+    const args = [THIRTY_MIN_30FPS, MP_1080P] as const;
+    expect(resolveMaxParallelChunks({ ...worker, targetChunkFrames: 300 }, ...args)).toBe(256);
   });
 
   it("fails fast with a typed error when even 256 chunks cannot fit the limit", () => {
@@ -889,7 +905,7 @@ describe("plan() — golden planDir + planHash determinism", () => {
 });
 
 describe.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("stitched mp4 plans", () => {
-  function audioProject(name: string): string {
+  function audioProject(name: string, amplitude = 0.99, duration = 1): string {
     const dir = join(runRoot, name);
     mkdirSync(dir, { recursive: true });
     const tone = spawnSync("ffmpeg", [
@@ -899,7 +915,7 @@ describe.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("stitched mp4 pl
       "-f",
       "lavfi",
       "-i",
-      "aevalsrc=0.99*sin(2*PI*440*t):s=48000:d=0.6",
+      `aevalsrc=${amplitude}*sin(2*PI*440*t):s=48000:d=0.6`,
       "-c:a",
       "pcm_s16le",
       join(dir, "tone.wav"),
@@ -908,7 +924,7 @@ describe.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("stitched mp4 pl
     writeFileSync(
       join(dir, "index.html"),
       `<!doctype html><html><head><meta charset="utf-8"></head><body>
-  <div data-composition-id="root" data-width="320" data-height="240" data-duration="1">
+  <div data-composition-id="root" data-width="320" data-height="240" data-duration="${duration}">
     <audio data-composition-audio src="tone.wav"></audio>
   </div></body></html>`,
     );
@@ -949,6 +965,54 @@ describe.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)("stitched mp4 pl
     });
     const cfrEncoder = JSON.parse(readFileSync(join(withCfr, "meta", "encoder.json"), "utf-8"));
     expect(cfrEncoder.chunksCarryAudio).toBeUndefined();
+  }, 60_000);
+
+  it("encodes the audio once, at the frames' exact length", async () => {
+    // 1.01 s at 30 fps is 31 frames: 49,600 samples, 48.4375 AAC frames of 1,024.
+    const project = audioProject("project-one-encode", 0.3, 1.01);
+    const shimDir = join(runRoot, "ffmpeg-shim");
+    mkdirSync(shimDir, { recursive: true });
+    const shim = join(shimDir, "ffmpeg");
+    const calls = join(shimDir, "calls.txt");
+    writeFileSync(shim, `#!/bin/sh\necho "$*" >> "${calls}"\nexec "${getFfmpegBinary()}" "$@"\n`);
+    chmodSync(shim, 0o755);
+    const planDir = join(runRoot, "plan-one-encode");
+    const previous = process.env[FFMPEG_PATH_ENV];
+    process.env[FFMPEG_PATH_ENV] = shim;
+    try {
+      await buildLocalExecutionPlan(
+        project,
+        { fps: 30, width: 320, height: 240, format: "mp4" },
+        planDir,
+        { chunksCarryAudio: true },
+      );
+    } finally {
+      if (previous === undefined) delete process.env[FFMPEG_PATH_ENV];
+      else process.env[FFMPEG_PATH_ENV] = previous;
+    }
+    const aacEncodes = readFileSync(calls, "utf-8")
+      .split("\n")
+      .filter((line) => / aac -b:a /.test(line));
+    expect(aacEncodes).toHaveLength(1);
+    const planAudio = join(planDir, "audio.m4a");
+    const shown = spawnSync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=duration_ts",
+        "-of",
+        "csv=p=0",
+        "--",
+        planAudio,
+      ],
+      { encoding: "utf-8" },
+    );
+    // The edit list counts in ms, so 49,600 samples (1.0333 s) show as 1.033 s.
+    expect(Math.abs(Number(shown.stdout) - 49_600)).toBeLessThan(48);
   }, 60_000);
 });
 

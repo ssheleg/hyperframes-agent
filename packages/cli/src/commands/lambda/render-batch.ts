@@ -39,6 +39,7 @@ import {
 } from "../../utils/variables.js";
 import { normalizeErrorMessage } from "../../utils/errorMessage.js";
 import { warnOnDimensionMismatch } from "./_dimensions.js";
+import { runWithConcurrencyLimit } from "../../utils/concurrency.js";
 import { requireStack } from "./state.js";
 
 // Dynamic-import the SDK so tsup keeps it out of the static-import head of
@@ -450,39 +451,4 @@ export function parseBatchFile(path: string): Array<{ entry: BatchEntry; lineNum
     });
   }
   return out;
-}
-
-/**
- * Run `worker` against every input with at most `limit` concurrent
- * invocations. Preserves input order in the returned array; each output
- * is positional with its input.
- *
- * Implementation: index-cursor + N concurrent producers each picking the
- * next index until the input is drained. Uses `Promise.all` and
- * propagates the first worker rejection — partial-failure isolation is
- * the caller's responsibility (in this file, `startEntry` wraps the
- * per-entry render in try/catch so a single failure surfaces in the
- * manifest rather than aborting the batch).
- *
- * Exported so unit tests can pin the concurrency cap independently of
- * the AWS-dependent fan-out path.
- */
-export async function runWithConcurrencyLimit<T, R>(
-  inputs: readonly T[],
-  limit: number,
-  worker: (input: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  if (limit < 1) throw new Error(`runWithConcurrencyLimit: limit must be ≥ 1, got ${limit}`);
-  const results = new Array<R>(inputs.length);
-  let cursor = 0;
-  const workerCount = Math.min(limit, inputs.length);
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (cursor < inputs.length) {
-        const idx = cursor++;
-        results[idx] = await worker(inputs[idx]!, idx);
-      }
-    }),
-  );
-  return results;
 }

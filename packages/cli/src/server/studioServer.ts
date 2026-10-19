@@ -363,6 +363,7 @@ export interface StudioServerOptions {
   browserGpuMode?: BrowserGpuMode;
   /** Where project histories are kept; defaults to ~/.cache/hyperframes/history. */
   historyRoot?: string;
+  origin?: () => string | undefined;
 }
 
 export interface StudioServer {
@@ -453,11 +454,16 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
   // Opened on first use, so a server that never serves Studio's history never writes one. A failed open stays off
   // for this run; one another process was holding is tried again on the next request, which no write waits for.
   let ownerWaitMs: number | undefined;
+  const historyUrl = () => {
+    const origin = options.origin?.();
+    return origin && `${origin}/api/projects/${encodeURIComponent(projectId)}/history`;
+  };
   const histories = historyCache(() =>
     openProjectHistory({
       projectDir,
       historyRoot: options.historyRoot ?? DEFAULT_HISTORY_ROOT,
       ownerWaitMs,
+      ownerUrl: historyUrl(),
     })
       .then((history) => {
         ownerWaitMs = undefined;

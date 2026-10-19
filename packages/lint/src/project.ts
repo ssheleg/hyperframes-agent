@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { rewriteAssetPath } from "@hyperframes/parsers/asset-paths";
+import { spansOverlap } from "@hyperframes/parsers/time-spans";
 import { checkSubCompositionUsability } from "@hyperframes/parsers/sub-composition-validity";
 import { parseHTML } from "linkedom";
 import {
@@ -584,7 +585,7 @@ function lintDuplicateAudioTracks(htmlSources: HtmlSource[]): HyperframeLintFind
       const a = tracks[i]!;
       const b = tracks[j]!;
       if (a.trackIndex !== b.trackIndex) continue;
-      if (a.start < b.end && b.start < a.end) {
+      if (spansOverlap(a.start, a.end, b.start, b.end)) {
         findings.push({
           code: "duplicate_audio_track",
           severity: "warning",

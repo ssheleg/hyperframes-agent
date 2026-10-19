@@ -75,13 +75,27 @@ export function locateSamTemplate(repoRoot: string): string {
   return candidate;
 }
 
+/** `--concurrency`: a positive integer, or `none` (-1, the template's "unreserved"). */
+export function parseReservedConcurrency(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === "") return undefined;
+  if (raw === "none") return -1;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(
+      `[lambda] --concurrency must be a positive integer or "none"; got ${String(raw)}`,
+    );
+  }
+  return n;
+}
+
 /** Run `sam deploy` non-interactively. Returns when SAM exits 0; throws on non-zero. */
 export function samDeploy(opts: DeployOptions): void {
   assertSamAvailable();
-  const paramOverrides = [
-    `ChromeSource=${opts.chromeSource ?? "sparticuz"}`,
-    `ReservedConcurrency=${opts.reservedConcurrency ?? -1}`,
-  ];
+  const paramOverrides = [`ChromeSource=${opts.chromeSource ?? "sparticuz"}`];
+  // Omitted, SAM sends UsePreviousValue: a redeploy keeps the stack's reservation, a new stack gets -1.
+  if (opts.reservedConcurrency !== undefined) {
+    paramOverrides.push(`ReservedConcurrency=${opts.reservedConcurrency}`);
+  }
   if (opts.lambdaMemoryMb !== undefined) {
     paramOverrides.push(`LambdaMemoryMb=${opts.lambdaMemoryMb}`);
   }
@@ -140,6 +154,7 @@ export interface StackOutputBag {
   bucketName: string;
   functionName: string;
   stateMachineArn: string;
+  reservedConcurrency?: number;
 }
 
 /**
@@ -160,7 +175,7 @@ export function fetchStackOutputs(opts: {
     "--region",
     opts.region,
     "--query",
-    "Stacks[0].Outputs",
+    "Stacks[0]",
     "--output",
     "json",
   ];
@@ -168,8 +183,14 @@ export function fetchStackOutputs(opts: {
     args.unshift("--profile", opts.awsProfile);
   }
   const out = execFileSync("aws", args, { encoding: "utf-8" });
-  const parsed = JSON.parse(out) as { OutputKey: string; OutputValue: string }[];
-  const byKey = new Map(parsed.map((o) => [o.OutputKey, o.OutputValue]));
+  const stack = JSON.parse(out) as {
+    Outputs?: { OutputKey: string; OutputValue: string }[];
+    Parameters?: { ParameterKey: string; ParameterValue: string }[];
+  };
+  const byKey = new Map((stack.Outputs ?? []).map((o) => [o.OutputKey, o.OutputValue]));
+  const reserved = Number(
+    stack.Parameters?.find((p) => p.ParameterKey === "ReservedConcurrency")?.ParameterValue,
+  );
   const bucketName = byKey.get("RenderBucketName");
   const functionName = byKey.get("RenderFunctionArn");
   const stateMachineArn = byKey.get("RenderStateMachineArn");
@@ -185,5 +206,6 @@ export function fetchStackOutputs(opts: {
     // for cost math + CloudWatch lookups.
     functionName: functionName.split(":").pop() ?? functionName,
     stateMachineArn,
+    reservedConcurrency: reserved > 0 ? reserved : undefined,
   };
 }

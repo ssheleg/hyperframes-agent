@@ -206,6 +206,7 @@ class HyperframesPlayer extends HTMLElement {
 
     this.probe = new CompositionProbe(this.iframe, {
       resolveRuntimeUrl: () => runtimeSrcFromElement(this),
+      hostOwnsDeadline: () => this.hasAttribute("no-load-timeout"),
       onReady: (result) => this._onProbeReady(result),
       onError: (message) => this._emit(new CustomEvent("error", { detail: { message } })),
     });

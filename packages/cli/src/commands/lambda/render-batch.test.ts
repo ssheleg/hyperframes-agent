@@ -6,9 +6,9 @@ import { CliRuntimeError } from "../../utils/commandResult.js";
 import {
   buildLambdaBatchRenderConfig,
   parseBatchFile,
-  runWithConcurrencyLimit,
   type RenderBatchArgs,
 } from "./render-batch.js";
+import { runWithConcurrencyLimit } from "../../utils/concurrency.js";
 
 let tmpDir: string;
 

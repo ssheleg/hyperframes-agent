@@ -1653,6 +1653,101 @@ describe.skipIf(!HAS_FFMPEG)("video frame extraction format", () => {
     60_000,
   );
 
+  it("samples a 29.97 fps source with millisecond timestamps at 30 fps without skipping a frame", async () => {
+    // Each frame writes its index as eight black or white blocks; the mp4 keeps 1/1000 s ticks.
+    const fixture = join(FIXTURE_DIR, "ntsc-ms-ticks.mp4");
+    const synth = await runFfmpeg([
+      ...["-y", "-v", "error", "-f", "lavfi", "-i"],
+      "color=c=black:s=64x8:r=30000/1001:d=2,format=yuv420p,geq=lum='if(mod(floor(N/pow(2\\,floor(X/8)))\\,2)\\,235\\,16)':cb=128:cr=128",
+      ...["-c:v", "libx264", "-qp", "0", "-g", "30", "-bf", "0", "-video_track_timescale", "1000"],
+      fixture,
+    ]);
+    if (!synth.success) throw new Error(`fixture synthesis failed: ${synth.stderr.slice(-400)}`);
+
+    const result = await extractVideoFramesRange(fixture, "ntsc-ms-ticks", 0, 1.5, {
+      fps: 30,
+      outputDir: join(FIXTURE_DIR, "out-ntsc-ms"),
+      format: "png",
+    });
+    const indexOf = (file: string): number => {
+      const row = spawnSync("ffmpeg", [
+        "-v",
+        "error",
+        "-i",
+        file,
+        "-vf",
+        "format=gray,crop=64:1:0:4",
+        "-f",
+        "rawvideo",
+        "-",
+      ]).stdout;
+      return [...Array(8).keys()].reduce(
+        (n, bit) => n + (row[bit * 8 + 4]! > 128 ? 1 << bit : 0),
+        0,
+      );
+    };
+    const shown = [...result.framePaths.keys()]
+      .sort((a, b) => a - b)
+      .map((i) => indexOf(result.framePaths.get(i)!));
+    const steps = shown.slice(1).map((n, i) => n - shown[i]!);
+
+    expect(shown.length).toBeGreaterThanOrEqual(44);
+    expect(
+      steps.filter((step) => step > 1),
+      `source frames ${shown.join(",")}`,
+    ).toEqual([]);
+    expect(steps.filter((step) => step === 0).length).toBeLessThanOrEqual(1);
+  }, 60_000);
+
+  it("samples a millisecond-tick 29.97 fps source the same in segments as in one pass", async () => {
+    const fixture = join(FIXTURE_DIR, "ntsc-ms-ticks-8s.mp4");
+    const synth = await runFfmpeg([
+      ...["-y", "-v", "error", "-f", "lavfi", "-i"],
+      "color=c=black:s=64x8:r=30000/1001:d=8,format=yuv420p,geq=lum='if(mod(floor(N/pow(2\\,floor(X/8)))\\,2)\\,235\\,16)':cb=128:cr=128",
+      ...["-c:v", "libx264", "-qp", "0", "-g", "30", "-bf", "0", "-video_track_timescale", "1000"],
+      fixture,
+    ]);
+    if (!synth.success) throw new Error(`fixture synthesis failed: ${synth.stderr.slice(-400)}`);
+    const indexOf = (file: string): number => {
+      const row = spawnSync("ffmpeg", [
+        "-v",
+        "error",
+        "-i",
+        file,
+        "-vf",
+        "format=gray,crop=64:1:0:4",
+        "-f",
+        "rawvideo",
+        "-",
+      ]).stdout;
+      return [...Array(8).keys()].reduce(
+        (n, bit) => n + (row[bit * 8 + 4]! > 128 ? 1 << bit : 0),
+        0,
+      );
+    };
+    const options = {
+      fps: 30,
+      outputDir: join(FIXTURE_DIR, "out-ntsc-seams"),
+      format: "png" as const,
+    };
+    const single = await extractVideoFramesRange(fixture, "ntsc-single", 0, 7.5, options);
+
+    const seams = [4, 17, 29, 41, 58, 73, 90, 107, 121, 139, 156, 170, 188, 201];
+    const differing: string[] = [];
+    for (const firstFrame of seams) {
+      const segment = await extractVideoFramesRange(fixture, `ntsc-seam-${firstFrame}`, 0, 7.5, {
+        ...options,
+        frameRanges: [{ firstFrame, frames: 12 }],
+      });
+      for (const [slot, path] of segment.framePaths) {
+        const expected = indexOf(single.framePaths.get(slot)!);
+        const shown = indexOf(path);
+        if (shown !== expected) differing.push(`slot ${slot}: ${shown} vs ${expected}`);
+      }
+    }
+    expect(differing).toEqual([]);
+  }, 120_000);
+
   // ffmpeg < 6.1 drops frame durations from CFR resampling once any -vf is set, so the colour
   // filters would cut the still that ends this window short.
   it.each([

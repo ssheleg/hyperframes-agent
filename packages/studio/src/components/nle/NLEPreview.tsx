@@ -209,8 +209,7 @@ export const NLEPreview = memo(function NLEPreview({
 
   const updateCompositionSizeFromPreview = useCallback(() => {
     const next = readPreviewCompositionSize(previewIframeRef.current);
-    // Pure updater — the parent notification happens in the effect below
-    // (updaters may run more than once under Strict Mode / concurrent React).
+    // Pure updater; the effect below notifies the parent (Strict Mode may run updaters twice).
     setCompositionSize((prev) =>
       prev?.width === next?.width && prev?.height === next?.height ? prev : next,
     );
@@ -563,6 +562,7 @@ export const NLEPreview = memo(function NLEPreview({
                   onPreviewError={(message) => onShadowError(slot.gen, message)}
                   portrait={portrait}
                   suppressLoadingOverlay
+                  noLoadTimeout
                   style={SHADOW_IFRAME_STYLE}
                 />
               ),

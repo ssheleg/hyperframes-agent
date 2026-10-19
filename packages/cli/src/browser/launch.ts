@@ -22,6 +22,7 @@ const closing = new WeakMap<Browser, Promise<void>>();
 const pending = new Map<Promise<Browser>, AbortController>();
 const sessionCleanups = new Set<() => Promise<void>>();
 const CLOSE_GRACE_MS = 1_000;
+const LAUNCH_TIMEOUT_MS = 30_000;
 const EXIT_POLL_MS = 50;
 let listening = false;
 let shutdown: Promise<void> | undefined;
@@ -57,6 +58,7 @@ export async function resolveManagedGpuMode(
   } = {},
 ): Promise<ResolvedBrowserGpuMode> {
   ownSignals();
+  if (requestedMode === "auto" && inAgentSandbox()) return "software";
   return resolveCaptureBrowserGpuMode(requestedMode, chromePath, {
     launch: async (puppeteer, options) => {
       context.signal?.throwIfAborted();
@@ -108,12 +110,18 @@ async function launchOwnedBrowser(
   ownSignals();
   const abort = new AbortController();
   const signal = options.signal ? AbortSignal.any([options.signal, abort.signal]) : abort.signal;
-  const launch = puppeteer.launch({
-    ...options,
+  const launch = untilLaunchOrAbort(
+    puppeteer.launch({ ...options, signal, handleSIGINT: false, handleSIGTERM: false }),
     signal,
-    handleSIGINT: false,
-    handleSIGTERM: false,
-  });
+  );
+  const limit = options.timeout ?? LAUNCH_TIMEOUT_MS;
+  const timer =
+    limit > 0
+      ? setTimeout(
+          () => abort.abort(new Error(`The browser did not finish starting within ${limit} ms.`)),
+          limit,
+        )
+      : undefined;
   pending.set(launch, abort);
   try {
     const browser = await launch;
@@ -123,8 +131,20 @@ async function launchOwnedBrowser(
     child.once("exit", () => browsers.delete(browser));
     return browser;
   } finally {
+    clearTimeout(timer);
     pending.delete(launch);
   }
+}
+
+function untilLaunchOrAbort(launch: Promise<Browser>, signal: AbortSignal): Promise<Browser> {
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+  void launch
+    .then((late) => (signal.aborted ? closeManagedBrowser(late) : undefined))
+    .catch(() => undefined);
+  return Promise.race([launch, aborted]);
 }
 
 /** Resolved launches keep their signal live; only pending launches are aborted during shutdown. */

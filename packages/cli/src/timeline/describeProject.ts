@@ -10,6 +10,7 @@ import { HF_AUDIO_GROUP_ATTR } from "@hyperframes/core/audio-groups";
 import { byStart, type ClipFact, type ClipLane } from "@hyperframes/core/clip-facts";
 import { fpsToNumber, parseFpsWithDefault, parseNumeric } from "@hyperframes/core";
 import { findSyncPartner, readLinkTiming, syncOffsetFrames } from "@hyperframes/core/media-link";
+import { resolveAuthoredAssetFile } from "@hyperframes/parsers/asset-resolution";
 import { readCompositionFps } from "../utils/compositionFps.js";
 import {
   readMediaOffsetSeconds,
@@ -195,7 +196,8 @@ async function probeSource(scope: DocScope, el: Element, tag: MediaTag): Promise
   const src = el.getAttribute("src");
   if (!src) return { ok: false, reason: "no src attribute" };
   if (/^https?:\/\//i.test(src)) return { ok: false, reason: "remote source not probed" };
-  const file = realFileInside(scope.projectDir, resolve(scope.dir, src));
+  const found = resolveAuthoredAssetFile(scope.projectDir, scope.file, src);
+  const file = found && realFileInside(scope.projectDir, found);
   if (!file) return { ok: false, reason: "source file not found" };
   return scope.withProbeSlot(async () => {
     try {

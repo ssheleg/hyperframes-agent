@@ -8,6 +8,7 @@ import {
   type ProjectHistory,
 } from "../history/projectHistory.js";
 import type { HistoryWho, HistoryTarget } from "../history/historyLog.js";
+import { HistoryBusyError } from "../history/ownerLock.js";
 
 const YOU: HistoryWho = { kind: "person", name: "You" };
 
@@ -91,7 +92,40 @@ function nextStep(history: ProjectHistory, direction: "back" | "forward") {
   return { id: target.id, label: target.label, endedAt: target.endedAt, paths };
 }
 
-/** Runs `task` on the project's history; no history is a 404, a refusal to open or to act ("no longer kept") a 409. */
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const FORWARD_DEADLINE_MS = 5_000;
+
+function ownerRoute(c: Context, error: unknown): string | null {
+  if (!(error instanceof HistoryBusyError) || !error.url || !URL.canParse(error.url)) return null;
+  const owner = new URL(error.url);
+  if (owner.protocol !== "http:" || !LOOPBACK.has(owner.hostname)) return null;
+  const rest = c.req.path.replace(/^.*?\/projects\/[^/]+\/history/, "");
+  return `${owner.href.replace(/\/$/, "")}${rest}${new URL(c.req.url).search}`;
+}
+
+async function forward(c: Context, target: string): Promise<Response> {
+  const token = c.req.header("X-Hyperframes-Write-Token");
+  const reads = c.req.method === "GET" || c.req.method === "HEAD";
+  const reply = await fetch(target, {
+    method: c.req.method,
+    headers: {
+      "content-type": c.req.header("content-type") ?? "application/json",
+      ...(token && { "X-Hyperframes-Write-Token": token }),
+    },
+    ...(!reads && { body: await c.req.arrayBuffer() }),
+    signal: AbortSignal.timeout(FORWARD_DEADLINE_MS),
+  });
+  const type = reply.headers.get("content-type") ?? "application/json";
+  return new Response(await reply.arrayBuffer(), {
+    status: reply.status,
+    headers: { "content-type": type },
+  });
+}
+
+/**
+ * Runs `task` on the project's history; no history is a 404, a refusal to open or to act ("no longer kept") a 409.
+ * A history another live process owns is that owner's: the request goes to it, so one log keeps every edit.
+ */
 async function withHistory(
   adapter: StudioApiAdapter,
   c: Context,
@@ -103,7 +137,11 @@ async function withHistory(
     const result = await task(history, await bodyOf(c));
     return result instanceof Response ? result : c.json(result ?? null);
   } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : String(error) }, 409);
+    const target = ownerRoute(c, error);
+    const forwarded = target && (await forward(c, target).catch(() => null));
+    return (
+      forwarded || c.json({ error: error instanceof Error ? error.message : String(error) }, 409)
+    );
   }
 }
 

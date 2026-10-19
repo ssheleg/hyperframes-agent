@@ -49,6 +49,7 @@ export type {
 // ── Configuration ──────────────────────────────────────────────────────────────
 export {
   resolveConfig,
+  resolvePageNavigationTimeout,
   validateEngineConfigSnapshot,
   DEFAULT_CONFIG,
   scaleProtocolTimeoutForComposition,

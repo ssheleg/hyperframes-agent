@@ -151,6 +151,7 @@ export async function fetchItemManifest(
   name: string,
   type: ItemType,
   baseUrl: string = DEFAULT_REGISTRY_URL,
+  options?: { cacheOnly?: boolean },
 ): Promise<RegistryItem> {
   if (!validRegistryName(name) || !Object.hasOwn(ITEM_TYPE_DIRS, type))
     throw new Error("Invalid registry item name or type");
@@ -159,7 +160,8 @@ export async function fetchItemManifest(
   const url = registryPathUrl(baseUrl, dir, name, "registry-item.json");
   const cacheFile = cachePath(baseUrl, `${dir}__${name}`);
   const cached = readCacheEntry(cacheFile, validate);
-  if (cached && isFresh(cached)) return cached.data;
+  if (cached && (isFresh(cached) || options?.cacheOnly)) return cached.data;
+  if (options?.cacheOnly) throw new Error("not fetched after an earlier registry timeout");
 
   try {
     const item = await fetchJson(url, validate);

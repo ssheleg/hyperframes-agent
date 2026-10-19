@@ -18,6 +18,7 @@ import {
   diff,
   fpsFor,
   isRecord,
+  FIELDS_READ_BY_VERB,
   mutationConflict,
   positional,
   publicReceipt,
@@ -102,6 +103,17 @@ function preparePlanEdit(
       ok: false,
       reason: `unsupported edit verb ${edit.verb}`,
       fix: "use move, trim, split, delete, set, or duplicate",
+    };
+  }
+  const fields = FIELDS_READ_BY_VERB[edit.verb as MutationVerb];
+  const unused = Object.keys(edit).find(
+    (key) => key !== "verb" && key !== "ref" && !fields.includes(key),
+  );
+  if (unused) {
+    return {
+      ok: false,
+      reason: `${edit.verb} does not use ${unused}`,
+      fix: `remove ${unused}; ${edit.verb} takes ${fields.join(", ")}`,
     };
   }
   const resolved = resolveRef(timeline, edit.ref);

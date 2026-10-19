@@ -194,12 +194,17 @@ async function waitForCompletion(
   // Lazy import to avoid pulling SFN client when only `render --no-wait` is used.
   const { getRenderProgress } = await loadSDK();
   let lastRendered = -1;
+  const warned = new Set<string>();
   while (true) {
     const progress = await getRenderProgress({
       executionArn,
       region: stack.region,
       defaultMemorySizeMb: stack.lambdaMemoryMb,
     });
+    for (const warning of progress.warnings) {
+      if (!warned.has(warning)) console.warn(c.warn(warning));
+      warned.add(warning);
+    }
     if (!json && progress.framesRendered !== lastRendered) {
       lastRendered = progress.framesRendered;
       const total = progress.totalFrames ?? "?";

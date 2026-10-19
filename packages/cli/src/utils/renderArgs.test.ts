@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_CONFIG } from "@hyperframes/engine";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, type Stats } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -6,7 +7,7 @@ import {
   MAX_PAGE_NAVIGATION_TIMEOUT_SECONDS,
   hasExplicitCompositionArg,
   parseBrowserTimeoutMsArg,
-  resolveDiagnosticNavigationTimeoutMs,
+  pageNavigationTimeoutMs,
   parseCompositionEntryArg,
   parseGifLoopArg,
   parseHlsSegmentSecondsArg,
@@ -106,35 +107,42 @@ describe("parseBrowserTimeoutMsArg", () => {
   });
 });
 
-describe("resolveDiagnosticNavigationTimeoutMs", () => {
-  it("uses the render navigation timeout env override", () => {
-    expect(
-      resolveDiagnosticNavigationTimeoutMs({ PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS: "90000" }),
-    ).toBe(90_000);
+describe("pageNavigationTimeoutMs", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("gives check and snapshot the page-load budget render uses", () => {
+    expect(pageNavigationTimeoutMs()).toBe(DEFAULT_CONFIG.pageNavigationTimeout);
+    vi.stubEnv("PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS", "90000");
+    expect(pageNavigationTimeoutMs()).toBe(90_000);
   });
 
-  it("falls back to ten seconds for missing or invalid values", () => {
-    expect(resolveDiagnosticNavigationTimeoutMs({})).toBe(10_000);
-    expect(
-      resolveDiagnosticNavigationTimeoutMs({ PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS: "invalid" }),
-    ).toBe(10_000);
+  it("falls back to that default for a zero or invalid override", () => {
+    vi.stubEnv("PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS", "0");
+    expect(pageNavigationTimeoutMs()).toBe(DEFAULT_CONFIG.pageNavigationTimeout);
+    vi.stubEnv("PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS", "invalid");
+    expect(pageNavigationTimeoutMs()).toBe(DEFAULT_CONFIG.pageNavigationTimeout);
   });
 
-  it("raises the diagnostic navigation budget to a larger caller-provided minimum", () => {
-    expect(resolveDiagnosticNavigationTimeoutMs({}, 30_000)).toBe(30_000);
+  it("prints no render-only warning where render would disable streaming encode", () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    vi.stubEnv("PRODUCER_BROWSER_GPU_MODE", "software");
+    vi.stubEnv("PRODUCER_MAX_WORKERS", "1");
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(pageNavigationTimeoutMs()).toBe(DEFAULT_CONFIG.pageNavigationTimeout);
+      expect(stderr).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+      Object.defineProperty(process, "platform", platform);
+    }
   });
 
-  it("does not let a caller-provided minimum shorten the default budget", () => {
-    expect(resolveDiagnosticNavigationTimeoutMs({}, 3_000)).toBe(10_000);
-  });
-
-  it("does not let a caller-provided minimum shorten the environment override", () => {
-    expect(
-      resolveDiagnosticNavigationTimeoutMs(
-        { PRODUCER_PAGE_NAVIGATION_TIMEOUT_MS: "90000" },
-        30_000,
-      ),
-    ).toBe(90_000);
+  it("lets a command's longer --timeout raise it, never lower it", () => {
+    expect(pageNavigationTimeoutMs(DEFAULT_CONFIG.pageNavigationTimeout * 2)).toBe(
+      DEFAULT_CONFIG.pageNavigationTimeout * 2,
+    );
+    expect(pageNavigationTimeoutMs(3_000)).toBe(DEFAULT_CONFIG.pageNavigationTimeout);
   });
 });
 

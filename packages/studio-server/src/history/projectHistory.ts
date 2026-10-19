@@ -82,6 +82,7 @@ export interface ProjectHistoryOptions {
   onError?: (error: unknown) => void;
   /** How long an open waits for another process to close the same history (default 5 s). */
   ownerWaitMs?: number;
+  ownerUrl?: string;
   /** A CLI turn's window from an earlier open: writes since, within its idle limit, become the entry with its id. */
   closedWindow?: ClosedWindow;
   closedWindowAfterOwnership?: () => ClosedWindow | undefined;
@@ -1360,6 +1361,7 @@ export async function openProjectHistory(options: ProjectHistoryOptions): Promis
   const release = await takeHistoryOwnership(
     join(options.historyRoot, projectId),
     options.ownerWaitMs ?? 5000,
+    options.ownerUrl,
   );
   try {
     const blobs = await openBlobStore(join(options.historyRoot, projectId, "blobs"));

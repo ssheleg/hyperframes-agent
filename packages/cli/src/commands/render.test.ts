@@ -86,6 +86,7 @@ const ffmpegEncoderState = vi.hoisted(() => ({
   mode: "software" as "software" | "gpu",
   error: null as Error | null,
   encoders: null as string | null,
+  usableGpu: false,
 }));
 const orphanCleanupState = vi.hoisted(() => ({
   calls: 0,
@@ -210,10 +211,14 @@ vi.mock("../browser/ffmpeg.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../browser/ffmpeg.js")>();
   return {
     ...actual,
-    detectH264EncoderModeForRender: vi.fn(async () => {
+    detectH264EncoderModeForRender: vi.fn(async (_path: string, gpuRequested: boolean) => {
       if (ffmpegEncoderState.error) throw ffmpegEncoderState.error;
       if (ffmpegEncoderState.encoders !== null)
-        return actual.resolveH264EncoderMode(ffmpegEncoderState.encoders, false);
+        return actual.resolveH264EncoderMode(
+          ffmpegEncoderState.encoders,
+          gpuRequested,
+          ffmpegEncoderState.usableGpu,
+        );
       return ffmpegEncoderState.mode;
     }),
     findFFmpeg: vi.fn(() => "/usr/bin/ffmpeg"),
@@ -474,6 +479,7 @@ describe("renderLocal browser GPU config", () => {
     ffmpegEncoderState.mode = "software";
     ffmpegEncoderState.error = null;
     ffmpegEncoderState.encoders = null;
+    ffmpegEncoderState.usableGpu = false;
     orphanCleanupState.calls = 0;
     orphanCleanupState.killed = 0;
     orphanCleanupState.parentPid = () => null;
@@ -950,6 +956,26 @@ describe("renderLocal browser GPU config", () => {
     expect(stderr.mock.calls.flat().join(" ")).toContain("libx264");
   });
 
+  it("refuses a --gpu MP4 before capture when no GPU encoder works and FFmpeg lacks libx264", async () => {
+    ffmpegEncoderState.encoders = " V....D libopenh264 OpenH264\n V....D h264_videotoolbox H.264\n";
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      renderLocal(PROJECT_DIR, "/tmp/out.mp4", {
+        fps: { num: 30, den: 1 },
+        quality: "high",
+        format: "mp4",
+        gpu: true,
+        browserGpuMode: "software",
+        hdrMode: "auto",
+        quiet: true,
+      }),
+    ).rejects.toMatchObject({ name: "CliRuntimeError" });
+
+    expect(producerState.createdJobs).toHaveLength(0);
+    expect(stderr.mock.calls.flat().join(" ")).toContain("libx264");
+  });
+
   it.each(["webm", "mov", "png-sequence"] as const)(
     "does not require H.264 for %s",
     async (format) => {
@@ -1084,6 +1110,7 @@ describe("renderLocal browser GPU config", () => {
   // the software encoder's forced-keyframe lock.
   it("fails an HLS render instead of falling back to GPU H.264", async () => {
     ffmpegEncoderState.encoders = " V....D h264_videotoolbox H.264 (VideoToolbox)\n";
+    ffmpegEncoderState.usableGpu = true;
     const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(

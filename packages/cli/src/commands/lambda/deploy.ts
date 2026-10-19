@@ -19,7 +19,8 @@ export interface DeployArgs {
   stackName: string;
   region: string;
   awsProfile?: string;
-  reservedConcurrency: number;
+  /** -1 removes the reservation. Omitted: a redeploy keeps it; a new stack reserves none. */
+  reservedConcurrency?: number;
   chromeSource: "sparticuz" | "chrome-headless-shell";
   lambdaMemoryMb: number;
   /** Override the handler-ZIP rebuild step. Useful for CI runs that already built it. */
@@ -28,17 +29,13 @@ export interface DeployArgs {
 
 const DEFAULT_REGION = "us-east-1";
 const DEFAULT_MEMORY_MB = 10240;
-// Low default reserved-concurrency so a first-time user doesn't get
-// surprise-billed by a runaway Map state. Adopters with their own quota
-// raise this explicitly via `--concurrency`.
-const DEFAULT_CONCURRENCY = 8;
 
 export async function runDeploy(args: Partial<DeployArgs> = {}): Promise<void> {
   const resolved: DeployArgs = {
     stackName: args.stackName ?? DEFAULT_STACK_NAME,
     region: args.region ?? process.env.AWS_REGION ?? DEFAULT_REGION,
     awsProfile: args.awsProfile ?? process.env.AWS_PROFILE,
-    reservedConcurrency: args.reservedConcurrency ?? DEFAULT_CONCURRENCY,
+    reservedConcurrency: args.reservedConcurrency,
     chromeSource: args.chromeSource ?? "sparticuz",
     lambdaMemoryMb: args.lambdaMemoryMb ?? DEFAULT_MEMORY_MB,
     skipBuild: args.skipBuild ?? false,
@@ -86,9 +83,26 @@ export async function runDeploy(args: Partial<DeployArgs> = {}): Promise<void> {
     stateMachineArn: outputs.stateMachineArn,
     functionName: outputs.functionName,
     lambdaMemoryMb: resolved.lambdaMemoryMb,
-    reservedConcurrency: resolved.reservedConcurrency,
+    reservedConcurrency: outputs.reservedConcurrency,
     deployedAt: new Date().toISOString(),
   });
+
+  if (resolved.reservedConcurrency === -1) {
+    console.log(
+      c.warn(
+        "Removed the stack's reserved concurrency; each render now sizes itself to the account.",
+      ),
+    );
+  } else if (
+    resolved.reservedConcurrency === undefined &&
+    outputs.reservedConcurrency !== undefined
+  ) {
+    console.log(
+      c.warn(
+        `Kept the stack's reserved concurrency of ${outputs.reservedConcurrency}. Pass --concurrency=N to change it.`,
+      ),
+    );
+  }
 
   console.log();
   console.log(c.success("Stack deployed."));

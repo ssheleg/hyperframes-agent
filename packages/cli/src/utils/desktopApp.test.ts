@@ -1,6 +1,15 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, win32 } from "node:path";
+import { isHyperframesProject } from "@hyperframes/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSeen } from "./appHistory.js";
 import {
@@ -41,6 +50,48 @@ describe("openInDesktop", () => {
     });
     expect(result).toEqual({ opened: true, app: "the HyperFrames desktop app", handedOver: null });
     expect(asked).toEqual([`dev.hyperframes.desktop ${FILM}`]);
+  });
+
+  it("hands over a folder preview serves from a bare index.html as a project the app accepts", () => {
+    const dir = mkdtempSync(join(tmpdir(), "hf-bare-"));
+    try {
+      writeFileSync(join(dir, "index.html"), "<html></html>");
+      let marked: boolean | null = null;
+      const result = openInDesktop(dir, {
+        ...LIVE,
+        open: (_id, folder) => ((marked = isHyperframesProject(readdirSync(folder))), true),
+      });
+      expect(result).toMatchObject({ opened: true });
+      expect(marked).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the press's page id for the app only when the app took the folder", () => {
+    const dir = mkdtempSync(join(tmpdir(), "hf-cta-"));
+    const record = join(dir, ".hyperframes", "desktop-cta.json");
+    try {
+      writeFileSync(join(dir, "index.html"), "<html></html>");
+      openInDesktop(dir, { ...LIVE, cta: "page-1", open: () => false, installed: () => false });
+      expect(existsSync(record)).toBe(false);
+      openInDesktop(dir, { ...LIVE, cta: "page-1", open: () => true });
+      expect(JSON.parse(readFileSync(record, "utf8"))).toMatchObject({ cta: "page-1" });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a project's own marker file alone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "hf-marked-"));
+    try {
+      writeFileSync(join(dir, "index.html"), "<html></html>");
+      writeFileSync(join(dir, "meta.json"), "{}");
+      openInDesktop(dir, { ...LIVE, open: () => true });
+      expect(existsSync(join(dir, "hyperframes.json"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("falls back to Canary when only Canary is installed", () => {

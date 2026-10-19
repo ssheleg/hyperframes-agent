@@ -16,6 +16,10 @@ import {
   resolveMediaTreatmentSource,
 } from "./media-treatment.js";
 import { CliRuntimeError } from "../utils/commandResult.js";
+import {
+  COLOR_GRADING_TOP_LEVEL_KEYS,
+  validateColorGradingContract,
+} from "@hyperframes/parsers/color-grading-contract";
 
 const VIDEO = `<!doctype html><html><body><video id="hero" src="hero.mp4"></video></body></html>`;
 const SEGMENTS = `<!doctype html><html><body><video class="seg" src="a.mp4"></video><video class="seg" src="b.mp4"></video></body></html>`;
@@ -25,6 +29,24 @@ function gradingsOf(html: string): Array<string | null> {
     video.getAttribute("data-color-grading"),
   );
 }
+
+describe("media-treatment capabilities", () => {
+  it("name every catalog section after the payload key it documents, and carry a valid example", () => {
+    const catalog = getHfColorGradingCapabilities() as Record<string, unknown>;
+    const payloadKeys: readonly string[] = COLOR_GRADING_TOP_LEVEL_KEYS;
+    const describedSections = Object.keys(catalog).filter((key) =>
+      ["adjust", "adjustments", "details", "finishing"].includes(key),
+    );
+    expect(describedSections.every((key) => payloadKeys.includes(key))).toBe(true);
+
+    const overview = getMediaTreatmentCapabilityOverview() as { example?: unknown };
+    const correction = getMediaTreatmentCapabilityDetail("correction") as { apply?: unknown };
+    for (const payload of [catalog.example, overview.example, correction.apply]) {
+      expect(payload).toBeDefined();
+      expect(validateColorGradingContract(payload)).toEqual([]);
+    }
+  });
+});
 
 describe("applyMediaTreatmentToHtml", () => {
   it("provides a concise first-hop overview of the complete treatment surface", () => {
@@ -576,7 +598,20 @@ describe("applyMediaTreatmentToHtml", () => {
         selector: "#hero",
         grading: { preset: "warm-daylight" },
       }),
-    ).toThrow(/requires an <img> or <video>/);
+    ).toThrow(/requires a <video>, <img> or <canvas>/);
+  });
+
+  it("grades a canvas", () => {
+    const result = applyMediaTreatmentToHtml(
+      `<canvas id="drawn" width="640" height="360"></canvas>`,
+      {
+        selector: "#drawn",
+        grading: { preset: "warm-daylight" },
+      },
+    );
+
+    expect(result.tag).toBe("canvas");
+    expect(result.html).toContain("data-color-grading=");
   });
 
   it("rejects unknown keys instead of silently dropping agent mistakes", () => {

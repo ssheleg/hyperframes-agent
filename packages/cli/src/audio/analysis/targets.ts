@@ -1,4 +1,5 @@
 import { dirname, join, resolve } from "node:path";
+import { resolveAuthoredAssetFile } from "@hyperframes/parsers/asset-resolution";
 import type { ProjectTimeline, TimelineRow } from "../../timeline/describeProject.js";
 
 /** Where a file sits in the film: film time = start + (file time − mediaStart) / playbackRate. */
@@ -74,9 +75,10 @@ function targetOf(projectDir: string, row: TimelineRow, query: FilmQuery): Audio
   const placement = placementOf(row);
   const from = query.by === "range" ? Math.max(placement.start, query.start) : placement.start;
   const to = query.by === "range" ? Math.min(placement.end, query.end) : placement.end;
-  const declaredIn = dirname(join(projectDir, row.file));
   return {
-    path: resolve(declaredIn, row.src!),
+    path:
+      resolveAuthoredAssetFile(projectDir, row.file, row.src!) ??
+      resolve(dirname(join(projectDir, row.file)), row.src!),
     file: row.src!,
     ref: row.ref || null,
     kind: row.kind as "audio" | "video",

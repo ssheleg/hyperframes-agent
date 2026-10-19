@@ -1,6 +1,8 @@
 // @vitest-environment node
 // fallow-ignore-file code-duplication
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -545,7 +547,86 @@ describe("history routes", () => {
     const blob = await api.request(`/projects/demo/history/blob/${"0".repeat(64)}`);
     expect([blob.status, await blob.json()]).toEqual([409, busy]);
   });
+
+  it("send Studio's edit to the process that owns the history, so it is the person's entry there", async () => {
+    const { projectDir, owner, desktop } = await ownedElsewhere();
+    writeFileSync(join(projectDir, "index.html"), "B");
+
+    const claim = await desktop("/claim", { label: "Color", paths: ["index.html"] });
+    expect(claim.status).toBe(200);
+    expect(owner.list().at(-1)).toMatchObject({ label: "Color", who: { name: "You" } });
+    expect(await (await desktop("/step", { direction: "back" })).json()).toMatchObject({
+      ok: true,
+    });
+    expect(readFileSync(join(projectDir, "index.html"), "utf-8")).toBe("A");
+  });
+
+  it("trust the owner's address only when it is loopback and names the live owner", async () => {
+    for (const said of [{ url: "http://example.com/history" }, { pid: process.pid + 1 }]) {
+      const { historyRoot, ownerUrl, desktop } = await ownedElsewhere();
+      const home = readdirSync(historyRoot).find((id) =>
+        existsSync(join(historyRoot, id, "owner.pid")),
+      )!;
+      writeFileSync(
+        join(historyRoot, home, "owner-url.json"),
+        JSON.stringify({ pid: process.pid, url: ownerUrl, ...said }),
+      );
+      expect((await desktop("/claim", { label: "Color", paths: ["index.html"] })).status).toBe(409);
+    }
+  });
+
+  it("answer the 409 with the reason when the owner takes the request and never replies", async () => {
+    const silent = createServer(() => {});
+    await new Promise<void>((listening) => silent.listen(0, "127.0.0.1", listening));
+    cleanup.push(() => {
+      silent.closeAllConnections();
+      return new Promise((closed) => silent.close(closed));
+    });
+    const port = (silent.address() as AddressInfo).port;
+    const { desktop } = await ownedElsewhere(`http://127.0.0.1:${port}/projects/demo/history`);
+    const started = Date.now();
+
+    const claim = await desktop("/claim", { label: "Color", paths: ["index.html"] });
+    expect(claim.status).toBe(409);
+    expect(Date.now() - started).toBeLessThan(9_000);
+  }, 15_000);
 });
+
+/** A project whose history a served Studio API owns, and a second host (as Desktop) that finds it busy. */
+async function ownedElsewhere(advertised?: string) {
+  const projectDir = tempDir("hf-history-owned-");
+  writeFileSync(join(projectDir, "index.html"), "A");
+  const historyRoot = tempDir("hf-history-owned-root-");
+  let owner: ProjectHistory | null = null;
+  const resolveProject = (id: string) => (id === "demo" ? { id, dir: projectDir } : null);
+  const served = createStudioApi({
+    listProjects: () => [],
+    resolveProject,
+    history: () => owner,
+  } as unknown as StudioApiAdapter);
+  const server = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const body = chunks.length ? Buffer.concat(chunks) : undefined;
+    const headers = req.headers as Record<string, string>;
+    const reply = await served.request(req.url ?? "/", { method: req.method, headers, body });
+    res.writeHead(reply.status, Object.fromEntries(reply.headers));
+    res.end(Buffer.from(await reply.arrayBuffer()));
+  });
+  await new Promise<void>((listening) => server.listen(0, "127.0.0.1", listening));
+  cleanup.push(() => new Promise((closed) => server.close(closed)));
+  const ownerUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/projects/demo/history`;
+  owner = await openProjectHistory({ projectDir, historyRoot, ownerUrl: advertised ?? ownerUrl });
+  cleanup.push(() => owner?.close());
+  const api = createStudioApi({
+    listProjects: () => [],
+    resolveProject,
+    history: () => openProjectHistory({ projectDir, historyRoot, ownerWaitMs: 0 }),
+  } as unknown as StudioApiAdapter);
+  const desktop = (path: string, body: object) =>
+    api.request(`/projects/demo/history${path}`, { method: "POST", body: JSON.stringify(body) });
+  return { projectDir, historyRoot, ownerUrl, owner, desktop };
+}
 
 it("checkpoints pending writes without closing an agent window", async () => {
   const { projectDir, history, call } = await demoProject();

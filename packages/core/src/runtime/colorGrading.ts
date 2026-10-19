@@ -5,6 +5,7 @@ import {
   HF_COLOR_GRADING_CANVAS_ID_PREFIX,
   HF_COLOR_GRADING_DETAIL_KEYS,
   HF_COLOR_GRADING_EFFECT_KEYS,
+  HF_COLOR_GRADING_SOURCE_TAGS,
   hasHfColorGradingHueCurveValues,
   hasHfColorGradingRgbCurveValues,
   hasHfColorGradingSecondaryValues,
@@ -42,9 +43,15 @@ import { copyMediaVisualStyles } from "../inline-scripts/parityContract";
 import { readVariablesForElement } from "./variableScope";
 import { swallow } from "./diagnostics";
 import { findInjectedRenderFrame } from "./renderFrameSibling";
-import { isElementNode, isHtmlElement, isImageElement, isVideoElement } from "./domRealm";
+import {
+  isCanvasElement,
+  isElementNode,
+  isHtmlElement,
+  isImageElement,
+  isVideoElement,
+} from "./domRealm";
 
-type ColorGradingMediaElement = HTMLVideoElement | HTMLImageElement;
+type ColorGradingMediaElement = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement;
 
 type EntrySource = "attribute" | "live";
 
@@ -1462,8 +1469,15 @@ const KUWAHARA_RESOLVE_FRAGMENT_SHADER = [
   "}",
 ].join("\n");
 
+const COLOR_GRADING_SOURCE_SELECTOR = HF_COLOR_GRADING_SOURCE_TAGS.map(
+  (tag) => `${tag}[${HF_COLOR_GRADING_ATTR}]`,
+).join(", ");
+
 function isColorGradingMediaElement(value: Element): value is ColorGradingMediaElement {
-  return isVideoElement(value) || isImageElement(value);
+  return (
+    isHtmlElement(value) &&
+    (HF_COLOR_GRADING_SOURCE_TAGS as readonly string[]).includes(value.localName)
+  );
 }
 
 function isVisibleForColorGrading(element: ColorGradingMediaElement): boolean {
@@ -1781,7 +1795,7 @@ function hashStringSeed(value: string): number {
 function seedForElement(element: ColorGradingMediaElement): number {
   const key =
     element.id ||
-    element.currentSrc ||
+    (!isCanvasElement(element) && element.currentSrc) ||
     element.getAttribute("src") ||
     `${element.tagName}:${Array.prototype.indexOf.call(element.parentNode?.children ?? [], element)}`;
   return hashStringSeed(key);
@@ -2462,31 +2476,22 @@ function resolveTarget(
 }
 
 function readSourceSize(source: TexImageSource): { width: number; height: number } | null {
-  if (isVideoElement(source)) {
-    return source.videoWidth > 0 && source.videoHeight > 0
-      ? { width: source.videoWidth, height: source.videoHeight }
-      : null;
-  }
-  if (isImageElement(source)) {
-    return source.naturalWidth > 0 && source.naturalHeight > 0
-      ? { width: source.naturalWidth, height: source.naturalHeight }
-      : null;
-  }
-  return null;
+  const [width, height] = isVideoElement(source)
+    ? [source.videoWidth, source.videoHeight]
+    : isImageElement(source)
+      ? [source.naturalWidth, source.naturalHeight]
+      : isCanvasElement(source)
+        ? [source.width, source.height]
+        : [0, 0];
+  return width > 0 && height > 0 ? { width, height } : null;
 }
 
 function isDrawableSource(source: TexImageSource): boolean {
-  if (isVideoElement(source)) {
-    return (
-      source.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-      source.videoWidth > 0 &&
-      source.videoHeight > 0
-    );
+  if (isVideoElement(source) && source.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    return false;
   }
-  if (isImageElement(source)) {
-    return source.complete && source.naturalWidth > 0 && source.naturalHeight > 0;
-  }
-  return false;
+  if (isImageElement(source) && !source.complete) return false;
+  return readSourceSize(source) !== null;
 }
 
 function findRenderFrameImage(video: HTMLVideoElement): HTMLImageElement | null {
@@ -3468,6 +3473,14 @@ function addListener(
   entry.cleanup.push(() => target.removeEventListener(type, listener));
 }
 
+function redrawsOnTransportTick(element: ColorGradingMediaElement): boolean {
+  if (isCanvasElement(element)) return true;
+  if (isVideoElement(element) && !element.paused && !element.ended) return false;
+  return ANIMATED_GRADING_PROPERTIES.some(
+    (property) => readAnimatedValue(element, property) !== null,
+  );
+}
+
 function cancelScheduledFrame(entry: ColorGradingEntry): void {
   if (entry.animationFrame !== null) {
     window.cancelAnimationFrame(entry.animationFrame);
@@ -3759,9 +3772,7 @@ export function createColorGradingRuntime(pausedMediaLease?: {
   const refresh = (): number => {
     if (destroyed) return 0;
     const attributeElements = new Set<ColorGradingMediaElement>();
-    const nodes = document.querySelectorAll(
-      `video[${HF_COLOR_GRADING_ATTR}], img[${HF_COLOR_GRADING_ATTR}]`,
-    );
+    const nodes = document.querySelectorAll(COLOR_GRADING_SOURCE_SELECTOR);
     nodes.forEach((node) => {
       if (!isColorGradingMediaElement(node)) return;
       attributeElements.add(node);
@@ -3821,12 +3832,7 @@ export function createColorGradingRuntime(pausedMediaLease?: {
     for (const element of trackedElements) {
       const entry = entries.get(element);
       if (!entry) continue;
-      const hasAnimatedProperty = ANIMATED_GRADING_PROPERTIES.some(
-        (property) => readAnimatedValue(element, property) !== null,
-      );
-      if (!hasAnimatedProperty) continue;
-      if (isVideoElement(element) && !element.paused && !element.ended) continue;
-      if (drawEntry(entry)) drawn += 1;
+      if (redrawsOnTransportTick(element) && drawEntry(entry)) drawn += 1;
     }
     return drawn;
   };

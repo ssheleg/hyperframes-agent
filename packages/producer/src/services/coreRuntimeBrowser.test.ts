@@ -320,6 +320,89 @@ describe("core runtime browser contract", () => {
     }
   }, 30_000);
 
+  it("paints no SVG filter output from a scene before its start or after its end", async () => {
+    // feTurbulence draws from nothing, so visibility:hidden alone left grain over earlier scenes.
+    const grain = (id: string, start: number) => `
+      <div class="clip" data-start="${start}" data-duration="1" style="position:absolute;inset:0">
+        <svg width="320" height="180" style="position:absolute;inset:0;mix-blend-mode:overlay">
+          <filter id="${id}"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" /></filter>
+          <rect width="100%" height="100%" filter="url(#${id})" />
+        </svg>
+      </div>`;
+    const grainPage = await browser.newPage();
+    try {
+      await grainPage.setViewport({ width: 320, height: 180 });
+      await grainPage.setContent(`<!doctype html>
+        <style>html, body { margin: 0; background: rgb(128, 128, 128); }</style>
+        <div data-composition-id="root" data-start="0" data-duration="3" data-width="320" data-height="180"
+          style="position:relative;width:320px;height:180px">
+          ${grain("early", 0)}${grain("late", 2)}
+        </div>`);
+      await grainPage.addScriptTag({ content: readFileSync(RUNTIME_PATH, "utf8") });
+      await grainPage.waitForFunction(() => window.__playerReady && window.__renderReady);
+
+      const redRangeAt = async (time: number) => {
+        await grainPage.evaluate((t) => window.__player!.renderSeek!(t), time);
+        const shot = await grainPage.screenshot({ encoding: "base64" });
+        return grainPage.evaluate(async (png) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${png}`;
+          await image.decode();
+          const context = new OffscreenCanvas(image.width, image.height).getContext("2d")!;
+          context.drawImage(image, 0, 0);
+          const { data } = context.getImageData(0, 0, image.width, image.height);
+          let min = 255;
+          let max = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            min = Math.min(min, data[i]!);
+            max = Math.max(max, data[i]!);
+          }
+          return [min, max];
+        }, shot);
+      };
+
+      expect(await redRangeAt(1.5)).toEqual([128, 128]);
+      const [min, max] = await redRangeAt(2.5);
+      expect(max - min).toBeGreaterThan(20);
+    } finally {
+      await grainPage.close();
+    }
+  }, 30_000);
+
+  it.each([
+    [2, "blur(5px)"],
+    [1.9, "blur(4px)"],
+  ])(
+    "starts a filter tween at %s s from its stylesheet filter when frames step into a scene at 2 s",
+    async (start, expected) => {
+      const tweenPage = await browser.newPage();
+      try {
+        await tweenPage.setContent(`<!doctype html>
+        <style>#probe { filter: blur(10px); }</style>
+        <div data-composition-id="root" data-start="0" data-duration="3" data-width="320" data-height="180">
+          <div class="clip" data-start="2" data-duration="1" style="position:absolute;inset:0"><div id="probe"></div></div>
+        </div>`);
+        await tweenPage.addScriptTag({
+          path: resolve(import.meta.dirname, "../../../core/node_modules/gsap/dist/gsap.min.js"),
+        });
+        await tweenPage.addScriptTag({
+          content: `window.__timelines = {root:gsap.timeline({paused:true}).to("#probe",{filter:"blur(0px)",duration:1,ease:"none",lazy:false},${start})};`,
+        });
+        await tweenPage.addScriptTag({ content: readFileSync(RUNTIME_PATH, "utf8") });
+        await tweenPage.waitForFunction(() => window.__playerReady && window.__renderReady);
+
+        const filter = await tweenPage.evaluate(() => {
+          for (let frame = 0; frame <= 75; frame++) window.__player!.renderSeek!(frame / 30);
+          return getComputedStyle(document.getElementById("probe")!).filter;
+        });
+        expect(filter).toBe(expected);
+      } finally {
+        await tweenPage.close();
+      }
+    },
+    30_000,
+  );
+
   it("renders a later clip's authored lazy image as it is: laid out at setup, fetched before any seek", async () => {
     // A chunked render starts a worker straight at a later clip, so its image must already be loaded.
     const assets = "https://assets.test/";

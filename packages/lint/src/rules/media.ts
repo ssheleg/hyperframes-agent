@@ -11,7 +11,10 @@ import {
   mediaTimeWindow,
   mediaWindowsOverlap,
 } from "../utils";
-import { validateColorGradingContract } from "@hyperframes/parsers/color-grading-contract";
+import {
+  COLOR_GRADING_SOURCE_TAGS,
+  validateColorGradingContract,
+} from "@hyperframes/parsers/color-grading-contract";
 import { extractMediaSrcMutations } from "@hyperframes/parsers/composition";
 import { parseHTML } from "linkedom";
 import { findLinkedClipFindings } from "./linkedClips";
@@ -494,11 +497,11 @@ export const mediaRules: Array<(ctx: LintContext) => HyperframeLintFinding[]> = 
           snippet: truncateSnippet(tag.raw),
         });
       };
-      if (tag.name !== "video" && tag.name !== "img") {
+      if (!(COLOR_GRADING_SOURCE_TAGS as readonly string[]).includes(tag.name)) {
         report(
           "color_grading_non_media",
-          `data-color-grading on <${tag.name}> has no effect. The shader runtime only grades real <video> and <img> elements.`,
-          "Move the grading attribute to the real <video> or <img> media element. Do not attach it to a wrapper or CSS background.",
+          `data-color-grading on <${tag.name}> has no effect. The shader runtime only grades real <video>, <img> and <canvas> elements.`,
+          "Move the grading attribute to the real <video>, <img> or <canvas> element. Do not attach it to a wrapper or CSS background.",
         );
         continue;
       }

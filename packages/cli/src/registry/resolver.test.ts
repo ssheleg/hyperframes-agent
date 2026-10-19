@@ -132,6 +132,49 @@ describe("registry resolver", () => {
     });
   });
 
+  describe("loadAllItems on a slow registry", () => {
+    const entries = Array.from({ length: 100 }, (_, i) => ({
+      name: `item-${i}`,
+      type: "hyperframes:block" as const,
+    }));
+    const itemName = (url: string) => /\/blocks\/([^/]+)\/registry-item\.json$/.exec(url)?.[1];
+
+    it("keeps at most 32 item fetches in flight", async () => {
+      let inFlight = 0;
+      let peak = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((resolve) => setImmediate(resolve));
+          inFlight -= 1;
+          return new Response(JSON.stringify(buildItem(itemName(url)!, "hyperframes:block")));
+        }),
+      );
+      const items = await loadAllItems(entries, { baseUrl: uniqueBaseUrl() });
+      expect(items).toHaveLength(100);
+      expect(peak).toBe(32);
+    });
+
+    it("stops fetching after a timeout and warns once for every skipped item", async () => {
+      const fetchMock = vi.fn(async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const warnings: string[] = [];
+      const items = await loadAllItems(entries, {
+        baseUrl: uniqueBaseUrl(),
+        onWarn: (m) => warnings.push(m),
+      });
+      expect(items).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(32);
+      expect(warnings).toEqual([
+        'skipped 100 items ("item-0", "item-1", "item-2", ...): TimeoutError: The operation was aborted due to timeout',
+      ]);
+    });
+  });
+
   describe("resolveItem", () => {
     it("returns the full manifest for a known item", async () => {
       const baseUrl = uniqueBaseUrl();

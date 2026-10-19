@@ -14,13 +14,16 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { GetAccountSettingsCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { S3Client } from "@aws-sdk/client-s3";
 import {
   assemble,
+  chunksAreStitchedMp4,
   type AssembleResult,
   type ChunkRenderer,
   type ChunkResult,
   type DistributedRenderConfig,
+  DEFAULT_MAX_PARALLEL_CHUNKS,
   listPlanV2ArtifactsForTarget,
   materializePlanV2Target,
   plan,
@@ -36,6 +39,7 @@ import {
   renderChunk,
 } from "@hyperframes/producer/distributed";
 import { resolveChromeExecutablePath } from "./chromium.js";
+import { stitchMp4InS3 } from "./s3Stitch.js";
 import { type DistributedFormat, formatExtension } from "./formatExtension.js";
 import type {
   AssembleEvent,
@@ -81,6 +85,8 @@ function getS3Client(): S3Client {
  */
 export interface HandlerDeps {
   s3?: S3Client;
+  /** Reads the account's concurrency when the render does not set one. */
+  lambda?: LambdaClient;
   primitives?: {
     plan: typeof plan;
     planV2WithPublisher?: typeof planV2WithPublisher;
@@ -323,12 +329,54 @@ function primeRuntimeEnv(): void {
 
 // ── Plan ────────────────────────────────────────────────────────────────────
 
-function planConfig(event: PlanEvent, deps?: HandlerDeps): DistributedRenderConfig {
-  const remainingMs = deps?.getRemainingTimeInMillis?.();
-  if (event.Config.workerTimeoutSeconds !== undefined || remainingMs === undefined) {
-    return { ...event.Config };
+// Share of the account's unreserved concurrency a render plans for. The rest stays free for other
+// functions; at the default 1000 quota that is the 100 AWS keeps unreserved anyway.
+const ACCOUNT_CONCURRENCY_SHARE = 0.9;
+
+async function resolveWorkerConcurrency(event: PlanEvent, deps?: HandlerDeps): Promise<number> {
+  if (event.Config.workerConcurrency !== undefined) return event.Config.workerConcurrency;
+  try {
+    return await functionConcurrency(deps?.lambda);
+  } catch (err) {
+    logEvent({
+      event: "worker_concurrency",
+      level: "WARN",
+      source: "fallback",
+      concurrency: DEFAULT_MAX_PARALLEL_CHUNKS,
+      message:
+        `Could not read the account's Lambda concurrency (${String(err)}); ` +
+        `planning for ${DEFAULT_MAX_PARALLEL_CHUNKS} chunks at once. Allow lambda:GetAccountSettings ` +
+        "on the function role, or set the concurrency explicitly.",
+    });
+    return DEFAULT_MAX_PARALLEL_CHUNKS;
   }
-  return { ...event.Config, workerTimeoutSeconds: Math.ceil(remainingMs / 1000) };
+}
+
+/** The function's reserved concurrency, else its share of the account's unreserved pool. */
+async function functionConcurrency(lambda = new LambdaClient({})): Promise<number> {
+  const reserved = Number(process.env.HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY);
+  if (reserved > 0) return reserved;
+  const { AccountLimit } = await lambda.send(new GetAccountSettingsCommand({}));
+  const unreserved = AccountLimit?.UnreservedConcurrentExecutions;
+  if (unreserved === undefined) throw new Error("no UnreservedConcurrentExecutions in the reply");
+  const concurrency = Math.max(1, Math.floor(unreserved * ACCOUNT_CONCURRENCY_SHARE));
+  logEvent({ event: "worker_concurrency", source: "account", unreserved, concurrency });
+  return concurrency;
+}
+
+async function planConfig(
+  event: PlanEvent,
+  deps?: HandlerDeps,
+): Promise<DistributedRenderConfig & { workerConcurrency: number }> {
+  const config = {
+    ...event.Config,
+    workerConcurrency: await resolveWorkerConcurrency(event, deps),
+  };
+  const remainingMs = deps?.getRemainingTimeInMillis?.();
+  if (config.workerTimeoutSeconds === undefined && remainingMs !== undefined) {
+    config.workerTimeoutSeconds = Math.ceil(remainingMs / 1000);
+  }
+  return config;
 }
 
 // The v1 handler owns one transactional download, plan, archive, upload, and cleanup lifecycle.
@@ -338,7 +386,7 @@ async function handlePlan(event: PlanEvent, deps?: HandlerDeps): Promise<PlanLam
     return handlePlanV2(event, deps);
   }
   const started = Date.now();
-  const config = planConfig(event, deps);
+  const config = await planConfig(event, deps);
   const s3 = deps?.s3 ?? getS3Client();
   const primitive = deps?.primitives?.plan ?? plan;
 
@@ -365,7 +413,10 @@ async function handlePlan(event: PlanEvent, deps?: HandlerDeps): Promise<PlanLam
     await downloadS3ObjectToFile(s3, event.ProjectS3Uri, projectArchive);
     await untarDirectory(projectArchive, projectDir);
 
-    const result: PlanResult = await primitive(projectDir, config, planDir);
+    // Same chunk layout as v2, so both protocols produce the same chunks and output.
+    const result: PlanResult = await primitive(projectDir, config, planDir, {
+      chunksCarryAudio: true,
+    });
 
     // Upload the planDir as a single tarball. Step Functions cannot pass
     // a directory-shaped artifact between states; we serialize and rely on
@@ -392,6 +443,7 @@ async function handlePlan(event: PlanEvent, deps?: HandlerDeps): Promise<PlanLam
       PlanS3Uri: planTarUri,
       PlanHash: result.planHash,
       ChunkCount: result.chunkCount,
+      MaxChunkConcurrency: Math.min(config.workerConcurrency, result.chunkCount),
       TotalFrames: result.totalFrames,
       Fps: result.fps,
       Width: result.width,
@@ -416,7 +468,7 @@ async function handlePlanV2(
   deps?: HandlerDeps,
 ): Promise<Extract<PlanLambdaResult, { PlanProtocol: "v2" }>> {
   const started = Date.now();
-  const config = planConfig(event, deps);
+  const config = await planConfig(event, deps);
   const s3 = deps?.s3 ?? getS3Client();
   const primitive = deps?.primitives?.planV2WithPublisher ?? planV2WithPublisher;
   if (!deps?.skipChromeResolution && !process.env.PRODUCER_HEADLESS_SHELL_PATH) {
@@ -440,6 +492,7 @@ async function handlePlanV2(
     });
     const manifest: PlanV2Manifest = await primitive(projectDir, config, publisher, {
       stagingParentDir: work,
+      chunksCarryAudio: true,
     });
 
     return {
@@ -449,6 +502,7 @@ async function handlePlanV2(
       PlanV2ArtifactS3Prefix: publisher.artifactPrefix,
       PlanHash: manifest.planHash,
       ChunkCount: manifest.chunkCount,
+      MaxChunkConcurrency: Math.min(config.workerConcurrency, manifest.chunkCount),
       TotalFrames: manifest.totalFrames,
       Fps: manifest.fps,
       Width: manifest.width,
@@ -551,7 +605,7 @@ async function handleRenderChunkV2(
   }
   const work = mkdtempSync(join(deps?.tmpRoot ?? tmpdir(), "hf-lambda-chunk-v2-"));
   try {
-    const planDir = await downloadAndMaterializePlanV2(
+    const { planDir } = await downloadAndMaterializePlanV2(
       s3,
       event,
       { role: "chunk", chunkIndex: event.ChunkIndex },
@@ -677,7 +731,15 @@ async function handleAssembleV2(
   const primitive = deps?.primitives?.assemble ?? assemble;
   const work = mkdtempSync(join(deps?.tmpRoot ?? tmpdir(), "hf-lambda-assemble-v2-"));
   try {
-    const planDir = await downloadAndMaterializePlanV2(s3, event, { role: "assembler" }, work);
+    const { planDir, manifest } = await downloadAndMaterializePlanV2(
+      s3,
+      event,
+      { role: "assembler" },
+      work,
+    );
+    if (chunksAreStitchedMp4(planDir, event.Cfr === true)) {
+      return await stitchChunksInS3(s3, event, manifest, started);
+    }
     // `downloadAndMaterializePlanV2` materializes atomically. Audio is
     // assembler-only and lives at the familiar v1-compatible location.
     const audioPath = resolvePlanAudioPath(planDir);
@@ -718,6 +780,36 @@ async function handleAssembleV2(
   }
 }
 
+async function stitchChunksInS3(
+  s3: S3Client,
+  event: AssembleV2Event,
+  plan: PlanV2Manifest,
+  started: number,
+): Promise<AssembleLambdaResult> {
+  if (event.ChunkS3Uris.length !== plan.chunkCount) {
+    throw new Error(
+      `[handler] ${event.ChunkS3Uris.length} chunk URIs for a plan of ${plan.chunkCount} chunks`,
+    );
+  }
+  const stitchStarted = Date.now();
+  const stitched = await stitchMp4InS3(s3, event.ChunkS3Uris, event.OutputS3Uri);
+  logEvent({
+    event: "assemble_stages",
+    mode: "s3-stitch",
+    planMs: stitchStarted - started,
+    stitchMs: Date.now() - stitchStarted,
+    parts: stitched.parts,
+    downloadedBytes: stitched.downloadedBytes,
+  });
+  return {
+    Action: "assemble",
+    OutputS3Uri: event.OutputS3Uri,
+    FramesEncoded: plan.totalFrames,
+    FileSize: stitched.fileSize,
+    DurationMs: Date.now() - started,
+  };
+}
+
 async function downloadAndMaterializePlanV2(
   s3: S3Client,
   event: {
@@ -727,7 +819,7 @@ async function downloadAndMaterializePlanV2(
   },
   target: PlanV2MaterializationTarget,
   work: string,
-): Promise<string> {
+): Promise<{ planDir: string; manifest: PlanV2Manifest }> {
   const transportDir = join(work, "plan-v2");
   mkdirSync(transportDir, { recursive: true });
   await downloadS3ObjectToFile(s3, event.PlanV2ManifestS3Uri, join(transportDir, "plan.json"));
@@ -744,7 +836,7 @@ async function downloadAndMaterializePlanV2(
   });
   const planDir = join(work, "plan");
   materializePlanV2Target(transportDir, target, planDir);
-  return planDir;
+  return { planDir, manifest };
 }
 
 async function downloadPlanV2Artifact(

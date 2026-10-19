@@ -23,6 +23,7 @@ export default defineConfig({
     ffBinaries: "src/ffBinaries.ts",
     assetResolution: "src/assetResolution.ts",
     htmlAttributeSpans: "src/htmlAttributeSpans.ts",
+    timeSpans: "src/timeSpans.ts",
   },
   format: ["esm"],
   outDir: "dist",

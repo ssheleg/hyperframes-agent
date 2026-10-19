@@ -856,6 +856,54 @@ describe("createColorGradingRuntime", () => {
     expect(lastUniform1f).toHaveBeenCalledWith("u_blur", 0.7);
   });
 
+  describe("a graded canvas", () => {
+    function makeGradedCanvas(width: number, height: number): HTMLCanvasElement {
+      const canvas = document.createElement("canvas");
+      canvas.id = "drawn";
+      canvas.width = width;
+      canvas.height = height;
+      canvas.setAttribute(
+        HF_COLOR_GRADING_ATTR,
+        serializeHfColorGrading({ adjust: { exposure: 0.5 } }),
+      );
+      Object.defineProperty(canvas, "offsetWidth", { value: 640, configurable: true });
+      Object.defineProperty(canvas, "offsetHeight", { value: 360, configurable: true });
+      canvas.getBoundingClientRect = () =>
+        ({ width: 640, height: 360, left: 0, top: 0, right: 640, bottom: 360 }) as DOMRect;
+      document.body.appendChild(canvas);
+      return canvas;
+    }
+    const canvasUploads = (canvas: HTMLCanvasElement) =>
+      texImage2DCalls.filter((args) => args.length === 6 && args[5] === canvas).length;
+
+    it("grades its pixels and re-uploads them on every transport tick and seek", () => {
+      const canvas = makeGradedCanvas(320, 180);
+      runtime = createColorGradingRuntime();
+
+      expect(runtime.isGraded(canvas)).toBe(true);
+      expect(runtime.getStatus("drawn")).toMatchObject({ state: "active" });
+      expect(canvas.style.getPropertyValue("opacity")).toBe("0");
+      expect(canvasUploads(canvas)).toBe(1);
+
+      expect(runtime.redrawAnimated()).toBe(1);
+      expect(runtime.redraw()).toBe(1);
+      expect(canvasUploads(canvas)).toBe(3);
+    });
+
+    it("waits for a drawing buffer, whatever its CSS box", () => {
+      const canvas = makeGradedCanvas(0, 0);
+      runtime = createColorGradingRuntime();
+
+      expect(runtime.getStatus("drawn")).toMatchObject({ state: "pending" });
+      expect(canvasUploads(canvas)).toBe(0);
+
+      canvas.width = 320;
+      canvas.height = 180;
+      expect(runtime.redraw()).toBe(1);
+      expect(canvasUploads(canvas)).toBe(1);
+    });
+  });
+
   it("redraws animated held video frames without duplicating active video draws", () => {
     const video = makeDrawableVideo();
     video.style.setProperty("--hf-color-grading-blur", "0.1");
