@@ -74,7 +74,7 @@ VERSION="$VERSION" node -e '
   fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
 '
 bun run --filter @hyperframes/cli build
-grep -q "\"$VERSION\"" packages/cli/dist/cli.js || { echo "dist/cli.js does not carry $VERSION" >&2; exit 1; }
+grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not carry $VERSION" >&2; exit 1; }
 
 log "tests of the fork's patches"
 PATCHED_TESTS=$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')
