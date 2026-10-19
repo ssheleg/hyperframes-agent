@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
 # Builds, checks and (with --publish) releases one package of the fork line:
-# the `hyperframes` CLI as a tarball, versioned <upstream>-sshlg.<n>, attached to
-# a GitHub Release tagged fork-v<version>. Never publishes to npm.
+# the `hyperframes` CLI as a tarball attached to a GitHub Release. Never publishes to npm.
 #
 #   fork/release.sh <n>              build + check, leave the tarball in fork/out/
 #   fork/release.sh <n> --publish    also tag, push the branch and the tag, create the release
-#   fork/release.sh <n> --skip-build reuse the built dist/ (the checks still run)
+#   fork/release.sh <n> --skip-deps  reuse the built workspace packages (the CLI is always rebuilt)
 #
-# The tag starts with "fork-" on purpose: upstream's publish workflow fires on
-# tags matching v*-* and would try to publish to npm.
+# Names (see fork/README.md):
+#   CLI version  <base>+sshlg.<n>        build metadata: semver compares it equal to <base>, so
+#                                        registry minCliVersion gates and update checks behave as
+#                                        on <base>, while `hyperframes --version` names the line
+#   tag          fork-v<base>-sshlg.<n>  "fork-" because upstream's publish workflow fires on v*-*
+#   asset        hyperframes-<base>-sshlg.<n>.tgz (no "+" in a URL)
 set -euo pipefail
 
-usage() { echo "usage: fork/release.sh <n> [--publish] [--skip-build]" >&2; exit 2; }
+usage() { echo "usage: fork/release.sh <n> [--publish] [--skip-deps]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 N="$1"; shift
 [[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "release number must be a positive integer, got: $N" >&2; exit 2; }
-PUBLISH=0; BUILD=1
+PUBLISH=0; DEPS=1
 for arg in "$@"; do
   case "$arg" in
     --publish) PUBLISH=1 ;;
-    --skip-build) BUILD=0 ;;
+    --skip-deps) DEPS=0 ;;
     *) usage ;;
   esac
 done
@@ -33,26 +36,45 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 BASE="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' --abbrev=0)"
 COMMIT="$(git rev-parse HEAD)"
-VERSION="${BASE#v}-sshlg.${N}"
-TAG="fork-v${VERSION}"
+VERSION="${BASE#v}+sshlg.${N}"
+LABEL="${BASE#v}-sshlg.${N}"
+TAG="fork-v${LABEL}"
 OUT="$ROOT/fork/out"
-TARBALL="hyperframes-${VERSION}.tgz"
+TARBALL="hyperframes-${LABEL}.tgz"
 log() { printf '[fork-release] %s\n' "$*" >&2; }
 
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
   echo "tag $TAG already exists; use the next number" >&2; exit 1
 fi
-log "base $BASE, commit ${COMMIT:0:12}, version $VERSION, tag $TAG"
+log "base $BASE, commit ${COMMIT:0:12}, CLI version $VERSION, tag $TAG"
 
-if [ "$BUILD" = 1 ]; then
-  log "build"
+TMPS=()
+cleanup() {
+  git checkout -q -- packages/cli/package.json 2>/dev/null || true
+  [ ${#TMPS[@]} -eq 0 ] || rm -rf "${TMPS[@]}"
+}
+trap cleanup EXIT
+tmpdir() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-$1.XXXXXX")"; TMPS+=("$d"); printf '%s' "$d"; }
+
+if [ "$DEPS" = 1 ]; then
+  log "build the workspace packages the CLI bundles"
   bun install --frozen-lockfile
   bun run --filter '@hyperframes/{parsers,lint,studio-server}' build
   bun run --filter @hyperframes/core build
   bun run --filter '@hyperframes/{engine,producer,player,studio,shader-transitions,aws-lambda,gcp-cloud-run,sdk,inspector}' build
-  bun run --filter @hyperframes/cli build
 fi
-[ -f packages/cli/dist/cli.js ] || { echo "packages/cli/dist/cli.js is missing: build first" >&2; exit 1; }
+
+log "build the CLI as $VERSION"
+# tsup bakes package.json's version into dist as __CLI_VERSION__; the stamp is reverted on exit.
+VERSION="$VERSION" node -e '
+  const fs = require("fs");
+  const p = "packages/cli/package.json";
+  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+  pkg.version = process.env.VERSION;
+  fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+'
+bun run --filter @hyperframes/cli build
+grep -q "\"$VERSION\"" packages/cli/dist/cli.js || { echo "dist/cli.js does not carry $VERSION" >&2; exit 1; }
 
 log "tests of the fork's patches"
 PATCHED_TESTS=$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')
@@ -62,30 +84,28 @@ if [ -n "$PATCHED_TESTS" ]; then
 fi
 
 log "pack"
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-pack.XXXXXX")"
-trap 'rm -rf "$STAGE"' EXIT
+STAGE="$(tmpdir pack)"
 cp -R packages/cli/bin packages/cli/dist packages/cli/package.json "$STAGE/"
 for f in README.md LICENSE; do
   if [ -f "packages/cli/$f" ]; then cp "packages/cli/$f" "$STAGE/"; elif [ -f "$f" ]; then cp "$f" "$STAGE/"; fi
 done
-STAGE="$STAGE" VERSION="$VERSION" BASE="$BASE" COMMIT="$COMMIT" REPO="$REPO" node -e '
+STAGE="$STAGE" BASE="$BASE" COMMIT="$COMMIT" REPO="$REPO" LABEL="$LABEL" node -e '
   const fs = require("fs");
   const p = process.env.STAGE + "/package.json";
   const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
   pkg.name = "hyperframes"; // the name upstream publishes the CLI under
-  pkg.version = process.env.VERSION;
-  pkg.hyperframesFork = { repository: process.env.REPO, base: process.env.BASE, commit: process.env.COMMIT };
+  pkg.hyperframesFork = { repository: process.env.REPO, base: process.env.BASE, release: process.env.LABEL, commit: process.env.COMMIT };
   fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
 '
 mkdir -p "$OUT"
 rm -f "$OUT/$TARBALL" "$OUT/$TARBALL.sha256"
-(cd "$STAGE" && npm pack --silent --pack-destination "$OUT" >/dev/null)
-[ -f "$OUT/$TARBALL" ] || { echo "npm pack did not produce $TARBALL" >&2; exit 1; }
+PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].filename))')"
+[ -f "$OUT/$PACKED" ] || { echo "npm pack did not produce $PACKED" >&2; exit 1; }
+[ "$PACKED" = "$TARBALL" ] || mv "$OUT/$PACKED" "$OUT/$TARBALL"
 (cd "$OUT" && shasum -a 256 "$TARBALL" > "$TARBALL.sha256")
 
-log "smoke: install the tarball and run it"
-SMOKE="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-smoke.XXXXXX")"
-trap 'rm -rf "$STAGE" "$SMOKE"' EXIT
+log "smoke: install the tarball into an empty project and run it"
+SMOKE="$(tmpdir smoke)"
 (cd "$SMOKE" && npm init -y >/dev/null && PUPPETEER_SKIP_DOWNLOAD=1 npm install --silent --no-audit --no-fund "$OUT/$TARBALL" >/dev/null)
 mkdir -p "$SMOKE/home/.hyperframes/running"
 DEAD=99999999
@@ -94,6 +114,7 @@ GOT="$(cd "$SMOKE" && HOME="$SMOKE/home" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAM
 case "$GOT" in *"$VERSION"*) ;; *) echo "smoke: --version printed '$GOT', expected $VERSION" >&2; exit 1 ;; esac
 [ ! -e "$SMOKE/home/.hyperframes/running/$DEAD" ] || { echo "smoke: the marker of dead pid $DEAD survived a start" >&2; exit 1; }
 FORK_FIELD="$(node -p 'JSON.stringify(require(process.argv[1]).hyperframesFork)' "$SMOKE/node_modules/hyperframes/package.json")"
+case "$FORK_FIELD" in *"$COMMIT"*) ;; *) echo "smoke: the installed package.json lacks hyperframesFork.commit" >&2; exit 1 ;; esac
 log "smoke passed: --version '$GOT', dead marker swept, hyperframesFork $FORK_FIELD"
 log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 
@@ -101,14 +122,14 @@ log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 
 log "publish"
 git fetch -q origin fork/main 2>/dev/null || true
-if git rev-parse -q --verify origin/fork/main >/dev/null; then
-  git merge-base --is-ancestor origin/fork/main HEAD || { echo "origin/fork/main is not an ancestor of HEAD: refusing to rewrite the line" >&2; exit 1; }
+if git rev-parse -q --verify refs/remotes/origin/fork/main >/dev/null; then
+  git merge-base --is-ancestor origin/fork/main HEAD || { echo "origin/fork/main is not an ancestor of HEAD: the line is never rewritten" >&2; exit 1; }
 fi
 git tag -a "$TAG" -m "hyperframes $VERSION: upstream $BASE plus the fork's patches" "$COMMIT"
 git push -q origin "HEAD:refs/heads/fork/main" "refs/tags/$TAG"
-NOTES="$(mktemp "${TMPDIR:-/tmp}/hf-fork-notes.XXXXXX")"
+NOTES="$(tmpdir notes)/notes.md"
 {
-  echo "The \`hyperframes\` CLI $VERSION: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."
+  echo "The \`hyperframes\` CLI \`$VERSION\`: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."
   echo
   echo "Patches on top of $BASE:"
   git log --reverse --no-merges --format='- %s (%h)' "$BASE..$COMMIT" -- . ':!fork'
@@ -117,12 +138,10 @@ NOTES="$(mktemp "${TMPDIR:-/tmp}/hf-fork-notes.XXXXXX")"
   echo
   echo "sha256: \`$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")\`"
 } > "$NOTES"
-gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --target "$COMMIT"
-rm -f "$NOTES"
+gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
 
 log "verify the published asset"
-CHECK="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-check.XXXXXX")"
+CHECK="$(tmpdir check)"
 curl -fsSL -o "$CHECK/$TARBALL" "https://github.com/$REPO/releases/download/$TAG/$TARBALL"
-(cd "$CHECK" && shasum -a 256 -c <(sed "s#  .*#  $TARBALL#" "$OUT/$TARBALL.sha256"))
-rm -rf "$CHECK"
+(cd "$CHECK" && echo "$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")  $TARBALL" | shasum -a 256 -c -)
 log "released $TAG: https://github.com/$REPO/releases/tag/$TAG"

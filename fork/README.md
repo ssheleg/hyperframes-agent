@@ -6,24 +6,31 @@ yet. Its packages ship as tarballs on GitHub Releases of this repository, never 
 
 ## Versions and tags
 
-| Item | Form | Example |
-|---|---|---|
-| Base | an upstream release tag | `v0.8.170` |
-| Version | `<base>-sshlg.<n>` | `0.8.170-sshlg.1` |
-| Tag | `fork-v<version>` | `fork-v0.8.170-sshlg.1` |
-| Asset | `hyperframes-<version>.tgz` and its `.sha256` | `hyperframes-0.8.170-sshlg.1.tgz` |
+| Item        | Form                                                     | Example                           |
+| ----------- | -------------------------------------------------------- | --------------------------------- |
+| Base        | an upstream release tag                                  | `v0.8.170`                        |
+| CLI version | `<base>+sshlg.<n>` (what `hyperframes --version` prints) | `0.8.170+sshlg.1`                 |
+| Tag         | `fork-v<base>-sshlg.<n>`                                 | `fork-v0.8.170-sshlg.1`           |
+| Asset       | `hyperframes-<base>-sshlg.<n>.tgz` and its `.sha256`     | `hyperframes-0.8.170-sshlg.1.tgz` |
 
 The tag starts with `fork-` because upstream's `publish.yml` fires on tags matching `v*-*` and would
 try to publish to npm. No workflow of this repository fires on `fork/main` or on `fork-*` tags; the
 checks run locally in `fork/release.sh`.
 
-The packed `package.json` carries `"hyperframesFork": { "repository", "base", "commit" }`, so a
-consumer can tell the fork's build from npm's and name the commit it came from.
+The CLI version uses semver build metadata (`+sshlg.<n>`), not a prerelease (`-sshlg.<n>`): a prerelease
+sorts below its base, so the CLI would refuse registry items whose `minCliVersion` is the base. Build
+metadata compares equal to the base, and `hyperframes --version` still names the line. Two effects of
+keeping the base's semantics: `hyperframes init` pins new projects to `hyperframes@<base>+sshlg.<n>`,
+which npm resolves to upstream's `<base>`, and Docker renders (`--docker`) cannot use the version as an
+image tag (`+` is not allowed there); use upstream's CLI for those.
+
+The packed `package.json` carries `"hyperframesFork": { "repository", "base", "release", "commit" }`,
+so a consumer can tell the fork's build from npm's and name the commit it came from.
 
 ## Patches on the line
 
-| Patch | Upstream | Drop when |
-|---|---|---|
+| Patch                                                                   | Upstream                           | Drop when                      |
+| ----------------------------------------------------------------------- | ---------------------------------- | ------------------------------ |
 | `fix(cli): each start sweeps the running markers of CLIs that are gone` | heygen-com/hyperframes#5790 (open) | an upstream release carries it |
 
 ## Release
