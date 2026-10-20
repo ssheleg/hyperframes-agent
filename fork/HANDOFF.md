@@ -28,8 +28,12 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. When `frame-agent` is a Project on the Fabric board (`com.directory`), submit to it: move its pin to
-   `fork-v0.8.180-sshlg.1` (URL and sha256 above).
+1. Frame Agent's move to `fork-v0.8.180-sshlg.1` is ssheleg/frame-agent#186 (branch `agent/bl-engine-0.8.180`,
+   worktree `~/DATA/_worktrees/frame-agent-engine-0.8.180`, BL-172; skills re-vendored at `v0.8.180`, door audit in the
+   PR). Its gate was not green on 2026-10-20 only because of the machine: 9 tests `ENOSPC` with the disk at 0.7 to
+   3.7 GB free, 5 deadlines missed at load average about 520; typecheck, lint and docs passed. Next: with at least
+   10 GB free and normal load, run `npm run check` in that worktree; on exit 0 merge #186 (the repository merges PRs)
+   and remove the worktree.
 2. Upstream releases after `v0.8.180`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish` and update this file.
 
