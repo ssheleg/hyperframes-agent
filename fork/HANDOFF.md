@@ -17,7 +17,9 @@ publish tarball releases that consumers pin.
   published.
 - Frame Agent's `main` still pins `fork-v0.8.174-sshlg.1` (its BL-166). The request to move it to
   `fork-v0.8.180-sshlg.1` waits for the Fabric board: on 2026-10-20 Fabric was running but its hub was not published
-  (lifecycle broker reason `hub_not_published`), so `com.submit` could not be sent.
+  (lifecycle broker reason `hub_not_published`), so `com.submit` could not be sent. Later that day the hub answered,
+  but neither `hyperframes-agent` nor `frame-agent` is a Project in Fabric's directory (34 Projects, read from the
+  `fabric-workspace` session); adding a folder as a Project is the person's step in Fabric (+ Project, Open a project).
 - The sixteen inherited workflows are disabled (repository settings).
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
   cleanly onto upstream `main` (`git merge-tree`, 2026-10-20). We do not wait for it.
@@ -26,7 +28,7 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. When the Fabric board answers (`fabric_whoami`), submit to Frame Agent's Project: move its pin to
+1. When `frame-agent` is a Project on the Fabric board (`com.directory`), submit to it: move its pin to
    `fork-v0.8.180-sshlg.1` (URL and sha256 above).
 2. Upstream releases after `v0.8.180`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish` and update this file.
