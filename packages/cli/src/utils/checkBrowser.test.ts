@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 // fallow-ignore-file code-duplication
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   openSettledCompositionPage,
   type OpenSettledCompositionPageOptions,
+  SCREENSHOT_SEEK_OPTIONS,
+  seekCompositionTimeline,
 } from "../capture/captureCompositionFrame.js";
 import { DEFAULT_CHECK_OPTIONS, runAuditGrid } from "./checkPipeline.js";
 import {
@@ -92,6 +94,11 @@ const PROJECT: ProjectDir = {
   indexPath: "/project/index.html",
 };
 
+// The overlap grid logs one marker per sample; keep them out of test output.
+beforeEach(() => {
+  vi.spyOn(console, "debug").mockImplementation(() => undefined);
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
@@ -168,6 +175,136 @@ it("carries raw browser geometry through the page driver and pipeline", async ()
   ]);
   expect(result.timings).toEqual({ launchSettleMs: 60, seekLoopMs: 40, contrastMs: 0 });
   expect(mocks.serverClose).toHaveBeenCalledOnce();
+});
+
+it("runs the dense overlap grid in one page task, keeping each sample's time on what it logs", async () => {
+  mountCanvasFixture(
+    `<section data-composition-file="scenes/copy.html"><p id="copy" data-layout-name="copy">Hi</p></section>`,
+  );
+  const page = fakePage();
+  const consoleHandlers: ((message: ReturnType<typeof fakeConsoleMessage>) => void)[] = [];
+  const onConsole = (message: ReturnType<typeof fakeConsoleMessage>) =>
+    consoleHandlers.forEach((handler) => handler(message));
+  page.on = vi.fn((event: string, handler: (typeof consoleHandlers)[number]) => {
+    if (event === "console") consoleHandlers.push(handler);
+  });
+  // CDP delivers the page's console calls in order; forward jsdom's the same way.
+  vi.spyOn(console, "debug").mockImplementation((text: string) => {
+    onConsole(fakeConsoleMessage("debug", text));
+  });
+  let evaluateCalls = 0;
+  let afterGrid = false;
+  const evaluate = page.evaluate;
+  page.evaluate = vi.fn(async (...args: unknown[]) => {
+    // A timer a sample queued fires once the grid's task ends, before Node's next command.
+    if (afterGrid) onConsole(fakeConsoleMessage("error", "queued during the grid"));
+    afterGrid = typeof args[0] === "string" && args[0].includes("__hfCheckSample");
+    evaluateCalls += 1;
+    return Reflect.apply(evaluate, page, args);
+  });
+  const denseAudits: number[] = [];
+  const injectScript = page.addScriptTag;
+  page.addScriptTag = vi.fn(async (arg: { content: string }) => {
+    await injectScript(arg);
+    Reflect.set(window, "__hyperframesOverlapAudit", ({ time }: { time: number }) => {
+      if (time !== 5) denseAudits.push(evaluateCalls);
+      if (time !== 2.5) return [];
+      onConsole(fakeConsoleMessage("error", "thrown at 2.5"));
+      const rect = { left: 10, top: 20, right: 110, bottom: 60, width: 100, height: 40 };
+      return [
+        {
+          code: "content_overlap",
+          severity: "warning",
+          time,
+          selector: "#copy",
+          message: "x",
+          rect,
+        },
+      ];
+    });
+  });
+  installSessionMock(page);
+
+  const result = await runBrowserCheck(
+    PROJECT,
+    { ...DEFAULT_CHECK_OPTIONS, samples: 1, contrast: false },
+    { kind: "none" },
+    runAuditGrid,
+  );
+
+  expect(denseAudits.length).toBeGreaterThan(10);
+  expect(new Set(denseAudits).size).toBe(1);
+  expect(result.runtimeFindings).toContainEqual(
+    expect.objectContaining({ code: "console_error", message: "thrown at 2.5", time: 2.5 }),
+  );
+  expect(result.runtimeFindings).toContainEqual(
+    expect.objectContaining({ message: "queued during the grid", time: 0, timeRange: [0, 10] }),
+  );
+  expect(
+    result.runtimeFindings.find((finding) => finding.message === "thrown at 2.5"),
+  ).not.toHaveProperty("timeRange");
+  expect(result.layoutIssues).toContainEqual(
+    expect.objectContaining({
+      code: "content_overlap",
+      selector: "#copy",
+      sourceFile: "scenes/copy.html",
+      dataAttributes: { "data-layout-name": "copy" },
+      bbox: { x: 10, y: 20, width: 100, height: 40 },
+      time: 2.5,
+    }),
+  );
+});
+
+it("takes no contrast screenshot at a sample with no text to measure", async () => {
+  mountCanvasFixture();
+  const page = fakePage();
+  page.screenshot = vi.fn(async () => "c3R1Yg==");
+  installSessionMock(page);
+
+  await runBrowserCheck(
+    PROJECT,
+    { ...DEFAULT_CHECK_OPTIONS, samples: 1, contrast: true },
+    { kind: "none" },
+    runAuditGrid,
+  );
+
+  expect(page.screenshot).not.toHaveBeenCalled();
+});
+
+it("measures text on its own opaque fill without a contrast screenshot", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(100);
+  mountCanvasFixture(`<div id="headline">Readable copy</div>`);
+  const headline = document.querySelector("#headline");
+  if (!headline) throw new Error("Contrast fixture failed to mount");
+  vi.spyOn(headline, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 50, 300, 40));
+  vi.spyOn(window, "getComputedStyle").mockImplementation(
+    () =>
+      ({
+        display: "block",
+        visibility: "visible",
+        opacity: "1",
+        color: "rgb(255,255,255)",
+        fill: "",
+        backgroundColor: "rgb(0,0,0)",
+        backgroundImage: "none",
+        fontSize: "32px",
+        fontWeight: "700",
+      }) as unknown as CSSStyleDeclaration,
+  );
+  const page = fakePage();
+  page.screenshot = vi.fn(async () => "c3R1Yg==");
+  installSessionMock(page);
+
+  const result = await runBrowserCheck(
+    PROJECT,
+    { ...DEFAULT_CHECK_OPTIONS, samples: 1, contrast: true },
+    { kind: "none" },
+    runAuditGrid,
+  );
+
+  expect(result.contrastChecked).toBeGreaterThan(0);
+  expect(result.contrastFindings).toEqual([]);
+  expect(page.screenshot).not.toHaveBeenCalled();
 });
 
 it("uses check --timeout for both navigation and render-ready settling", async () => {
@@ -288,60 +425,74 @@ it("round-trips the browser script's raw contrast candidates back into finish", 
   }
 });
 
-it("captures check overview snapshots after contrast restores hidden text", async () => {
-  vi.spyOn(Date, "now").mockReturnValue(100);
-  mountCanvasFixture(`<div id="headline">Readable copy</div>`);
-  const root = document.querySelector("[data-composition-id]");
-  const headline = document.querySelector<HTMLElement>("#headline");
-  if (!root || !headline) throw new Error("Contrast fixture failed to mount");
-  vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 640, 360));
-  vi.spyOn(headline, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 50, 300, 40));
-  vi.spyOn(window, "getComputedStyle").mockImplementation(
-    () =>
-      ({
-        display: "block",
-        visibility: "visible",
-        opacity: "1",
-        color: "rgb(255,255,255)",
-        fill: "",
-        clipPath: "none",
-        fontSize: "32px",
-        fontWeight: "700",
-      }) as unknown as CSSStyleDeclaration,
-  );
+it.each([
+  { snapshots: true, shots: 2, saved: ["text-visible-base64"] },
+  { snapshots: false, shots: 1, saved: [] },
+])(
+  "takes $shots contrast screenshot(s) when snapshots is $snapshots, overview after text restores",
+  async ({ snapshots, shots, saved }) => {
+    vi.spyOn(Date, "now").mockReturnValue(100);
+    mountCanvasFixture(`<div id="headline">Readable copy</div>`);
+    const root = document.querySelector("[data-composition-id]");
+    const headline = document.querySelector<HTMLElement>("#headline");
+    if (!root || !headline) throw new Error("Contrast fixture failed to mount");
+    vi.spyOn(root, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 640, 360));
+    vi.spyOn(headline, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 50, 300, 40));
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () =>
+        ({
+          display: "block",
+          visibility: "visible",
+          opacity: "1",
+          color: "rgb(255,255,255)",
+          fill: "",
+          clipPath: "none",
+          fontSize: "32px",
+          fontWeight: "700",
+        }) as unknown as CSSStyleDeclaration,
+    );
 
-  const page = fakePage();
-  const injectScript = page.addScriptTag;
-  page.addScriptTag = vi.fn(async (arg: { content: string }) => {
-    await injectScript(arg);
-    const w = window as unknown as {
-      __contrastAuditFinish?: (...args: unknown[]) => Promise<unknown>;
-      __contrastAuditRestoreIfPending?: () => void;
-    };
-    if (w.__contrastAuditFinish) {
-      w.__contrastAuditFinish = async () => {
-        w.__contrastAuditRestoreIfPending?.();
-        return [];
+    const page = fakePage();
+    const injectScript = page.addScriptTag;
+    page.addScriptTag = vi.fn(async (arg: { content: string }) => {
+      await injectScript(arg);
+      const w = window as unknown as {
+        __contrastAuditFinish?: (...args: unknown[]) => Promise<unknown>;
+        __contrastAuditRestoreIfPending?: () => void;
       };
-    }
-  });
-  page.screenshot = vi.fn(async () =>
-    headline.style.getPropertyValue("color") === "transparent"
-      ? "text-hidden-base64"
-      : "text-visible-base64",
-  );
-  installSessionMock(page);
+      if (w.__contrastAuditFinish) {
+        w.__contrastAuditFinish = async () => {
+          w.__contrastAuditRestoreIfPending?.();
+          return [];
+        };
+      }
+    });
+    page.screenshot = vi.fn(async () =>
+      headline.style.getPropertyValue("color") === "transparent"
+        ? "text-hidden-base64"
+        : "text-visible-base64",
+    );
+    installSessionMock(page);
 
-  const result = await runBrowserCheck(
-    PROJECT,
-    { ...DEFAULT_CHECK_OPTIONS, samples: 1, contrast: true, snapshots: true },
-    { kind: "none" },
-    runAuditGrid,
-  );
+    const result = await runBrowserCheck(
+      PROJECT,
+      { ...DEFAULT_CHECK_OPTIONS, samples: 1, contrast: true, snapshots },
+      { kind: "none" },
+      runAuditGrid,
+    );
 
-  expect(page.screenshot).toHaveBeenCalledTimes(2);
-  expect(result.screenshots[0]?.pngBase64).toBe("text-visible-base64");
-});
+    expect(page.screenshot).toHaveBeenCalledTimes(shots);
+    expect(page.screenshot).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        clip: { x: 50, y: 50, width: 300, height: 40 },
+        captureBeyondViewport: false,
+      }),
+    );
+    expect(seekCompositionTimeline).toHaveBeenCalledWith(page, 5, SCREENSHOT_SEEK_OPTIONS);
+    expect(result.screenshots.map((shot) => shot.pngBase64)).toEqual(saved);
+  },
+);
 
 it("carries validate's clip-duration audit into the runtime findings", async () => {
   vi.spyOn(Date, "now").mockReturnValue(100);
@@ -994,10 +1145,12 @@ function fakeConsoleMessage(type: string, text: string) {
 function fakePage() {
   return Object.assign(Object.create(null), {
     on: vi.fn(),
+    viewport: () => ({ width: 640, height: 360 }),
     addScriptTag: vi.fn(async ({ content }: { content: string }) => {
       window.eval(content);
     }),
     evaluate: vi.fn(async (callback: unknown, ...args: unknown[]) => {
+      if (typeof callback === "string") return window.eval(callback);
       if (typeof callback !== "function") throw new Error("Expected an evaluate callback");
       return Reflect.apply(callback, window, args);
     }),

@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/aws-lambda",
-  "version": "0.8.174",
+  "version": "0.8.180",
   "description": "AWS Lambda adapter for HyperFrames distributed rendering — handler, client-side SDK, and CDK construct.",
   "repository": {
     "type": "git",
@@ -9,6 +9,7 @@
   },
   "files": [
     "dist/",
+    "prebuilt/",
     "scripts/",
     "README.md"
   ],
@@ -72,6 +73,7 @@
     "@aws-sdk/client-lambda": "^3.1146.0",
     "@aws-sdk/client-s3": "^3.1146.0",
     "@aws-sdk/client-sfn": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "3.1146.0",
     "@hyperframes/producer": "workspace:^",
     "@sparticuz/chromium": "148.0.0",
     "ffmpeg-static": "^5.2.0",

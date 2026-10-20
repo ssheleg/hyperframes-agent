@@ -7,6 +7,8 @@ import {
 } from "./checkSnapshotDirectory.js";
 import { findingElementKey, groupSampledFindings } from "./checkFindings.js";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import type { PrelaunchedBrowser } from "../capture/captureCompositionFrame.js";
 import { join, relative } from "node:path";
 import { trackCheckReport, trackCommandFailure } from "../telemetry/events.js";
 import { trackLintRun } from "../telemetry/lintRun.js";
@@ -444,7 +446,7 @@ async function collectGridSamples(
     indicatorFrames: [],
   };
   for (const time of mergeSampleTimes(grid.layoutSamples, motion.times)) {
-    await driver.seek(time);
+    await driver.seek(time, contrastSet.has(time));
     // Findings collected for THIS sample time, so the overview overlay (below)
     // only ever annotates a frame with defects that are actually valid at
     // that render time — never a stale bbox from an earlier/later sample.
@@ -471,21 +473,27 @@ async function collectGridSamples(
         await driver.collectMotionFrame(time, motion.selectors, motion.livenessScopes),
       );
     }
-    if (contrastSet.has(time)) {
-      const contrastStart = Date.now();
-      // Annotation is a --snapshots-only nicety — skip building it (and the
-      // driver's extra overlay screenshot) when nothing will use it; the call
-      // shape without --snapshots stays exactly what it was before this existed.
-      const capture = options.snapshots
-        ? await driver.collectContrast(time, annotationBoxesFrom(issuesAtTime))
-        : await driver.collectContrast(time);
-      collected.contrastMs += Date.now() - contrastStart;
-      collected.contrastEntries.push(...capture.entries);
-      collected.screenshots.push({ time, pngBase64: capture.pngBase64 });
-    }
+    if (contrastSet.has(time))
+      await collectContrastAt(driver, options, time, issuesAtTime, collected);
   }
   await collectMotionOverlapSamples(driver, grid, collected, options.range);
   return collected;
+}
+
+async function collectContrastAt(
+  driver: CheckAuditDriver,
+  options: CheckOptions,
+  time: number,
+  issuesAtTime: AnchoredLayoutIssue[],
+  collected: GridSamples,
+): Promise<void> {
+  const contrastStart = Date.now();
+  const capture = options.snapshots
+    ? await driver.collectContrast(time, annotationBoxesFrom(issuesAtTime))
+    : await driver.collectContrast(time);
+  collected.contrastMs += Date.now() - contrastStart;
+  collected.contrastEntries.push(...capture.entries);
+  if (capture.pngBase64) collected.screenshots.push({ time, pngBase64: capture.pngBase64 });
 }
 
 // Dense grid catches mid-motion text collisions the sparse layout grid seeks past; text-only overlap collection is cheap enough to afford it.
@@ -560,6 +568,17 @@ function holdProber(driver: CheckAuditDriver, collected: GridSamples, end: numbe
   };
 }
 
+async function denseOverlapTimes(
+  driver: CheckAuditDriver,
+  grid: SampleGrid,
+  range?: [number, number],
+): Promise<number[]> {
+  const offset = range?.[0] ?? 0;
+  const edges = (await driver.getClipEdges()).map((time) => time - offset);
+  const overlapTimes = buildOverlapSampleTimes(range ? range[1] - range[0] : grid.duration, edges);
+  return range ? mergeSampleTimes(overlapTimes.map((time) => time + range[0])) : overlapTimes;
+}
+
 /** Reruns content_overlap on a fine grid, unconditionally rather than gated on fingerprint change, since an animation aliased to the sparse grid collides between identical-fingerprint samples. */
 async function collectMotionOverlapSamples(
   driver: CheckAuditDriver,
@@ -568,18 +587,13 @@ async function collectMotionOverlapSamples(
   range?: [number, number],
 ): Promise<void> {
   const baseTimes = new Set(grid.layoutSamples);
-  const offset = range?.[0] ?? 0;
-  const edges = (await driver.getClipEdges()).map((time) => time - offset);
-  const overlapTimes = buildOverlapSampleTimes(range ? range[1] - range[0] : grid.duration, edges);
-  const shiftedTimes = range
-    ? mergeSampleTimes(overlapTimes.map((time) => time + range[0]))
-    : overlapTimes;
+  const shiftedTimes = await denseOverlapTimes(driver, grid, range);
   const probeHold = holdProber(driver, collected, range ? range[1] : grid.duration);
+  const gridIssues = await driver.collectOverlapGrid(shiftedTimes.filter((t) => !baseTimes.has(t)));
+  let sample = 0;
   for (const [index, time] of shiftedTimes.entries()) {
     if (baseTimes.has(time)) continue;
-    // Settle-free seek: collectOverlap reads getBoundingClientRect geometry, valid synchronously after setTime, so the dense pass skips the per-seek paint settle.
-    await driver.seekGeometry(time);
-    const issues = await driver.collectOverlap(time);
+    const issues = gridIssues[sample++] ?? [];
     collected.layoutIssues.push(...issues);
     await probeHold(time, shiftedTimes[index + 1] ?? Number.POSITIVE_INFINITY, issues);
   }
@@ -1293,6 +1307,7 @@ export async function runCheckPipeline(
   dependencies: CheckDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<CheckReport> {
   beginCheckSnapshots(project.dir);
+  const prelaunched = dependencies.prelaunchBrowser?.(project, options).catch(() => undefined);
   try {
     let lintResult: ProjectLintResult;
     const lintStartedAt = Date.now();
@@ -1351,8 +1366,9 @@ export async function runCheckPipeline(
     try {
       let browser: CheckBrowserResult;
       try {
+        const browserAhead = await prelaunched;
         browser = await deadline.run(() =>
-          dependencies.runBrowserCheck(project, options, motion, deadline),
+          dependencies.runBrowserCheck(project, options, motion, deadline, browserAhead),
         );
       } catch (error) {
         browser = emptyBrowserResult();
@@ -1403,6 +1419,7 @@ export async function runCheckPipeline(
     if (outcome.kind === "failed") throw outcome.error;
     return outcome.report;
   } finally {
+    await (await prelaunched)?.discard();
     await finishCheckSnapshots(project.dir).catch(() => undefined);
   }
 }
@@ -1856,11 +1873,23 @@ async function runBrowserCheck(
   options: CheckOptions,
   motion: MotionSpecResolution,
   deadline?: CheckDeadline,
+  prelaunched?: PrelaunchedBrowser,
 ): Promise<CheckBrowserResult> {
   const module = await import("./checkBrowser.js");
   // runAuditGrid is handed over as a callback so checkBrowser never imports
   // this module back (no import cycle).
-  return module.runBrowserCheck(project, options, motion, runAuditGrid, deadline);
+  return module.runBrowserCheck(project, options, motion, runAuditGrid, deadline, prelaunched);
+}
+
+// Chrome boots while lint, hdr and bundling run; the source index guesses the bundle's launch arguments.
+async function prelaunchBrowser(
+  project: ProjectDir,
+  options: CheckOptions,
+): Promise<PrelaunchedBrowser | undefined> {
+  const html = await readFile(project.indexPath, "utf8").catch(() => undefined);
+  if (html === undefined) return undefined;
+  const { prelaunchCompositionBrowser } = await import("../capture/captureCompositionFrame.js");
+  return prelaunchCompositionBrowser(html, options.browserGpuMode);
 }
 
 async function writeSnapshot(
@@ -1892,6 +1921,7 @@ const DEFAULT_DEPENDENCIES: CheckDependencies = {
   lintProject,
   resolveMotionSpec,
   runBrowserCheck,
+  prelaunchBrowser,
   writeSnapshot,
   captureFindingCrops,
   inspectHdrAutoPromotion,

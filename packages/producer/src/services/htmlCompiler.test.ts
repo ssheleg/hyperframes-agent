@@ -1,7 +1,7 @@
 // fallow-ignore-file code-duplication
 import { describe, expect, it, mock, beforeAll } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInThisContext } from "node:vm";
@@ -1209,6 +1209,52 @@ describe("local font embedding", () => {
     }
 
     expect(embeddedMessages).toHaveLength(1);
+  });
+
+  it("embeds local ttf and otf fonts as-is without woff2 compression", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "hf-local-font-raw-"));
+    const cacheDir = mkdtempSync(join(tmpdir(), "hf-local-font-cache-"));
+    const font = readFileSync(
+      join(
+        import.meta.dirname,
+        "../../../../docs/public/catalog/items/frost-sequence-camera-orbit/assets/fonts/Geist-Regular.ttf",
+      ),
+    );
+    writeFileSync(join(projectDir, "a.ttf"), font);
+    writeFileSync(join(projectDir, "b.otf"), font);
+    writeFileSync(
+      join(projectDir, "index.html"),
+      `<!DOCTYPE html>
+<html><head><style>
+  @font-face { font-family: "A"; src: url("a.ttf"); }
+  @font-face { font-family: "B"; src: url("b.otf"); }
+</style></head><body>
+  <div data-composition-id="root" data-width="640" data-height="360" data-duration="1">Text</div>
+</body></html>`,
+    );
+
+    const previousCacheDir = process.env.HYPERFRAMES_FONT_CACHE_DIR;
+    process.env.HYPERFRAMES_FONT_CACHE_DIR = cacheDir;
+    let html: string;
+    try {
+      ({ html } = await compileForRender(projectDir, join(projectDir, "index.html"), projectDir));
+    } finally {
+      if (previousCacheDir === undefined) delete process.env.HYPERFRAMES_FONT_CACHE_DIR;
+      else process.env.HYPERFRAMES_FONT_CACHE_DIR = previousCacheDir;
+    }
+
+    const embedded = (mime: string) =>
+      Buffer.from(
+        html.match(new RegExp(`data:${mime};base64,([A-Za-z0-9+/=]+)`))?.[1] ?? "",
+        "base64",
+      );
+    expect(embedded("font/ttf").equals(font)).toBe(true);
+    expect(embedded("font/otf").equals(font)).toBe(true);
+    expect(html).not.toContain("data:font/woff2");
+    // The woff2 compressor writes every result to this cache; empty means it never ran.
+    expect(readdirSync(cacheDir, { recursive: true })).toEqual([]);
+    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(cacheDir, { recursive: true, force: true });
   });
 
   it("keeps large local font collections file-backed instead of expanding them into HTML", async () => {

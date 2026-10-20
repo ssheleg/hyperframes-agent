@@ -38,7 +38,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
-import { type CanvasResolution, type DistributedFps, fpsToNumber } from "@hyperframes/core";
+import {
+  type CanvasResolution,
+  type DistributedFps,
+  fpsToNumber,
+  HF_COLOR_GRADING_ATTR,
+} from "@hyperframes/core";
 import {
   type EngineConfig,
   type VideoFrameFormat,
@@ -54,6 +59,7 @@ import {
   type RenderStrictness,
 } from "../renderOrchestrator.js";
 import { closeFileServerSafely } from "../fileServer.js";
+import { measurePlanSecondsPerFrame } from "./planFrameCost.js";
 import { constrainAacTruePeak } from "../render/audioPadTrim.js";
 import { encoderFailureError } from "../render/encoderInterruption.js";
 import { runAudioStage } from "../render/stages/audioStage.js";
@@ -68,6 +74,7 @@ import {
   type CompositionMetadataJson,
   freezePlan,
   type LockedRenderConfig,
+  writePlanRemoteFiles,
   type PlanFileDigests,
   prehashPlanFiles,
 } from "../render/stages/freezePlan.js";
@@ -93,6 +100,7 @@ import {
   readFfmpegVersion,
   readProducerVersion,
 } from "./shared.js";
+import { writeChunkAudioSlices } from "./chunkAudio.js";
 import { PLAN_PROTOCOL_V1, type PlanProtocolV1Descriptor } from "./planProtocol.js";
 import {
   measurePlanSizeBreakdown,
@@ -303,15 +311,22 @@ export interface BuildLocalExecutionPlanOptions {
    * chunks write those frames into their own work directory.
    */
   readonly deferVideoExtraction?: boolean;
+  /** Project files absent locally: probe their URL and publish their existing digest. */
+  readonly remoteFiles?: Readonly<Record<string, RemoteProjectFile>>;
   /** Shared with the publisher so each plan file is hashed once. */
   readonly digests?: PlanFileDigests;
   /** Runs while the audio mixes, once `compiled/` and the video trees are final. */
   readonly whileAudioMixes?: () => Promise<void>;
-  /**
-   * mp4 chunks carry their own slice of the plan audio (renderChunk muxes it). Ignored for other
-   * formats and with `cfr`, which re-encodes.
-   */
+  /** mp4 chunks carry their plan-audio slice unless cfr re-encodes. */
   readonly chunksCarryAudio?: boolean;
+  /** With `chunksCarryAudio`, also write each chunk's audio packets to their own file. Plan v2 only. */
+  readonly sliceChunkAudio?: boolean;
+}
+
+export interface RemoteProjectFile {
+  readonly url: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
 }
 
 export function logPlanStage(log: ProducerLogger, stage: string, startedAt: number): void {
@@ -417,10 +432,44 @@ const ESTIMATED_CHUNK_OVERHEAD_SECONDS = 60;
 /** Share of the worker time limit a chunk's predicted time may use. */
 const WORKER_TIMEOUT_MARGIN = 0.75;
 
+/** Seconds one frame is priced at: the per-pixel estimate, or the measured cost when it is higher. */
+function estimateFrameSeconds(megapixels: number, measuredSecondsPerFrame = 0): number {
+  return Math.max(ESTIMATED_SECONDS_PER_MEGAPIXEL_FRAME * megapixels, measuredSecondsPerFrame);
+}
+
 /** Predicted seconds for one chunk of `frames` frames at `megapixels` output pixels per frame. */
-export function estimateChunkSeconds(frames: number, megapixels: number): number {
+export function estimateChunkSeconds(
+  frames: number,
+  megapixels: number,
+  measuredSecondsPerFrame?: number,
+): number {
   return (
-    ESTIMATED_CHUNK_OVERHEAD_SECONDS + frames * ESTIMATED_SECONDS_PER_MEGAPIXEL_FRAME * megapixels
+    ESTIMATED_CHUNK_OVERHEAD_SECONDS +
+    frames * estimateFrameSeconds(megapixels, measuredSecondsPerFrame)
+  );
+}
+
+/** Graded media runs a full-frame shader per frame, which the per-pixel estimate cannot see. */
+export function planNeedsFrameCostMeasurement(html: string): boolean {
+  return new RegExp(`\\b${HF_COLOR_GRADING_ATTR}=`, "i").test(html);
+}
+
+/** Whether {@link resolveMaxParallelChunks} sizes chunks from what a frame costs. */
+export function chunkSizingUsesFrameCost(
+  config: Pick<
+    DistributedRenderConfig,
+    | "maxParallelChunks"
+    | "chunkSize"
+    | "targetChunkFrames"
+    | "workerTimeoutSeconds"
+    | "workerConcurrency"
+  >,
+): boolean {
+  return (
+    config.maxParallelChunks === undefined &&
+    config.chunkSize === undefined &&
+    config.targetChunkFrames === undefined &&
+    (config.workerTimeoutSeconds !== undefined || config.workerConcurrency !== undefined)
   );
 }
 
@@ -460,6 +509,8 @@ export function resolveMaxParallelChunks(
   /** Output pixels per frame, after supersampling. */
   megapixels: number,
   log: ProducerLogger = defaultLogger,
+  /** Measured capture seconds per frame; frames are priced at it when it beats the estimate. */
+  measuredSecondsPerFrame?: number,
 ): number {
   if (config.maxParallelChunks !== undefined) return config.maxParallelChunks;
   const { workerTimeoutSeconds, workerConcurrency } = config;
@@ -467,11 +518,8 @@ export function resolveMaxParallelChunks(
     workerConcurrency ?? DEFAULT_MAX_PARALLEL_CHUNKS,
     MAX_PARALLEL_CHUNKS_CEILING,
   );
-  const pinsChunking = config.chunkSize !== undefined || config.targetChunkFrames !== undefined;
-  if (pinsChunking || (workerTimeoutSeconds === undefined && workerConcurrency === undefined)) {
-    return wave;
-  }
-  const secondsPerFrame = ESTIMATED_SECONDS_PER_MEGAPIXEL_FRAME * megapixels;
+  if (!chunkSizingUsesFrameCost(config)) return wave;
+  const secondsPerFrame = estimateFrameSeconds(megapixels, measuredSecondsPerFrame);
   const minFramesPerChunk = Math.ceil(ESTIMATED_CHUNK_OVERHEAD_SECONDS / secondsPerFrame);
   const wide = Math.max(1, Math.min(wave, Math.floor(totalFrames / minFramesPerChunk)));
   if (workerTimeoutSeconds === undefined) return wide;
@@ -484,7 +532,7 @@ export function resolveMaxParallelChunks(
   if (needed > MAX_PARALLEL_CHUNKS_CEILING) {
     const framesAtCeiling = Math.ceil(totalFrames / MAX_PARALLEL_CHUNKS_CEILING);
     throw new ChunkExceedsWorkerTimeoutError(
-      Math.ceil(estimateChunkSeconds(framesAtCeiling, megapixels)),
+      Math.ceil(estimateChunkSeconds(framesAtCeiling, megapixels, measuredSecondsPerFrame)),
       workerTimeoutSeconds,
     );
   }
@@ -995,6 +1043,7 @@ function createVideoSourceShipper(input: {
   projectDir: string;
   workCompiledDir: string;
   workVideoFramesDir: string;
+  isRemote: (srcPath: string) => boolean;
 }): (srcPath: string) => string {
   const shipped = new Map<string, string>();
   return (srcPath) => {
@@ -1006,7 +1055,10 @@ function createVideoSourceShipper(input: {
     let result: string | null = null;
     for (const root of stagedRel === null ? [input.workCompiledDir, input.projectDir] : []) {
       const rel = pathInside(root, srcPath);
-      if (rel !== null && existsSync(join(input.planDir, "compiled", rel))) {
+      if (
+        rel !== null &&
+        (existsSync(join(input.planDir, "compiled", rel)) || input.isRemote(srcPath))
+      ) {
         result = ["compiled", ...rel.split(sep)].join("/");
         break;
       }
@@ -1136,8 +1188,19 @@ export async function buildLocalExecutionPlan(
   const needsAlpha = outputNeedsAlpha(config.format);
 
   // ── Compile ──
+  const remoteFiles = Object.entries(options.remoteFiles ?? {});
+  const remoteLocalPath = (rel: string) => join(projectDir, ...rel.split("/"));
+  // Keyed by the path each file would have had, which is what every media resolver computes.
+  const urlByAbsentLocalPath = new Map(
+    remoteFiles.map(([rel, file]) => [remoteLocalPath(rel), file.url]),
+  );
+  const localPathByUrl = new Map(
+    remoteFiles.map(([rel, file]) => [file.url, remoteLocalPath(rel)]),
+  );
+
   stageStarted = Date.now();
   const compileResult = await runCompileStage({
+    urlByAbsentLocalPath,
     projectDir,
     workDir,
     htmlPath,
@@ -1228,20 +1291,12 @@ export async function buildLocalExecutionPlan(
     }
   }
 
-  // ── Chunking decisions ── (before extraction so an impossible plan fails fast)
-  const maxParallel = resolveMaxParallelChunks(
-    config,
-    totalFrames,
-    (compileResult.outputWidth * compileResult.outputHeight) / 1e6,
-    log,
-  );
-  const { chunkCount, effectiveChunkSize } = resolveChunkPlan(
-    totalFrames,
-    config.chunkSize,
-    maxParallel,
-    config.targetChunkFrames,
-  );
-  const chunks = buildChunkSlices(totalFrames, chunkCount, effectiveChunkSize);
+  // ── Chunking decisions ── (before extraction so an impossible plan fails fast; graded
+  // media is re-sized from its measured frame cost once its video frames exist)
+  const megapixels = (compileResult.outputWidth * compileResult.outputHeight) / 1e6;
+  let maxParallel = resolveMaxParallelChunks(config, totalFrames, megapixels, log);
+  const measureFrameCost =
+    chunkSizingUsesFrameCost(config) && planNeedsFrameCostMeasurement(compiled.html);
 
   // The compiled tree is now stable. If it already exceeds the final plan
   // budget, extraction/audio/freeze can only add retained bytes, so fail before
@@ -1268,6 +1323,7 @@ export async function buildLocalExecutionPlan(
     assertNotAborted,
     materializeSymlinks: true,
     deferRangeExtraction: options.deferVideoExtraction,
+    urlByAbsentLocalPath,
   });
   logPlanStage(log, "extract", stageStarted);
   if (extractResult.failureToEnforce) throw extractResult.failureToEnforce;
@@ -1314,6 +1370,7 @@ export async function buildLocalExecutionPlan(
     projectDir,
     workCompiledDir: compiledDir,
     workVideoFramesDir: stagedVideoFrames,
+    isRemote: (srcPath) => urlByAbsentLocalPath.has(srcPath),
   });
   // Staged frames live inside compiledDir, so they must match first.
   const sourceRoots: Array<[string, string]> = [
@@ -1324,19 +1381,30 @@ export async function buildLocalExecutionPlan(
   const planVideosJson: PlanVideosJson = buildPlanVideosJson({
     videos: composition.videos,
     compositionEnd: job.duration ?? Number.NaN,
-    extracted: (extractResult.extractionResult?.extracted ?? []).map((ext) => ({
-      videoId: ext.videoId,
-      srcPath: stableSourcePath(sourceRoots, ext.srcPath),
-      framePattern: ext.framePattern,
-      fps: ext.fps,
-      totalFrames: ext.totalFrames,
-      metadata: ext.metadata,
-      ...(ext.deferredRange
-        ? { deferredRange: { ...ext.deferredRange, sourcePath: shipVideoSource(ext.srcPath) } }
-        : {}),
-    })),
+    extracted: (extractResult.extractionResult?.extracted ?? []).map((ext) => {
+      const sourcePath = localPathByUrl.get(ext.srcPath) ?? ext.srcPath;
+      return {
+        videoId: ext.videoId,
+        srcPath: stableSourcePath(sourceRoots, sourcePath),
+        framePattern: ext.framePattern,
+        fps: ext.fps,
+        totalFrames: ext.totalFrames,
+        metadata: ext.metadata,
+        ...(ext.deferredRange
+          ? { deferredRange: { ...ext.deferredRange, sourcePath: shipVideoSource(sourcePath) } }
+          : {}),
+      };
+    }),
   });
   mkdirSync(join(planDir, "meta"), { recursive: true });
+  writePlanRemoteFiles(
+    planDir,
+    remoteFiles.map(([rel, { sha256, sizeBytes }]) => ({
+      path: `compiled/${rel}`,
+      sha256,
+      sizeBytes,
+    })),
+  );
   writeFileSync(
     join(planDir, PLAN_VIDEOS_META_RELATIVE_PATH),
     JSON.stringify(planVideosJson, null, 2),
@@ -1352,11 +1420,12 @@ export async function buildLocalExecutionPlan(
   // encode; the assembler pads or trims the track of any other plan.
   const audioSeconds = chunksCarryAudio ? totalFrames / config.fps : probeResult.duration;
   stageStarted = Date.now();
-  const [audioOutcome, overlapOutcome] = await Promise.allSettled([
+  const [audioOutcome, overlapOutcome, frameCostOutcome] = await Promise.allSettled([
     runAudioStage({
       projectDir,
       workDir,
       compiledDir: finalCompiledDir,
+      urlByAbsentLocalPath,
       duration: audioSeconds,
       ffmpegProcessTimeout: cfg.ffmpegProcessTimeout,
       audioGain: cfg.audioGain,
@@ -1376,9 +1445,45 @@ export async function buildLocalExecutionPlan(
         logPlanStage(log, "prepublish", prepublishStarted);
       }
     })(),
+    measureFrameCost
+      ? measurePlanSecondsPerFrame({
+          planDir,
+          workDir,
+          html: compiled.html,
+          planVideos: planVideosJson,
+          totalFrames,
+          fps: config.fps,
+          width,
+          height,
+          format: config.format,
+          quality: config.quality ?? "standard",
+          deviceScaleFactor,
+          variables: config.variables,
+          cfg: { ...cfg, forceScreenshot, forceScreenshotExplicitlyOptedOut: !forceScreenshot },
+          log,
+        }).finally(() => logPlanStage(log, "frame-cost", stageStarted))
+      : undefined,
   ]);
   if (audioOutcome.status === "rejected") throw audioOutcome.reason;
   if (overlapOutcome.status === "rejected") throw overlapOutcome.reason;
+  if (frameCostOutcome.status === "rejected") throw frameCostOutcome.reason;
+  if (frameCostOutcome.value !== undefined) {
+    log.info("[plan] measured frame cost", { secondsPerFrame: frameCostOutcome.value });
+    maxParallel = resolveMaxParallelChunks(
+      config,
+      totalFrames,
+      megapixels,
+      log,
+      frameCostOutcome.value,
+    );
+  }
+  const { chunkCount, effectiveChunkSize } = resolveChunkPlan(
+    totalFrames,
+    config.chunkSize,
+    maxParallel,
+    config.targetChunkFrames,
+  );
+  const chunks = buildChunkSlices(totalFrames, chunkCount, effectiveChunkSize);
   const audioResult = audioOutcome.value;
   if (audioResult.audioError) {
     applyDistributedAudioWarningPolicy(job, audioResult.audioError, audioResult.audioFailures, log);
@@ -1398,6 +1503,16 @@ export async function buildLocalExecutionPlan(
     });
     if (!peak.success) throw encoderFailureError("[plan] audio true-peak check failed", peak);
     logPlanStage(log, "audio-peak", stageStarted);
+    if (options.sliceChunkAudio) {
+      stageStarted = Date.now();
+      await writeChunkAudioSlices({
+        audioPath: planAudioPath,
+        planDir,
+        chunks,
+        fps: { num: config.fps, den: 1 },
+      });
+      logPlanStage(log, "audio-slices", stageStarted);
+    }
   }
 
   // ── Locked config ──

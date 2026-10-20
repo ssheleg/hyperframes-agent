@@ -7,6 +7,7 @@ import type { Browser, Page } from "puppeteer-core";
 import {
   AUDIT_SEEK_OPTIONS,
   DENSE_GEOMETRY_SEEK_OPTIONS,
+  SCREENSHOT_SEEK_OPTIONS,
   DEFAULT_ZOOM_PADDING_PX,
   DEFAULT_ZOOM_SCALE,
   captureRegionCrop,
@@ -15,6 +16,8 @@ import {
   resolveCliChromeGpuMode,
   seekCompositionTimeline,
   waitForPreferredSeekTarget,
+  seekInPage,
+  type PrelaunchedBrowser,
 } from "../capture/captureCompositionFrame.js";
 import {
   auditClipDurations,
@@ -68,10 +71,19 @@ interface RuntimeDraft {
   severity: CheckSeverity;
   message: string;
   time: number;
+  timeRange?: [number, number];
   url?: string;
   line?: number;
   count?: number;
   abortedImage?: boolean;
+}
+
+type RuntimeStamp = Pick<RuntimeDraft, "time" | "timeRange">;
+
+interface RuntimeClock {
+  now(): RuntimeStamp;
+  at(time: number): void;
+  during(range: [number, number]): void;
 }
 
 interface AnchorRequest {
@@ -95,6 +107,7 @@ interface PreparedContrast {
   // what it sends back. `candidate` is the parsed copy for Node-side reporting.
   raw: unknown;
   candidate: ContrastCandidate;
+  knownBackdrop: boolean;
   anchor: CheckAnchor;
 }
 
@@ -194,6 +207,7 @@ export async function runBrowserCheck(
   motion: MotionSpecResolution,
   runGrid: RunAuditGrid,
   deadline?: CheckDeadline,
+  prelaunched?: PrelaunchedBrowser,
 ): Promise<CheckBrowserResult> {
   const { bundleWithLocalizedFonts } = await import("./bundleWithLocalizedFonts.js");
   const html = await bundleWithLocalizedFonts(project.dir);
@@ -209,7 +223,16 @@ export async function runBrowserCheck(
     [],
     options.autoProxy,
   );
-  let currentTime = 0;
+  let stamp: RuntimeStamp = { time: 0 };
+  const clock: RuntimeClock = {
+    now: () => stamp,
+    at: (time) => {
+      stamp = { time };
+    },
+    during: (range) => {
+      stamp = { time: range[0], timeRange: range };
+    },
+  };
   let failure: { kind: "none" } | { kind: "failed"; error: unknown } = { kind: "none" };
   let chromeBrowser: import("puppeteer-core").Browser | undefined;
 
@@ -219,12 +242,13 @@ export async function runBrowserCheck(
       navigationTimeoutMs: options.timeout,
       renderReadyTimeoutMs: options.timeout,
       renderReadyWarningSuffix: "checking the current page state",
+      prelaunched,
       browserGpuMode: options.browserGpuMode ?? resolveCliChromeGpuMode(),
       signal: deadline?.signal,
       onBrowser: deadline?.ownBrowser,
       onBrowserReady: deadline?.start,
       beforeNavigate: async (page) => {
-        wireRuntimeListeners(page, drafts, () => currentTime);
+        wireRuntimeListeners(page, drafts, clock);
         await deadline?.preparePage(page);
       },
     });
@@ -247,9 +271,7 @@ export async function runBrowserCheck(
       const message = tweenTailMessage(tail);
       drafts.push({ code: "gsap_tween_tail", severity: "warning", message, time: tail.later.end });
     }
-    const driver = createPageDriver(page, (time) => {
-      currentTime = time;
-    });
+    const driver = createPageDriver(page, clock);
     const result = await runGrid(driver, options, motion);
     const broken = await abortedImagesStillBroken(page, drafts);
     return {
@@ -311,7 +333,7 @@ export async function captureFindingCrops(
     const snapshotDir = checkSnapshotDirectory(project.dir);
     mkdirSync(snapshotDir, { recursive: true });
     for (const request of requests) {
-      await seekCompositionTimeline(page, request.time, AUDIT_SEEK_OPTIONS);
+      await seekCompositionTimeline(page, request.time, SCREENSHOT_SEEK_OPTIONS);
       const canvas = await page.evaluate(() => ({
         width: window.innerWidth,
         height: window.innerHeight,
@@ -400,7 +422,8 @@ function runtimeInfoFindingCode(text: string): string | null {
     : "media_proxy_fallback";
 }
 
-function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], currentTime: () => number): void {
+function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], clock: RuntimeClock): void {
+  followSampleTimeMarkers(page, clock.at);
   page.on("console", (message) => {
     const type = message.type();
     const text = message.text();
@@ -410,7 +433,7 @@ function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
         code: "console_error",
         severity: "error",
         message: text,
-        time: currentTime(),
+        ...clock.now(),
         url: location.url,
         line: location.lineNumber,
       });
@@ -421,7 +444,7 @@ function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
         code: webGpuFailure ? "webgpu_runtime_error" : "console_warning",
         severity: webGpuFailure ? "error" : "warning",
         message: text,
-        time: currentTime(),
+        ...clock.now(),
         url: location.url,
         line: location.lineNumber,
       });
@@ -433,7 +456,7 @@ function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
         code,
         severity: "info",
         message: text,
-        time: currentTime(),
+        ...clock.now(),
         url: location.url,
         line: location.lineNumber,
       });
@@ -448,10 +471,10 @@ function wireRuntimeListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
       code: "page_error",
       severity: "error",
       message,
-      time: currentTime(),
+      ...clock.now(),
     });
   });
-  wireNetworkListeners(page, drafts, currentTime);
+  wireNetworkListeners(page, drafts, clock);
 }
 
 /** Check's scrubs cancel image loads: an aborted image failed only if an `<img>` shows it and its decode fails. */
@@ -532,7 +555,7 @@ async function abortedImagesStillBroken(page: Page, drafts: RuntimeDraft[]): Pro
   return new Set(broken);
 }
 
-function wireNetworkListeners(page: Page, drafts: RuntimeDraft[], currentTime: () => number): void {
+function wireNetworkListeners(page: Page, drafts: RuntimeDraft[], clock: RuntimeClock): void {
   page.on("requestfailed", (request) => {
     const url = request.url();
     if (url.includes("favicon") || url.startsWith("data:")) return;
@@ -542,7 +565,7 @@ function wireNetworkListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
       code: "request_failed",
       severity: "error",
       message: `Failed to load ${urlPath(url)}: ${failure ?? "net::ERR_FAILED"}`,
-      time: currentTime(),
+      ...clock.now(),
       url,
       abortedImage: failure === "net::ERR_ABORTED" && request.resourceType() === "image",
     });
@@ -556,13 +579,13 @@ function wireNetworkListeners(page: Page, drafts: RuntimeDraft[], currentTime: (
       code: "http_error",
       severity: "error",
       message: `${response.status()} loading ${urlPath(url)}`,
-      time: currentTime(),
+      ...clock.now(),
       url,
     });
   });
 }
 
-function createPageDriver(page: Page, setTime: (time: number) => void): CheckAuditDriver {
+function createPageDriver(page: Page, clock: RuntimeClock): CheckAuditDriver {
   return {
     initialize: (contrast) => injectAuditScripts(page, contrast),
     matchComponents: (components, findings) =>
@@ -574,16 +597,26 @@ function createPageDriver(page: Page, setTime: (time: number) => void): CheckAud
     getCanvas: () =>
       page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
     findAmbiguousSelectors: (selectors) => findAmbiguousSelectors(page, selectors),
-    seek: async (time) => {
-      setTime(time);
-      await seekCompositionTimeline(page, time, AUDIT_SEEK_OPTIONS);
+    seek: async (time, screenshotFollows) => {
+      clock.at(time);
+      await seekCompositionTimeline(
+        page,
+        time,
+        screenshotFollows ? SCREENSHOT_SEEK_OPTIONS : AUDIT_SEEK_OPTIONS,
+      );
     },
     seekGeometry: async (time) => {
-      setTime(time);
+      clock.at(time);
       await seekCompositionTimeline(page, time, DENSE_GEOMETRY_SEEK_OPTIONS);
     },
     collectLayout: (time, tolerance, layout) => collectLayout(page, time, tolerance, layout),
     collectOverlap: (time) => collectOverlap(page, time),
+    collectOverlapGrid: async (times) => {
+      const issues = await collectOverlapGrid(page, times);
+      // What a grid sample queued for later lands after the grid, so it gets the grid's span, not its last time.
+      if (times.length > 0) clock.during([times[0] ?? 0, times.at(-1) ?? 0]);
+      return issues;
+    },
     collectLayoutGeometry: () => collectLayoutGeometry(page),
     collectSeekClock: () => collectSeekClock(page),
     collectRotationSample: (time) => collectRotationSample(page, time),
@@ -736,6 +769,81 @@ async function collectOverlap(page: Page, time: number): Promise<AnchoredLayoutI
     { time },
   );
   return anchorLayoutIssues(page, raw.flatMap(parseLayoutIssue));
+}
+
+const SAMPLE_TIME_MARKER = "__hfCheckSample ";
+
+function followSampleTimeMarkers(page: Page, setTime: (time: number) => void): void {
+  page.on("console", (message) => {
+    const text = message.text();
+    if (message.type() === "debug" && text.startsWith(SAMPLE_TIME_MARKER)) {
+      setTime(Number(text.slice(SAMPLE_TIME_MARKER.length)));
+    }
+  });
+}
+
+interface OverlapGridSample {
+  raw: unknown[];
+  anchors: CheckAnchor[];
+}
+
+// Never yields to the renderer between samples, so it paints no frame for them.
+async function overlapGridInPage(
+  grid: {
+    times: number[];
+    marker: string;
+    fallback: boolean;
+    skipDraws: boolean;
+    videoFrames: boolean;
+  },
+  seek: typeof seekInPage,
+  anchors: typeof anchorsInPage,
+): Promise<OverlapGridSample[]> {
+  const audit = Reflect.get(window, "__hyperframesOverlapAudit");
+  const waitForCompletion = Reflect.get(window, "__hfWaitForSeekCompletion");
+  const samples: OverlapGridSample[] = [];
+  for (const time of grid.times) {
+    console.debug(`${grid.marker}${time}`);
+    seek(time, grid.fallback, false, grid.skipDraws);
+    if (typeof waitForCompletion === "function") {
+      await Reflect.apply(waitForCompletion, window, [{ videoFrames: grid.videoFrames }]);
+    }
+    const result: unknown =
+      typeof audit === "function" ? Reflect.apply(audit, window, [{ time }]) : [];
+    const raw = Array.isArray(result) ? result : [];
+    const zero = { x: 0, y: 0, width: 0, height: 0 };
+    const requests = raw.map((issue) => ({
+      selector: String(Reflect.get(Object(issue), "selector")),
+      time,
+      bbox: zero,
+    }));
+    samples.push({ raw, anchors: anchors(requests) });
+  }
+  return samples;
+}
+
+async function collectOverlapGrid(page: Page, times: number[]): Promise<AnchoredLayoutIssue[][]> {
+  if (times.length === 0) return [];
+  const grid = {
+    times,
+    marker: SAMPLE_TIME_MARKER,
+    fallback: DENSE_GEOMETRY_SEEK_OPTIONS.fallbackToBridgeAndTimelines,
+    skipDraws: DENSE_GEOMETRY_SEEK_OPTIONS.skipWebglDraws,
+    videoFrames: DENSE_GEOMETRY_SEEK_OPTIONS.waitForVideoFrames,
+  };
+  const samples = (await page.evaluate(
+    `(${overlapGridInPage})(${JSON.stringify(grid)}, ${seekInPage}, ${anchorsInPage})`,
+  )) as OverlapGridSample[];
+  return samples.map(({ raw, anchors }) =>
+    raw.flatMap((value, index) =>
+      parseLayoutIssue(value).map((issue) => ({
+        ...issue,
+        ...(anchors[index] ?? fallbackAnchor(undefined)),
+        bbox: rectToBbox(issue.rect),
+        time: issue.time,
+      })),
+    ),
+  );
 }
 
 async function collectLayoutGeometry(page: Page): Promise<string> {
@@ -944,36 +1052,38 @@ async function anchorLayoutIssues(
 
 async function resolveAnchors(page: Page, requests: AnchorRequest[]): Promise<CheckAnchor[]> {
   if (requests.length === 0) return [];
-  return page.evaluate((values: AnchorRequest[]) => {
-    const root = document.querySelector("[data-composition-id]");
-    return values.map((request) => {
-      let element: Element | null = null;
-      try {
-        element = document.querySelector(request.selector);
-      } catch {
-        element = null;
-      }
-      element ??= root;
-      // Clones the anchor-extraction block in prepareContrast's evaluate() below;
-      // both run inside separate serialized browser closures and can't share a
-      // Node-side helper.
-      // fallow-ignore-next-line code-duplication
-      const dataAttributes: Record<string, string> = {};
-      for (const attribute of Array.from(element?.attributes ?? [])) {
-        if (attribute.name.startsWith("data-")) dataAttributes[attribute.name] = attribute.value;
-      }
-      const source = element
-        ?.closest("[data-composition-file]")
-        ?.getAttribute("data-composition-file");
-      return {
-        selector: element ? request.selector : "[data-composition-id]",
-        dataAttributes,
-        sourceFile: source || "index.html",
-        bbox: request.bbox,
-        time: request.time,
-      };
-    });
-  }, requests);
+  return page.evaluate(anchorsInPage, requests);
+}
+
+function anchorsInPage(values: AnchorRequest[]): CheckAnchor[] {
+  const root = document.querySelector("[data-composition-id]");
+  return values.map((request) => {
+    let element: Element | null = null;
+    try {
+      element = document.querySelector(request.selector);
+    } catch {
+      element = null;
+    }
+    element ??= root;
+    // Clones the anchor-extraction block in prepareContrast's evaluate() below;
+    // both run inside separate serialized browser closures and can't share a
+    // Node-side helper.
+    // fallow-ignore-next-line code-duplication
+    const dataAttributes: Record<string, string> = {};
+    for (const attribute of Array.from(element?.attributes ?? [])) {
+      if (attribute.name.startsWith("data-")) dataAttributes[attribute.name] = attribute.value;
+    }
+    const source = element
+      ?.closest("[data-composition-file]")
+      ?.getAttribute("data-composition-file");
+    return {
+      selector: element ? request.selector : "[data-composition-id]",
+      dataAttributes,
+      sourceFile: source || "index.html",
+      bbox: request.bbox,
+      time: request.time,
+    };
+  });
 }
 
 async function resolveRootAnchor(page: Page): Promise<CheckAnchor> {
@@ -996,28 +1106,26 @@ async function compositionBbox(page: Page): Promise<CheckBbox> {
 async function collectContrast(
   page: Page,
   time: number,
-  layoutAnnotations: CheckAnnotationBox[] = [],
+  snapshotAnnotations?: CheckAnnotationBox[],
 ): Promise<ContrastCapture> {
   let prepared: PreparedContrast[] = [];
   try {
     prepared = parsePreparedContrast(await prepareContrast(page, time));
+    if (prepared.length === 0 && !snapshotAnnotations) return { entries: [] };
     // This screenshot is the one contrast math is sampled from below — it must
     // stay untouched by the annotation overlay (finishContrast reads real
     // painted pixels), so annotation only ever happens on a SECOND shot.
-    const measurementShot = await page.screenshot({
-      encoding: "base64",
-      type: "png",
-      omitBackground: true,
-    });
-    if (typeof measurementShot !== "string") throw new Error("Contrast screenshot was not base64");
+    const { shot, region } = await measurementShot(page, prepared);
     const raw = await finishContrast(
       page,
-      measurementShot,
+      shot,
       time,
       prepared.map((entry) => entry.raw),
+      region,
     );
     const finished = raw.flatMap(parseFinishedContrast);
     const entries = joinContrastEntries(finished, prepared);
+    if (!snapshotAnnotations) return { entries };
     // __contrastAuditFinish restores the text paint hidden by prepare. The
     // measurement screenshot intentionally has glyphs removed so contrast
     // can sample the pixels behind them; never persist that image as visual
@@ -1028,8 +1136,8 @@ async function collectContrast(
     // they're appended to the layout-derived annotations passed in by the
     // pipeline rather than being requested up front.
     const annotations = [
-      ...layoutAnnotations,
-      ...contrastFailureAnnotations(entries, layoutAnnotations.length),
+      ...snapshotAnnotations,
+      ...contrastFailureAnnotations(entries, snapshotAnnotations.length),
     ];
     const pngBase64 = await captureOverviewShot(page, annotations, overviewShot);
     return { entries, pngBase64 };
@@ -1041,6 +1149,27 @@ async function collectContrast(
       })
       .catch(() => undefined);
   }
+}
+
+async function measurementShot(
+  page: Page,
+  prepared: PreparedContrast[],
+): Promise<{ shot: string | null; region: TextRegion | undefined }> {
+  const frame = plainFrame(page.viewport());
+  const sampled = prepared.filter((entry) => !entry.knownBackdrop);
+  if (frame && sampled.length === 0) {
+    const clip = { x: 0, y: 0, ...frame };
+    return { shot: null, region: { clip, frameWidth: frame.width, frameHeight: frame.height } };
+  }
+  const region = textRegion(sampled, frame);
+  const shot = await page.screenshot({
+    encoding: "base64",
+    type: "png",
+    omitBackground: true,
+    ...(region ? { clip: region.clip, captureBeyondViewport: false } : {}),
+  });
+  if (typeof shot !== "string") throw new Error("Contrast screenshot was not base64");
+  return { shot, region };
 }
 
 function contrastFailureAnnotations(
@@ -1181,24 +1310,63 @@ async function prepareContrast(page: Page, time: number): Promise<unknown[]> {
   }, time);
 }
 
+interface TextRegion {
+  clip: { x: number; y: number; width: number; height: number };
+  frameWidth: number;
+  frameHeight: number;
+}
+
+// The smallest whole-pixel rect holding every box contrast samples; undefined means the full frame.
+function plainFrame(
+  viewport: { width: number; height: number; deviceScaleFactor?: number } | null,
+): { width: number; height: number } | undefined {
+  if (!viewport || (viewport.deviceScaleFactor ?? 1) !== 1) return undefined;
+  return { width: viewport.width, height: viewport.height };
+}
+
+function textRegion(
+  prepared: PreparedContrast[],
+  viewport: { width: number; height: number } | undefined,
+): TextRegion | undefined {
+  if (!viewport || prepared.length === 0) return undefined;
+  const boxes = prepared.map((entry) => entry.candidate.bbox);
+  const x = Math.max(0, Math.floor(Math.min(...boxes.map((box) => box.x))));
+  const y = Math.max(0, Math.floor(Math.min(...boxes.map((box) => box.y))));
+  const right = Math.min(viewport.width, Math.ceil(Math.max(...boxes.map((b) => b.x + b.width))));
+  const bottom = Math.min(
+    viewport.height,
+    Math.ceil(Math.max(...boxes.map((b) => b.y + b.height))),
+  );
+  if (right <= x || bottom <= y) return undefined;
+  const clip = { x, y, width: right - x, height: bottom - y };
+  return { clip, frameWidth: viewport.width, frameHeight: viewport.height };
+}
+
 async function finishContrast(
   page: Page,
-  screenshot: string,
+  screenshot: string | null,
   time: number,
   candidates: unknown[],
+  region: TextRegion | undefined,
 ): Promise<unknown[]> {
   return page.evaluate(
-    async (payload: { screenshot: string; time: number; candidates: unknown[] }) => {
+    async (payload: {
+      screenshot: string | null;
+      time: number;
+      candidates: unknown[];
+      region: TextRegion | null;
+    }) => {
       const finish = Reflect.get(window, "__contrastAuditFinish");
       if (typeof finish !== "function") return [];
       const result = await Reflect.apply(finish, window, [
         payload.screenshot,
         payload.time,
         payload.candidates,
+        payload.region,
       ]);
       return Array.isArray(result) ? result : [];
     },
-    { screenshot, time, candidates },
+    { screenshot, time, candidates, region: region ?? null },
   );
 }
 
@@ -1208,8 +1376,17 @@ function parsePreparedContrast(raw: unknown[]): PreparedContrast[] {
     const raw = Reflect.get(value, "candidate");
     const candidate = parseContrastCandidate(raw);
     const anchor = parseAnchor(Reflect.get(value, "anchor"));
-    return candidate && anchor ? [{ raw, candidate, anchor }] : [];
+    return candidate && anchor
+      ? [{ raw, candidate, anchor, knownBackdrop: knownBackdrop(raw) }]
+      : [];
   });
+}
+
+function knownBackdrop(raw: unknown): boolean {
+  if (!isRecord(raw)) return false;
+  const own = Reflect.get(raw, "ownBg");
+  const solid = Reflect.get(raw, "solidBg");
+  return Array.isArray(solid) || (Array.isArray(own) && own.length >= 4 && own[3] >= 0.99);
 }
 
 function parseContrastCandidate(value: unknown): ContrastCandidate | null {
@@ -1390,6 +1567,7 @@ function runtimeFinding(draft: RuntimeDraft, root: CheckAnchor): CheckFinding {
     sourceFile: root.sourceFile,
     bbox: root.bbox,
     time: draft.time,
+    ...(draft.timeRange ? { timeRange: draft.timeRange } : {}),
     url: draft.url,
     line: draft.line,
   };

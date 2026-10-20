@@ -16,12 +16,15 @@
 import { chmodSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { resolveWritePath } from "@hyperframes/core/atomic-file";
 
 // The first request asks for PART_BYTES; a larger file is split into up to
 // CONNECTIONS ranged GETs. A server that ignores Range answers 200 and is streamed.
 const PART_BYTES = 8 * 1024 * 1024;
 const CONNECTIONS = 8;
+// A ranged part whose connection drops resumes where it stopped, after 0.25, 0.5 and 1 s.
+const RETRIES = 3;
 
 export interface DownloadOptions {
   signal?: AbortSignal;
@@ -79,39 +82,61 @@ export async function downloadToFile(
   let firstError: unknown;
   try {
     const file = await open(stagedFile, "wx");
-    const writePart = async (res: Response, start: number, length: number | undefined) => {
-      let written = 0;
+    // Writes the body at `part.at` and advances it, so a dropped range resumes there.
+    const pump = async (res: Response, part: { at: number }) => {
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        await file.write(chunk, 0, chunk.byteLength, start + written);
-        written += chunk.byteLength;
+        await file.write(chunk, 0, chunk.byteLength, part.at);
+        part.at += chunk.byteLength;
         bytes += chunk.byteLength;
         signal.throwIfAborted();
         options.onProgress?.(bytes, total);
       }
-      if (length !== undefined && written !== length) {
-        throw new Error(
-          `Truncated download: got ${written} bytes, expected ${length} (content-length). ` +
-            `The presigned URL may have expired mid-transfer — refetch via \`hyperframes cloud get\`.`,
-        );
+    };
+    const fetchRange = async (start: number, end: number, res?: Response) => {
+      const part = { at: start };
+      for (let attempt = 0; ; attempt++) {
+        try {
+          res ??= await get(`bytes=${part.at}-${end}`);
+          assertOk(res, url);
+          if (res.status !== 206) throw new Error(`Failed to download ${url}: range ignored`);
+          await pump(res, part);
+          if (part.at > end) return;
+          throw new Error(`connection closed at byte ${part.at}`);
+        } catch (error) {
+          if (signal.aborted) throw error;
+          if (attempt === RETRIES) {
+            throw new Error(
+              `Failed to download ${url}: bytes ${start}-${end} dropped ${RETRIES + 1} times`,
+              { cause: error },
+            );
+          }
+          res?.body?.cancel().catch(() => {});
+          res = undefined;
+          await sleep(250 * 2 ** attempt, undefined, { signal });
+        }
       }
     };
     const parts: Promise<void>[] = [];
     if (ranged && total !== undefined) {
-      parts.push(writePart(first, 0, Math.min(PART_BYTES, total)));
+      parts.push(fetchRange(0, Math.min(PART_BYTES, total) - 1, first));
       const rest = total - PART_BYTES;
       const size = Math.ceil(rest / Math.min(CONNECTIONS - 1, Math.ceil(rest / PART_BYTES)));
       for (let start = PART_BYTES; start < total; start += size) {
-        const end = Math.min(start + size, total) - 1;
-        parts.push(
-          get(`bytes=${start}-${end}`).then((res) => {
-            assertOk(res, url);
-            if (res.status !== 206) throw new Error(`Failed to download ${url}: range ignored`);
-            return writePart(res, start, end - start + 1);
-          }),
-        );
+        parts.push(fetchRange(start, Math.min(start + size, total) - 1));
       }
     } else {
-      parts.push(writePart(first, 0, total));
+      // No Range support means nothing to resume from: fail fast.
+      const part = { at: 0 };
+      parts.push(
+        pump(first, part).then(() => {
+          if (total !== undefined && part.at !== total) {
+            throw new Error(
+              `Truncated download: got ${part.at} bytes, expected ${total} (content-length). ` +
+                `The presigned URL may have expired mid-transfer — refetch via \`hyperframes cloud get\`.`,
+            );
+          }
+        }),
+      );
     }
     await Promise.all(
       parts.map((part) =>

@@ -40,7 +40,8 @@ interface RangeServer {
 
 async function serveBytes(
   body: Buffer,
-  options: { honourRange: boolean; failRangeStart?: number },
+  // `drop` cuts the first `times` responses whose range covers byte `at`, right before it.
+  options: { honourRange: boolean; drop?: { at: number; times: number } },
 ): Promise<RangeServer> {
   const ranges: (string | undefined)[] = [];
   const server: Server = createServer((req, res) => {
@@ -60,12 +61,17 @@ async function serveBytes(
       "content-length": end - start + 1,
       "content-range": `bytes ${start}-${end}/${body.length}`,
     });
-    if (start === options.failRangeStart) {
-      res.write(body.subarray(start, start + 1024), () => res.destroy());
+    const drop = options.drop;
+    if (drop && drop.times > 0 && start <= drop.at && drop.at <= end) {
+      drop.times--;
+      res.write(body.subarray(start, drop.at), () => res.destroy());
       return;
     }
     res.end(body.subarray(start, end + 1));
   });
+  // Windows completes a large loopback write at once, so the 5 s keep-alive idle clock
+  // started before a slow reader finished and closed the socket under it.
+  server.keepAliveTimeout = 0;
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
   return {
@@ -319,13 +325,26 @@ describe("cloud/download", () => {
       expect(server.ranges).toEqual([`bytes=0-${8 * MiB - 1}`]);
     });
 
-    it("keeps the previous output and leaves no staged file when one part fails", async () => {
+    it("resumes a range whose connection drops mid-body from the bytes it already has", async () => {
       const body = patternBytes(50 * MiB);
-      const server = await serve(body, { honourRange: true, failRangeStart: 8 * MiB });
+      const at = 8 * MiB + 1024;
+      const server = await serve(body, { honourRange: true, drop: { at, times: 2 } });
+      const dest = join(dir, "out.mp4");
+      const result = await downloadToFile(server.url, dest);
+      expect(result.bytes).toBe(body.length);
+      expect(readFileSync(dest).equals(body)).toBe(true);
+      expect(server.ranges.filter((range) => range?.startsWith(`bytes=${at}-`))).toHaveLength(2);
+    });
+
+    it("keeps the previous output and leaves no staged file when one part keeps dropping", async () => {
+      const body = patternBytes(50 * MiB);
+      const server = await serve(body, {
+        honourRange: true,
+        drop: { at: 8 * MiB + 1024, times: Infinity },
+      });
       const dest = join(dir, "out.mp4");
       writeFileSync(dest, "previous render");
-      await expect(downloadToFile(server.url, dest)).rejects.toThrow();
-      expect(server.ranges.length).toBeGreaterThan(1);
+      await expect(downloadToFile(server.url, dest)).rejects.toThrow(/dropped 4 times/);
       expect(readFileSync(dest, "utf8")).toBe("previous render");
       expect(readdirSync(dir)).toEqual(["out.mp4"]);
     });

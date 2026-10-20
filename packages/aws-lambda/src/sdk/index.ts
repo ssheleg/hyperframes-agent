@@ -8,8 +8,18 @@
  * AWS-SDK only — safe to load in any Node environment.
  */
 
-export { deploySite, type DeploySiteOptions, type SiteHandle } from "./deploySite.js";
-export { renderToLambda, type RenderHandle, type RenderToLambdaOptions } from "./renderToLambda.js";
+export {
+  deploySite,
+  type DeploySiteOptions,
+  type SiteHandle,
+  siteHandleFromId,
+} from "./deploySite.js";
+export {
+  assertStackReadsSites,
+  renderToLambda,
+  type RenderHandle,
+  type RenderToLambdaOptions,
+} from "./renderToLambda.js";
 export {
   getRenderProgress,
   type GetRenderProgressOptions,
@@ -29,5 +39,6 @@ export {
   validateStepFunctionsInputSize,
   validateVariablesPayload,
 } from "./validateConfig.js";
+export { type PrebuiltHandler, prebuiltHandler } from "./prebuiltHandler.js";
 export type { SerializableDistributedRenderConfig } from "../events.js";
 export type { DistributedFormat } from "../formatExtension.js";
