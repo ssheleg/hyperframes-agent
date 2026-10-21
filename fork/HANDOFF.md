@@ -21,8 +21,9 @@ publish tarball releases that consumers pin.
   `HYPERFRAMES_NO_OPTIONAL_INSTALL` (`1` turns every such install off). Other new env names belong to `aws-lambda`,
   tests, or `PRODUCER_HEADLESS_SHELL_PATH` (now also read by the CLI's browser manager); new child processes run `node`
   itself (capture's public-network DNS guard, the warm check).
-- The private consumer that pins this line moves to each release in its own repository; its move to `0.8.184` is in
-  progress there.
+- The private consumer that pins this line moved to `fork-v0.8.184-sshlg.1` on 2026-10-22 in its own repository, with the
+  first-use installs pinned off (`HYPERFRAMES_NO_OPTIONAL_INSTALL=1`) and the skills re-vendored at `v0.8.184`; its gate
+  passed and its release on that engine runs (`hyperframes --version` `0.8.184+sshlg.1`).
 - The sixteen inherited workflows are disabled (repository settings).
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
   cleanly onto upstream `main` (`git merge-tree`, 2026-10-20). We do not wait for it.
