@@ -98,6 +98,20 @@ describe("resolveRenderWorkDirPrefix", () => {
       join("C:/Temp", "hf-render-"),
     );
   });
+
+  it("keeps macOS frames out of the project folder, which a sync client may be watching", () => {
+    const outputPath = join("/Users/me/Nextcloud/project", "renders", "final.mp4");
+
+    expect(resolveRenderWorkDirPrefix(outputPath, "job-id", "darwin", "/var/folders/x/T")).toBe(
+      join("/var/folders/x/T", "hf-render-"),
+    );
+  });
+
+  it("keeps Linux frames beside the output, where a container's small /tmp cannot fill", () => {
+    expect(resolveRenderWorkDirPrefix("/work/renders/final.mp4", "job-id", "linux", "/tmp")).toBe(
+      join("/work/renders", "work-job-id-"),
+    );
+  });
 });
 
 describe("captureAttemptMadeProgress", () => {
@@ -3299,7 +3313,7 @@ describe("sequential capture stall recovery", () => {
 describe("resolveParallelCaptureMode", () => {
   const beginframe = {
     platform: "linux" as NodeJS.Platform,
-    headlessShell: true,
+    headlessShellPath: "/cache/chrome-headless-shell" as string | undefined,
     forceScreenshot: false,
     deviceScaleFactor: 1,
   };
@@ -3314,7 +3328,9 @@ describe("resolveParallelCaptureMode", () => {
     // System Chrome on linux: resolveObservedCaptureMode calls this beginframe,
     // the engine launches screenshot. Getting this wrong would default-enable
     // the router for a cohort whose real path is the screenshot one.
-    expect(resolveParallelCaptureMode({ ...beginframe, headlessShell: false })).toBe("screenshot");
+    expect(resolveParallelCaptureMode({ ...beginframe, headlessShellPath: undefined })).toBe(
+      "screenshot",
+    );
     expect(resolveParallelCaptureMode({ ...beginframe, forceScreenshot: true })).toBe("screenshot");
     // Supersampling: BeginFrame ignores deviceScaleFactor, so preMode falls back.
     expect(resolveParallelCaptureMode({ ...beginframe, deviceScaleFactor: 2 })).toBe("screenshot");

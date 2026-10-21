@@ -8,8 +8,9 @@
 import { DEFAULT_MAX_SCREENSHOTS } from "./types.js";
 import { CaptureDirRefusedError } from "./captureErrors.js";
 import { normalizeErrorMessage } from "../utils/errorMessage.js";
-import { ConnectionClosedError, type Page } from "puppeteer-core";
+import type { Page } from "puppeteer-core";
 import { isDegradableEvaluateTimeoutError } from "./captureTimeout.js";
+import { waitForPageReady } from "./navigateForCapture.js";
 import { join } from "node:path";
 import { ensureCaptureDirSync, writeCaptureFileSync } from "./captureFile.js";
 
@@ -59,7 +60,8 @@ function shotFailure(err: unknown, file: string, scrollY: number | null): Screen
   const message = normalizeErrorMessage(err);
   // puppeteer-core 25 exports no class for a closed page or session, only these messages.
   const closed =
-    err instanceof ConnectionClosedError || /\b(target|session) closed\b/i.test(message);
+    (err instanceof Error && err.constructor.name === "ConnectionClosedError") ||
+    /\b(target|session) closed\b/i.test(message);
   if (closed || err instanceof CaptureDirRefusedError || isDegradableEvaluateTimeoutError(err))
     throw err;
   return { file, scrollY, message };
@@ -184,7 +186,15 @@ export async function captureScrollScreenshots(
     // Dismiss marketing banners, cookie consents, and popups before scrolling.
     // These overlay content and contaminate screenshots with UI that doesn't
     // belong in video compositions (cookie popups, newsletter modals, etc.)
-    await page
+    const readTimeOrigin = async (): Promise<number> => {
+      const value: unknown = await page.evaluate(`performance.timeOrigin`).catch((err: unknown) => {
+        if (isDegradableEvaluateTimeoutError(err)) throw err;
+        return undefined;
+      });
+      return typeof value === "number" ? value : Number.NaN;
+    };
+    const originBefore = await readTimeOrigin();
+    const clickedCount = await page
       .evaluate(() => {
         // Click common dismiss/accept buttons
         const selectors = [
@@ -214,14 +224,35 @@ export async function captureScrollScreenshots(
           'button[class*="not-now"]',
           'button[class*="no-thanks"]',
         ];
+        let clicked = 0;
         for (const sel of selectors) {
           try {
             const el = document.querySelector<HTMLElement>(sel);
-            if (el) el.click();
+            if (el) {
+              el.click();
+              clicked++;
+            }
           } catch {
             /* ignore */
           }
         }
+        return clicked;
+      })
+      .catch((err: unknown) => {
+        if (isDegradableEvaluateTimeoutError(err)) {
+          throw err;
+        }
+        return 0;
+      });
+    await new Promise((r) => setTimeout(r, 400));
+    if (clickedCount > 0 || (await readTimeOrigin()) !== originBefore) {
+      await waitForPageReady(page, {
+        timeoutMs: Math.min(15_000, budget.remainingMs?.() ?? 15_000),
+      });
+    }
+    await page
+      // fallow-ignore-next-line complexity
+      .evaluate(() => {
         // Hide fixed/sticky overlays that aren't the main nav. Scanning every
         // element with querySelectorAll('*') + getComputedStyle is O(n) DOM
         // calls and can dominate evaluate() time on large pages. Narrow the
@@ -259,7 +290,6 @@ export async function captureScrollScreenshots(
           throw err;
         }
       });
-    await new Promise((r) => setTimeout(r, 400));
 
     const scrollHeight = (await page.evaluate(
       `Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)`,

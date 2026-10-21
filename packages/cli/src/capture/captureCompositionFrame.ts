@@ -106,6 +106,7 @@ export interface OpenSettledCompositionPageOptions {
   navigationTimeoutMs?: number;
   renderReadyTimeoutMs: number;
   renderReadyWarningSuffix: string;
+  lateSubresourceTimeoutMs?: number;
   browserGpuMode?: BrowserGpuMode;
   signal?: AbortSignal;
   onBrowser?: (browser: Browser) => void;
@@ -249,16 +250,23 @@ async function waitForCompositionSettle(
       console.warn(`   ${c.warn("⚠")} Shader transitions did not finish pre-rendering`);
     });
 
-  await waitForLateSubresources(page);
+  await waitForLateSubresources(page, options.lateSubresourceTimeoutMs ?? CAPTURE_SETTLE_MS);
+  const { resolveConfig, waitForImagesReady } = await import("@hyperframes/engine");
+  const imageTimeoutMs = resolveConfig().playerReadyTimeout;
+  await waitForImagesReady(page, imageTimeoutMs, (sources) =>
+    console.warn(
+      `   ${c.warn("⚠")} Some images did not load within ${imageTimeoutMs}ms: ${sources}. They may show blank.`,
+    ),
+  );
   return runtimeReady;
 }
 
-async function waitForLateSubresources(page: Page): Promise<void> {
+async function waitForLateSubresources(page: Page, timeoutMs: number): Promise<void> {
   let cap: ReturnType<typeof setTimeout> | undefined;
-  const deadline = Date.now() + CAPTURE_SETTLE_MS;
+  const deadline = Date.now() + timeoutMs;
   const ready = (async () => {
     await page.waitForFunction(() => document.readyState === "complete", {
-      timeout: CAPTURE_SETTLE_MS,
+      timeout: timeoutMs,
     });
     await page.waitForNetworkIdle({
       idleTime: NETWORK_IDLE_MS,
@@ -273,7 +281,7 @@ async function waitForLateSubresources(page: Page): Promise<void> {
     await Promise.race([
       ready,
       new Promise((resolveCap) => {
-        cap = setTimeout(resolveCap, CAPTURE_SETTLE_MS);
+        cap = setTimeout(resolveCap, timeoutMs);
       }),
     ]);
   } catch {

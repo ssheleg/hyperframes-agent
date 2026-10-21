@@ -18,7 +18,10 @@ vi.mock("../browser/manager.js", () => ({
   findSystemBrowser: mocks.findSystemBrowser,
 }));
 
-vi.mock("puppeteer-core", () => ({ default: { launch: mocks.launch } }));
+vi.mock("puppeteer-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("puppeteer-core")>()),
+  default: { launch: mocks.launch },
+}));
 
 // captureCompositionFrame.js imports these two from ../browser/gpuPolicy.js,
 // which re-exports them from this mocked module — unmocked here, they'd read
@@ -32,6 +35,7 @@ vi.mock("@hyperframes/engine", () => ({
   usesSoftwareWebGpu: mocks.usesSoftwareWebGpu,
   DEFAULT_CONFIG: { pageNavigationTimeout: 60_000 },
   resolvePageNavigationTimeout: () => 60_000,
+  waitForImagesReady: async () => true,
 }));
 
 import { openSettledCompositionPage } from "./captureCompositionFrame.js";
@@ -257,7 +261,7 @@ describe("openSettledCompositionPage when nothing may listen", () => {
     const opened = fakeBrowser();
     mocks.launch.mockResolvedValue(opened.browser);
     await openSettledCompositionPage(HTML, "http://127.0.0.1:3000", OPTIONS);
-    expect(launched().pipe).toBeUndefined();
+    expect(launched().pipe).toBe(true);
     expect(launched().args).toEqual(["--headless"]);
     expect(opened.page.setRequestInterception).not.toHaveBeenCalled();
   });

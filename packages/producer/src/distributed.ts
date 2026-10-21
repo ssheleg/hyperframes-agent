@@ -38,6 +38,8 @@ export {
   plan,
   rejectUnsupportedDistributedFormat,
   resolveChunkPlan,
+  buildPlanAudio,
+  plansSeparateAudio,
   // Types
   type DistributedRenderConfig,
   type PlanResult,
@@ -115,6 +117,7 @@ export {
 export {
   assemble,
   chunksAreStitchedMp4,
+  stitchesSeparateAudio,
   type AssembleChunkPaths,
   type AssembleResult,
 } from "./services/distributed/assemble.js";

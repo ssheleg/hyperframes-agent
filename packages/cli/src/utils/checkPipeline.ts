@@ -30,7 +30,9 @@ import {
 import {
   assertionTargets,
   collectSamplingTargets,
+  DEFAULT_MAX_STATIC_SEC,
   evaluateMotion,
+  frozenSpans,
   type Canvas,
   type MotionFrame,
 } from "./motionAudit.js";
@@ -424,18 +426,8 @@ async function collectGeometryAt(
   return issues;
 }
 
-async function collectGridSamples(
-  driver: CheckAuditDriver,
-  options: CheckOptions,
-  grid: SampleGrid,
-  motion: MotionPlan,
-): Promise<GridSamples> {
-  const layoutSet = new Set(grid.layoutSamples);
-  const motionSet = new Set(motion.times);
-  const contrastSet = new Set(grid.contrastSamples);
-  const geometryEnabled = grid.captionSamples.length > 0 || grid.frameSamples.length > 0;
-  const canvas = geometryEnabled ? await driver.getCanvas() : null;
-  const collected: GridSamples = {
+function emptyGridSamples(): GridSamples {
+  return {
     layoutIssues: [],
     motionFrames: [],
     contrastEntries: [],
@@ -445,37 +437,121 @@ async function collectGridSamples(
     rotationSamples: [],
     indicatorFrames: [],
   };
-  for (const time of mergeSampleTimes(grid.layoutSamples, motion.times)) {
-    await driver.seek(time, contrastSet.has(time));
-    // Findings collected for THIS sample time, so the overview overlay (below)
-    // only ever annotates a frame with defects that are actually valid at
-    // that render time — never a stale bbox from an earlier/later sample.
-    const issuesAtTime: AnchoredLayoutIssue[] = [];
-    if (layoutSet.has(time)) {
-      const layoutIssues = await driver.collectLayout(time, options.tolerance, options.layout);
-      collected.layoutIssues.push(...layoutIssues);
-      issuesAtTime.push(...layoutIssues);
-      collected.layoutStateSignatures.push({
-        time,
-        signature: await driver.collectLayoutGeometry(),
-        clock: await driver.collectSeekClock(),
-      });
-      collected.rotationSamples.push(...(await driver.collectRotationSample(time)));
-      collected.indicatorFrames.push(await driver.collectOffPivotRotationSample(time));
-    }
-    if (canvas) {
-      const geometryIssues = await collectGeometryAt(driver, options, grid, canvas, time);
-      collected.layoutIssues.push(...geometryIssues);
-      issuesAtTime.push(...geometryIssues);
-    }
-    if (motionSet.has(time)) {
-      collected.motionFrames.push(
-        await driver.collectMotionFrame(time, motion.selectors, motion.livenessScopes),
-      );
-    }
-    if (contrastSet.has(time))
-      await collectContrastAt(driver, options, time, issuesAtTime, collected);
+}
+
+function appendGridSamples(into: GridSamples, from: GridSamples): void {
+  into.layoutIssues.push(...from.layoutIssues);
+  into.motionFrames.push(...from.motionFrames);
+  into.contrastEntries.push(...from.contrastEntries);
+  into.screenshots.push(...from.screenshots);
+  // Summed over pages, so with a helper it can exceed the wall time.
+  into.contrastMs += from.contrastMs;
+  into.layoutStateSignatures.push(...from.layoutStateSignatures);
+  into.rotationSamples.push(...from.rotationSamples);
+  into.indicatorFrames.push(...from.indicatorFrames);
+}
+
+interface SampleSets {
+  layout: Set<number>;
+  motion: Set<number>;
+  contrast: Set<number>;
+  canvas: Canvas | null;
+}
+
+async function collectSampleAt(
+  driver: CheckAuditDriver,
+  options: CheckOptions,
+  grid: SampleGrid,
+  motion: MotionPlan,
+  sets: SampleSets,
+  time: number,
+): Promise<GridSamples> {
+  const collected = emptyGridSamples();
+  await driver.seek(time, sets.contrast.has(time));
+  // Findings collected for THIS sample time, so the overview overlay (below)
+  // only ever annotates a frame with defects that are actually valid at
+  // that render time — never a stale bbox from an earlier/later sample.
+  const issuesAtTime: AnchoredLayoutIssue[] = [];
+  if (sets.layout.has(time)) {
+    const layoutIssues = await driver.collectLayout(time, options.tolerance, options.layout);
+    collected.layoutIssues.push(...layoutIssues);
+    issuesAtTime.push(...layoutIssues);
+    collected.layoutStateSignatures.push({
+      time,
+      signature: await driver.collectLayoutGeometry(),
+      clock: await driver.collectSeekClock(),
+    });
+    collected.rotationSamples.push(...(await driver.collectRotationSample(time)));
+    collected.indicatorFrames.push(await driver.collectOffPivotRotationSample(time));
   }
+  if (sets.canvas) {
+    const geometryIssues = await collectGeometryAt(driver, options, grid, sets.canvas, time);
+    collected.layoutIssues.push(...geometryIssues);
+    issuesAtTime.push(...geometryIssues);
+  }
+  if (sets.motion.has(time)) {
+    collected.motionFrames.push(
+      await driver.collectMotionFrame(time, motion.selectors, motion.livenessScopes),
+    );
+  }
+  if (sets.contrast.has(time))
+    await collectContrastAt(driver, options, time, issuesAtTime, collected);
+  return collected;
+}
+
+// Frames are a function of time, so a helper page that is ready takes the next unclaimed sample
+// and the merge keeps the serial order. A helper only adds speed: one that fails hands its samples back.
+async function collectGridSamples(
+  driver: CheckAuditDriver,
+  options: CheckOptions,
+  grid: SampleGrid,
+  motion: MotionPlan,
+  helpers: Promise<CheckAuditDriver[]>,
+): Promise<GridSamples> {
+  const geometryEnabled = grid.captionSamples.length > 0 || grid.frameSamples.length > 0;
+  const sets: SampleSets = {
+    layout: new Set(grid.layoutSamples),
+    motion: new Set(motion.times),
+    contrast: new Set(grid.contrastSamples),
+    canvas: geometryEnabled ? await driver.getCanvas() : null,
+  };
+  const times = mergeSampleTimes(grid.layoutSamples, motion.times);
+  const pending = times.map((_, index) => index);
+  const perTime: GridSamples[] = [];
+  const work = async (worker: CheckAuditDriver, taken: number[] = []) => {
+    for (let index = pending.shift(); index !== undefined; index = pending.shift()) {
+      taken.push(index);
+      const time = times[index] ?? 0;
+      perTime[index] = await collectSampleAt(worker, options, grid, motion, sets, time);
+    }
+  };
+  const helpWith = async (helper: CheckAuditDriver) => {
+    const taken: number[] = [];
+    try {
+      await helper.initialize(options.contrast);
+      helper.markSamples?.("start");
+      await work(helper, taken);
+      helper.markSamples?.("end");
+    } catch {
+      helper.markSamples?.("drop");
+      for (const index of taken) delete perTime[index];
+      pending.push(...taken);
+    }
+  };
+  let firstPageDone = false;
+  const running: Promise<void>[] = [];
+  void helpers.then((ready) => {
+    for (const helper of ready) if (!firstPageDone) running.push(helpWith(helper));
+  });
+  driver.markSamples?.("start");
+  await work(driver);
+  // A helper still opening is never waited for; one mid-sample may yet hand samples back.
+  firstPageDone = true;
+  await Promise.all(running);
+  await work(driver);
+  driver.markSamples?.("end");
+  const collected = emptyGridSamples();
+  for (const samples of perTime) appendGridSamples(collected, samples);
   await collectMotionOverlapSamples(driver, grid, collected, options.range);
   return collected;
 }
@@ -636,6 +712,78 @@ function detectSweepStatic(
     return [sweepStaticIssue(anAnimationIsStuck(samples) ? "error" : "still")];
   if (allSame(signatures.map(seenPart))) return [sweepStaticIssue("audio")];
   return [];
+}
+
+// The signature reads DOM channels, which miss paint such as SVG mask and clip contents, stroke dashes and
+// canvas or WebGL pixels. Before calling a sweep still, the rendered frames get the last word. A change counts
+// only if the first time still renders its first frame: wall-clock paint (an unregistered rAF loop) is no seek.
+async function framesMoved(driver: CheckAuditDriver, times: number[]): Promise<boolean> {
+  const [firstTime, ...rest] = times;
+  if (firstTime === undefined) return false;
+  const first = await frameAt(driver, firstTime);
+  for (const time of rest) {
+    if (!(await driver.framesDiffer(first, await frameAt(driver, time)))) continue;
+    return !(await driver.framesDiffer(first, await frameAt(driver, firstTime)));
+  }
+  return false;
+}
+
+async function frameAt(driver: CheckAuditDriver, time: number, scope?: string): Promise<string> {
+  await driver.seek(time, true);
+  return driver.captureFrame(scope);
+}
+
+// keepsMoving reads the same liveness channels, so a span it calls frozen gets the frames' word too: one capture
+// every half maxStaticSec, compared with the last capture that differed; frames up to the next capture share its mark.
+async function withFrameMotion(
+  driver: CheckAuditDriver,
+  frames: MotionFrame[],
+  assertions: MotionAssertion[],
+): Promise<MotionFrame[]> {
+  const marked = frames.map((frame) => ({ ...frame, liveness: { ...frame.liveness } }));
+  for (const assertion of assertions) {
+    if (assertion.kind !== "keepsMoving") continue;
+    const scope = assertion.withinSelector ?? "*";
+    // A scope that matched nothing stays motion_selector_missing.
+    if (frames.every((frame) => !frame.liveness[scope])) continue;
+    const maxStaticSec = assertion.maxStaticSec ?? DEFAULT_MAX_STATIC_SEC;
+    for (const span of frozenSpans(frames, scope, maxStaticSec)) {
+      const held = frames.find((frame) => frame.time === span.start)?.liveness[scope];
+      // The frame that ends a span opens the next run, so only frames still holding the span's signature belong.
+      const inSpan = marked.filter(
+        (frame, index) =>
+          frame.time >= span.start &&
+          frame.time <= span.end &&
+          frames[index]?.liveness[scope] === held,
+      );
+      await markFrameChanges(driver, inSpan, assertion.withinSelector, maxStaticSec / 2);
+    }
+  }
+  return marked;
+}
+
+async function markFrameChanges(
+  driver: CheckAuditDriver,
+  frames: MotionFrame[],
+  within: string | undefined,
+  captureEverySec: number,
+): Promise<void> {
+  const scope = within ?? "*";
+  let reference: string | undefined;
+  let mark = 0;
+  let nextCapture = Number.NEGATIVE_INFINITY;
+  for (const frame of frames) {
+    if (frame.time >= nextCapture) {
+      nextCapture = frame.time + captureEverySec;
+      const capture = await frameAt(driver, frame.time, within);
+      if (reference === undefined) reference = capture;
+      else if (await driver.framesDiffer(reference, capture)) {
+        reference = capture;
+        mark++;
+      }
+    }
+    frame.liveness[scope] = `${frame.liveness[scope] ?? ""}|frame${mark}`;
+  }
 }
 
 function anAnimationIsStuck(samples: { clock: SeekClock[] }[]): boolean {
@@ -1225,6 +1373,7 @@ export async function runAuditGrid(
   driver: CheckAuditDriver,
   options: CheckOptions,
   motion: MotionSpecResolution,
+  helpers: Promise<CheckAuditDriver[]> = Promise.resolve([]),
 ): Promise<CheckBrowserResult> {
   await driver.initialize(options.contrast);
   const grid = await buildSampleGrid(driver, options);
@@ -1234,27 +1383,39 @@ export async function runAuditGrid(
     grid.duration,
   );
   const seekLoopStart = Date.now();
-  const collected = await collectGridSamples(driver, options, grid, plan);
+  const collected = await collectGridSamples(driver, options, grid, plan, helpers);
   const seekLoopMs = Date.now() - seekLoopStart;
 
   let motionIssues = plan.preflightIssues;
   if (motion.kind === "valid" && plan.assertions.length > 0 && collected.motionFrames.length > 0) {
-    const evaluated = evaluateMotion(
-      collected.motionFrames,
-      plan.assertions,
-      await driver.getCanvas(),
-    );
+    const canvas = await driver.getCanvas();
+    let evaluated = evaluateMotion(collected.motionFrames, plan.assertions, canvas);
+    if (evaluated.some((issue) => issue.code === "motion_frozen")) {
+      const frames = await withFrameMotion(driver, collected.motionFrames, plan.assertions);
+      evaluated = evaluateMotion(frames, plan.assertions, canvas);
+    }
     motionIssues = [...motionIssues, ...(await driver.anchorMotionIssues(evaluated))];
   }
   const userPicked = new Set(grid.userPickedSamples);
-  const sweepFindings = options.range
+  const sweepSamples = collected.layoutStateSignatures.filter(
+    (sample) => !userPicked.has(sample.time),
+  );
+  const sweepVerdict = options.range
     ? []
     : detectSweepStatic(
         grid.duration,
-        collected.layoutStateSignatures.filter((sample) => !userPicked.has(sample.time)),
+        sweepSamples,
         motionIssues,
         await driver.hasNoTimelineDeclaration(),
       );
+  const sweepFindings =
+    sweepVerdict.length > 0 &&
+    (await framesMoved(
+      driver,
+      sweepSamples.map((sample) => sample.time),
+    ))
+      ? []
+      : sweepVerdict;
   const rotationFindings = detectRotationPivotDrift(
     collected.rotationSamples,
     await driver.getCanvas(),
@@ -1882,10 +2043,23 @@ async function runBrowserCheck(
 }
 
 // Chrome boots while lint, hdr and bundling run; the source index guesses the bundle's launch arguments.
+let adoptedBrowser: PrelaunchedBrowser | undefined;
+
+export async function prelaunchBrowserForNextCheck(
+  project: ProjectDir,
+  options: CheckOptions,
+): Promise<PrelaunchedBrowser | undefined> {
+  adoptedBrowser = await prelaunchBrowser(project, options);
+  return adoptedBrowser;
+}
+
 async function prelaunchBrowser(
   project: ProjectDir,
   options: CheckOptions,
 ): Promise<PrelaunchedBrowser | undefined> {
+  const adopted = adoptedBrowser;
+  adoptedBrowser = undefined;
+  if (adopted) return adopted;
   const html = await readFile(project.indexPath, "utf8").catch(() => undefined);
   if (html === undefined) return undefined;
   const { prelaunchCompositionBrowser } = await import("../capture/captureCompositionFrame.js");

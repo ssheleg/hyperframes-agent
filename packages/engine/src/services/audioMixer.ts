@@ -1,10 +1,20 @@
 // fallow-ignore-file complexity code-duplication
 import { isSelfOrAncestorHidden, memberGroupKey, isMemberGroupHidden } from "./mediaHidden.js";
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join, dirname, isAbsolute, relative } from "path";
 import { parseHTML } from "linkedom";
 import { extractAudioMetadata, type AudioMetadata } from "../utils/ffprobe.js";
 import { isNotMediaPayload } from "../utils/notMediaPayload.js";
+import { urlInputArgs } from "../utils/urlInput.js";
 import { clampAudioGain } from "@hyperframes/core/audio-gain";
 import { clampFadesToDuration, readElementFades } from "@hyperframes/core/audio-fade";
 import {
@@ -15,7 +25,7 @@ import {
 } from "../utils/urlDownloader.js";
 import { DEFAULT_CONFIG, type EngineConfig } from "../config.js";
 import { formatFfmpegError, runFfmpeg, type RunFfmpegResult } from "../utils/runFfmpeg.js";
-import { AAC_ARGS, aacSegmentCount, encodeAac } from "./aacEncode.js";
+import { encodeAac } from "./aacEncode.js";
 import { audioSubprocessEvidence } from "./audioFailureDiagnostic.js";
 import { unwrapTemplate } from "../utils/htmlTemplate.js";
 import { resolveMediaElementSrc, resolveProjectRelativeSrc } from "./videoFrameExtractor.js";
@@ -639,6 +649,8 @@ export function parseAudioElements(html: string): AudioElement[] {
   return elements;
 }
 
+const FAIL_ON_READ_ERROR_INSTEAD_OF_ENDING_THERE = ["-xerror"];
+
 /** Decode `duration` s of audio from `mediaStart` in Chrome's media time. Until every stream has
  * started, an input seek snaps audio to the video's first keyframe, so read by timestamp instead. */
 async function extractAudioSegment(
@@ -656,8 +668,15 @@ async function extractAudioSegment(
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   const normalizedPlaybackRate = normalizeRateSpec(playbackRate);
   const sourceDuration = sourceTimeAt(normalizedPlaybackRate, duration);
-  // A failed probe keeps FFmpeg's default channel conversion and the input seek.
-  const metadata = await extractAudioMetadata(srcPath).catch(() => null);
+  // A failed local probe keeps FFmpeg's default channel conversion and the input seek; a URL probe
+  // is retried once, then fails: a blip must not change how the next, successful read is mixed.
+  const readsUrl = isHttpUrl(srcPath);
+  const metadata = readsUrl
+    ? await extractAudioMetadata(srcPath, { signal }).catch((error: unknown) => {
+        if (signal?.aborted) throw error;
+        return extractAudioMetadata(srcPath, { signal });
+      })
+    : await extractAudioMetadata(srcPath).catch(() => null);
   const inputSeek = mediaStart >= (metadata?.latestStreamLeadSeconds ?? 0);
   const start = formatFilterNumber(mediaStart);
   const timestampTrim = inputSeek
@@ -670,9 +689,13 @@ async function extractAudioSegment(
     timestampTrim,
   );
 
-  const args = inputSeek
-    ? ["-ss", String(mediaStart), "-t", String(sourceDuration), "-i", srcPath]
-    : ["-i", srcPath];
+  const args = [
+    ...(readsUrl ? FAIL_ON_READ_ERROR_INSTEAD_OF_ENDING_THERE : []),
+    ...urlInputArgs(srcPath),
+    ...(inputSeek ? ["-ss", String(mediaStart), "-t", String(sourceDuration)] : []),
+    "-i",
+    srcPath,
+  ];
   args.push("-vn", "-acodec", "pcm_s16le", "-ar", "48000", ...outputArgs);
   if (normalizedPlaybackRate !== 1) args.push("-t", String(duration));
   args.push("-y", outputPath);
@@ -695,7 +718,12 @@ async function extractAudioSegment(
       failure,
     };
   }
-  const failure = !result.success ? ffmpegFailure(stage, result) : undefined;
+  let failure = result.success ? undefined : ffmpegFailure(stage, result);
+  const probedLinkFailedToRead =
+    readsUrl && (failure?.reason === "invalid_media" || failure?.reason === "ffmpeg_failed");
+  if (failure && probedLinkFailedToRead) {
+    failure = { ...failure, reason: "download_failed", owner: "system", retryable: true };
+  }
   return {
     success: result.success,
     outputPath,
@@ -762,7 +790,6 @@ async function mixAudioTracks(
   totalDuration: number,
   signal?: AbortSignal,
   config?: Partial<Pick<EngineConfig, "ffmpegProcessTimeout" | "audioGain">>,
-  floatWav = false,
 ): Promise<MixResult> {
   const ffmpegProcessTimeout = config?.ffmpegProcessTimeout ?? DEFAULT_CONFIG.ffmpegProcessTimeout;
   const masterOutputGain = config?.audioGain ?? DEFAULT_CONFIG.audioGain;
@@ -828,7 +855,10 @@ async function mixAudioTracks(
       scriptPath,
       "-map",
       "[out]",
-      ...(floatWav ? ["-acodec", "pcm_f32le", "-ar", "48000"] : AAC_ARGS),
+      "-acodec",
+      "pcm_f32le",
+      "-ar",
+      "48000",
       "-t",
       String(totalDuration),
       "-y",
@@ -1070,10 +1100,12 @@ async function mixThroughFloatSum(
   workDir: string,
   totalDuration: number,
   signal?: AbortSignal,
-  config?: Partial<Pick<EngineConfig, "ffmpegProcessTimeout" | "audioGain">>,
+  config?: Partial<Pick<EngineConfig, "ffmpegProcessTimeout" | "audioGain">> & {
+    keepEncoderInputAt?: string;
+  },
 ): Promise<MixResult> {
   const sumPath = join(workDir, "master-sum.wav");
-  const sum = await mixAudioTracks(tracks, sumPath, totalDuration, signal, config, true);
+  const sum = await mixAudioTracks(tracks, sumPath, totalDuration, signal, config);
   if (!sum.success) return { ...sum, outputPath };
 
   const encoderInput = masterChain
@@ -1099,6 +1131,7 @@ async function mixThroughFloatSum(
       failures: [failure],
     };
   }
+  if (config?.keepEncoderInputAt) renameSync(encoderInput, config.keepEncoderInputAt);
   return { ...sum, outputPath, durationMs: sum.durationMs + encoded.durationMs };
 }
 
@@ -1113,6 +1146,7 @@ export async function processCompositionAudio(
     /** Serialised master bus chain, from `parseMasterFxChain`. */
     masterFxChain?: string;
     urlByAbsentLocalPath?: ReadonlyMap<string, string>;
+    keepEncoderInputAt?: string;
   },
   compiledDir?: string,
 ): Promise<MixResult> {
@@ -1164,13 +1198,18 @@ export async function processCompositionAudio(
       }
       try {
         let srcPath = element.src;
+        let readInPlace = false;
         if (!isHttpUrl(srcPath)) {
           // Same browser-URL path semantics as videos.
           srcPath = resolveProjectRelativeSrc(element.src, baseDir, compiledDir);
-          srcPath = config?.urlByAbsentLocalPath?.get(srcPath) ?? srcPath;
+          const remoteUrl = config?.urlByAbsentLocalPath?.get(srcPath);
+          if (remoteUrl) {
+            srcPath = remoteUrl;
+            readInPlace = true;
+          }
         }
 
-        if (isHttpUrl(srcPath)) {
+        if (isHttpUrl(srcPath) && !readInPlace) {
           try {
             srcPath = await downloadToTemp(
               srcPath,
@@ -1188,7 +1227,7 @@ export async function processCompositionAudio(
           }
         }
 
-        if (!existsSync(srcPath)) {
+        if (!readInPlace && !existsSync(srcPath)) {
           failures.push({
             stage: "source",
             reason: "source_not_found",
@@ -1224,7 +1263,10 @@ export async function processCompositionAudio(
         if (element.end - element.start <= 0) {
           let metadata;
           try {
-            metadata = await extractAudioMetadata(srcPath);
+            metadata = await extractAudioMetadata(
+              srcPath,
+              readInPlace ? { signal: effectiveSignal } : undefined,
+            );
           } catch (err: unknown) {
             failures.push(
               probeFailure(err instanceof Error ? err.message : String(err), element.id),
@@ -1609,7 +1651,7 @@ export async function processCompositionAudio(
   let mixResult: MixResult;
   try {
     mixResult =
-      (masterChain || aacSegmentCount(totalDuration) > 1) && tracks.length > 0
+      tracks.length > 0
         ? await mixThroughFloatSum(
             tracks,
             masterChain,

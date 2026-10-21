@@ -55,6 +55,7 @@ import {
   PLAN_HASH_MISMATCH,
   renderChunk,
   RenderChunkValidationError,
+  resolveChunkCaptureWorkers,
   resolveLockedVp9CpuUsed,
   resolvePresetForLockedEncoder,
 } from "./renderChunk.js";
@@ -680,6 +681,58 @@ describe("renderChunk() — a video the chunk does not show", () => {
   }, 120_000);
 });
 
+describe("renderChunk() — a video shown smaller than its source", () => {
+  it("measures the box each video is drawn in before extracting its frames", async () => {
+    if (!hasChrome) {
+      console.warn(
+        "[renderChunk.test] skipping shown-size test — chrome-headless-shell not available",
+      );
+      return;
+    }
+    const projectDir = join(runRoot, "project-shown-size");
+    mkdirSync(projectDir, { recursive: true });
+    const synth = spawnSync("ffmpeg", [
+      ...["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=128x72:r=30:d=2"],
+      ...["-c:v", "libx264", "-pix_fmt", "yuv420p", join(projectDir, "clip.mp4")],
+    ]);
+    if (synth.status !== 0) throw new Error(synth.stderr.toString());
+    writeFileSync(
+      join(projectDir, "index.html"),
+      // Clips over a second long, so the planner defers them to the chunks.
+      FIXTURE_HTML.replace('data-duration="0.16667"', 'data-duration="1.2"').replace(
+        "</div>",
+        '<video id="pip" src="clip.mp4" muted data-start="0" data-duration="1.2" style="position:absolute;right:0;bottom:0;width:32px;height:18px"></video>' +
+          '<video id="full" src="clip.mp4" muted data-start="0" data-duration="1.2" style="position:absolute;left:0;top:0;width:128px;height:72px"></video></div>',
+      ),
+      "utf-8",
+    );
+    const planDir = join(runRoot, "plan-shown-size");
+    await planV2(
+      projectDir,
+      { fps: 30, width: 160, height: 120, format: "png-sequence", chunkSize: 36 },
+      planDir,
+    );
+    const chunkDir = join(runRoot, "chunk0-shown-size");
+    materializePlanV2Target(planDir, { role: "chunk", chunkIndex: 0 }, chunkDir);
+    let result;
+    try {
+      result = await renderChunk(chunkDir, 0, join(runRoot, "chunk0-shown-size-out"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!HOST_CHROME_FAILURE_PATTERNS.test(message)) throw err;
+      console.warn(
+        "[renderChunk.test] skipping shown-size test — host Chrome stack can't render:",
+        message.slice(0, 240),
+      );
+      return;
+    }
+    expect(JSON.parse(readFileSync(result.perfPath, "utf-8")).videoShownBoxes).toEqual({
+      pip: { width: 32, height: 18 },
+      full: { width: 128, height: 72 },
+    });
+  }, 120_000);
+});
+
 describe("renderChunk() — frameRange", () => {
   // A box sliding across the frame, so every frame differs and a misplaced,
   // dropped or repeated frame changes the assembled output.
@@ -927,6 +980,26 @@ describe("resolvePresetForLockedEncoder", () => {
   });
 });
 
+describe("resolveChunkCaptureWorkers", () => {
+  it("keeps the machine-wide sizing when the runtime sets no budget", () => {
+    expect(resolveChunkCaptureWorkers(121, 3, undefined)).toBe(3);
+  });
+
+  it("raises a chunk to the runtime's budget", () => {
+    expect(resolveChunkCaptureWorkers(121, 3, 5)).toBe(5);
+  });
+
+  it("gives each browser at least 20 frames", () => {
+    expect(resolveChunkCaptureWorkers(121, 3, 8)).toBe(6);
+    expect(resolveChunkCaptureWorkers(99, 3, 5)).toBe(4);
+  });
+
+  it("never lowers the machine-wide sizing", () => {
+    expect(resolveChunkCaptureWorkers(121, 3, 1)).toBe(3);
+    expect(resolveChunkCaptureWorkers(30, 2, 5)).toBe(2);
+  });
+});
+
 describe("resolveLockedVp9CpuUsed", () => {
   it("uses the locked value for new VP9 planDirs", () => {
     expect(resolveLockedVp9CpuUsed({ encoder: "libvpx-vp9-software", vp9CpuUsed: 4 })).toBe(4);
@@ -1028,6 +1101,30 @@ describe("extractDeferredVideoFramesForChunk", () => {
     for (const [index, path] of chunk!.framePaths) {
       expect(readFileSync(path).equals(readFileSync(full.framePaths.get(index)!))).toBe(true);
     }
+  });
+
+  it("extracts a video's frames at the size it is shown in when given its box", async () => {
+    const [chunk] = await extractDeferredVideoFramesForChunk({
+      planDir,
+      planVideos: planVideos(false),
+      frames: frameSpan(30, 32),
+      fps: { num: 30, den: 1 },
+      outputRoot: join(root, "chunk-shown"),
+      cfg: {},
+      shownBoxes: new Map([["clip", { width: 16, height: 9 }]]),
+    });
+    const [frame] = chunk!.framePaths.values();
+    const size = spawnSync("ffprobe", [
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "csv=p=0",
+      "--",
+      frame!,
+    ]);
+    expect(size.stdout.toString().trim()).toBe("16,10");
   });
 
   // Lossless keeps the file large next to what one seek reads.

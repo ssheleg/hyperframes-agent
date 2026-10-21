@@ -15,11 +15,18 @@ import {
 import { homedir } from "node:os";
 import { debuglog } from "node:util";
 import { basename, dirname, join, relative } from "node:path";
-import { managedChromeVersion, pickSharedShell } from "@hyperframes/engine/chrome-host-ceiling";
+import {
+  browserPathFromEnv,
+  managedChromeVersion,
+  pickSharedShell,
+} from "@hyperframes/engine/chrome-host-ceiling";
+import { getFreeDiskMb } from "../telemetry/system.js";
 import { normalizeErrorMessage } from "../utils/errorMessage.js";
 import { runRenderSetupWorker } from "../utils/cancellableProcess.js";
+import { unzipArchive } from "./unzipArchive.js";
 
 type PuppeteerBrowsers = typeof import("@puppeteer/browsers");
+type InstallOptions = import("@puppeteer/browsers").InstallOptions;
 
 async function loadPuppeteerBrowsers(): Promise<PuppeteerBrowsers> {
   try {
@@ -35,6 +42,7 @@ async function loadPuppeteerBrowsers(): Promise<PuppeteerBrowsers> {
 
 const CACHE_ROOT_DIR = join(homedir(), ".cache", "hyperframes");
 const CACHE_DIR = join(homedir(), ".cache", "hyperframes", "chrome");
+const ARCHIVE_PLUS_UNPACKED_SHELL_MB = 512;
 // Puppeteer's managed cache — where `@puppeteer/browsers install
 // chrome-headless-shell` (and `puppeteer install`) drop binaries. The engine's
 // `resolveHeadlessShellPath` scans the same directory; the CLI must look here
@@ -293,26 +301,11 @@ function whichBinary(name: string): string | undefined {
   }
 }
 
-// Env-var aliases for a caller-supplied browser executable path. The CLI-native
-// name `HYPERFRAMES_BROWSER_PATH` is the canonical spelling (documented via the
-// download-failure hint added in #2443). `PRODUCER_HEADLESS_SHELL_PATH` is the
-// engine-side name that per-worker render launches already honor (see
-// `packages/engine/src/services/browserManager.ts` and `render.ts` which even
-// propagates the CLI-resolved executable into it). Docs in
-// `skills/hyperframes-animation/adapters/typegpu.md`,
-// `packages/gcp-cloud-run/Dockerfile`, and `examples/k8s-jobs/Dockerfile.example`
-// all instruct users to set `PRODUCER_HEADLESS_SHELL_PATH`, so field reports
-// (e.g. `#hyperframes-cli-feedback` ts=1784095034 on win32/x64) hit the case
-// where `render` completes via that env var while `check`, `snapshot`, and
-// `compare` all ignore it and crash on the cached headless-shell instead.
-// Alias them here so every consumer of `openSettledCompositionPage` (which
-// calls `ensureBrowser` → `findFromEnv`) picks up the same escape hatch.
-// Tiebreak: HYPERFRAMES_BROWSER_PATH wins when both are set, matching the
-// CLI-native canonicalization in `render.ts` (which only sets
-// `PRODUCER_HEADLESS_SHELL_PATH` if not already present).
+// A caller-supplied browser, named by HYPERFRAMES_BROWSER_PATH or PRODUCER_HEADLESS_SHELL_PATH (the engine's
+// and the deploy docs' name). check, snapshot and compare honour it as render does; which name wins is
+// browserPathFromEnv's, so the engine launches what this resolved.
 function findFromEnv(): BrowserResult | undefined {
-  const envPath =
-    process.env["HYPERFRAMES_BROWSER_PATH"] ?? process.env["PRODUCER_HEADLESS_SHELL_PATH"];
+  const envPath = browserPathFromEnv()?.path;
   if (envPath && existsSync(envPath)) {
     return { executablePath: envPath, source: "env" };
   }
@@ -707,26 +700,34 @@ async function downloadBrowser(options?: EnsureBrowserOptions): Promise<BrowserR
     return ensureLinuxArmBrowser(options);
   }
 
-  const { Browser, detectBrowserPlatform, install } = await loadPuppeteerBrowsers();
+  // Callers hold the install lock, so every leftover belongs to an install that was killed mid-way.
+  removeInstallLeftovers();
+  const freeMb = getFreeDiskMb(CACHE_ROOT_DIR);
+  if (freeMb !== null && freeMb < ARCHIVE_PLUS_UNPACKED_SHELL_MB) {
+    throw new Error(
+      `Low disk space: Chrome Headless Shell needs about ${ARCHIVE_PLUS_UNPACKED_SHELL_MB} MB to download, ` +
+        `${freeMb} MB free at ${CACHE_ROOT_DIR}. Free disk space, then retry.`,
+    );
+  }
+  const { Browser, Cache, detectBrowserPlatform, install } = await loadPuppeteerBrowsers();
 
   const platform = detectBrowserPlatform();
   if (!platform) {
     throw new Error(`Unsupported platform: ${process.platform} ${process.arch}`);
   }
 
-  // Callers hold the install lock, so every leftover belongs to an install that was killed mid-way.
-  removeInstallLeftovers();
   // Same filesystem as CACHE_DIR so the final rename is atomic.
   const stagingDir = join(CACHE_ROOT_DIR, `${STAGING_PREFIX}${randomUUID()}`);
   const clearStaging = () => rmSync(stagingDir, { recursive: true, force: true });
   // install() only debug-logs each failed unzip tool before trying the next one; keep those lines.
   let unzipLog: string[] = [];
-  const runInstall = () => {
+  const buildId = managedChromeVersion();
+  const runInstall = async () => {
     unzipLog = [];
-    return install({
+    const installOptions: InstallOptions & { unpack?: true } = {
       cacheDir: stagingDir,
       browser: Browser.CHROMEHEADLESSSHELL,
-      buildId: managedChromeVersion(),
+      buildId,
       platform,
       downloadProgressCallback: options?.onProgress,
       logger: (prefix) => {
@@ -739,7 +740,14 @@ async function downloadBrowser(options?: EnsureBrowserOptions): Promise<BrowserR
           if (debug.enabled) debug(line);
         };
       },
-    });
+    };
+    const unzipMayAskOnInput = process.platform !== "win32";
+    if (unzipMayAskOnInput) {
+      const archive = await install({ ...installOptions, unpack: false });
+      const into = new Cache(stagingDir).installationDir(installOptions.browser, platform, buildId);
+      await unzipArchive(archive, into);
+    }
+    return install(installOptions);
   };
 
   try {
@@ -812,6 +820,9 @@ const STAGING_PREFIX = ".chrome-staging-";
 const REPLACED_PREFIX = ".chrome-replaced-";
 
 // Staging and set-aside dirs outlive an install killed by a signal, since `finally` never runs.
+const isInstallLeftover = (name: string) =>
+  name.startsWith(STAGING_PREFIX) || name.startsWith(REPLACED_PREFIX);
+
 function removeInstallLeftovers(): boolean {
   let names: string[];
   try {
@@ -820,12 +831,16 @@ function removeInstallLeftovers(): boolean {
     if (isErrno(err, "ENOENT")) return false;
     throw err;
   }
-  const leftovers = names.filter(
-    (name) => name.startsWith(STAGING_PREFIX) || name.startsWith(REPLACED_PREFIX),
-  );
+  const leftovers = names.filter(isInstallLeftover);
   for (const name of leftovers)
     rmSync(join(CACHE_ROOT_DIR, name), { recursive: true, force: true });
   return leftovers.length > 0;
+}
+
+export async function sweepKilledInstalls(): Promise<void> {
+  const names = existsSync(CACHE_ROOT_DIR) ? readdirSync(CACHE_ROOT_DIR) : [];
+  if (!names.some(isInstallLeftover)) return;
+  await withInstallLock(async () => removeInstallLeftovers());
 }
 
 // Deletes the managed Chrome cache and interrupted-install leftovers; true when any of them existed.

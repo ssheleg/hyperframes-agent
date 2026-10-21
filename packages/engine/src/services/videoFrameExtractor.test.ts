@@ -55,7 +55,7 @@ import {
   extractVideoMetadata,
   type VideoMetadata,
 } from "../utils/ffprobe.js";
-import { runFfmpeg } from "../utils/runFfmpeg.js";
+import { ffmpegStatsReader, runFfmpeg, type RunFfmpegOptions } from "../utils/runFfmpeg.js";
 
 // Pass-through, so a test can tell whether extraction ran ffmpeg.
 vi.mock("../utils/runFfmpeg.js", async (importOriginal) => {
@@ -2082,30 +2082,44 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
     60_000,
   );
 
-  it("keeps a run that outlasts the timeout while it still writes frames", async () => {
-    const source = join(FIXTURE_DIR, "paced-5s.mp4");
+  it("stops extraction only on a stall, and its ffmpeg reports each frame it writes", async () => {
+    const source = join(FIXTURE_DIR, "paced-2s.mp4");
     const synth = await runFfmpeg([
       ...["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi"],
-      ...["-i", `testsrc=s=${WIDTH}x${HEIGHT}:r=30:d=5`, "-pix_fmt", "yuv420p", source],
+      ...["-i", `testsrc=s=${WIDTH}x${HEIGHT}:r=30:d=2`, "-pix_fmt", "yuv420p", source],
     ]);
     if (!synth.success) throw new Error(`paced fixture synthesis failed: ${synth.stderr}`);
     const { runFfmpeg: real } =
       await vi.importActual<typeof import("../utils/runFfmpeg.js")>("../utils/runFfmpeg.js");
-    // Real-time pacing makes 5 s of source take 5 s against a 2 s timeout.
-    vi.mocked(runFfmpeg).mockImplementation((args, opts) =>
-      real(["-stats_period", "0.1", "-re", ...args], opts),
-    );
+    let requested: RunFfmpegOptions | undefined;
+    const reported: number[] = [];
+    const readStats = ffmpegStatsReader(({ frames }) => {
+      if (frames) reported.push(frames);
+    });
+    // Real-time pacing spreads the stats over the run. The stall clock itself is runFfmpeg's to
+    // test; here it is lifted so a starved runner cannot race it.
+    vi.mocked(runFfmpeg).mockImplementation((args, opts) => {
+      requested = opts;
+      return real(["-stats_period", "0.1", "-re", ...args], {
+        ...opts,
+        stallTimeout: 60_000,
+        onStderr: readStats,
+      });
+    });
     try {
       const extracted = await extractVideoFramesRange(
         source,
-        "paced-past-timeout",
+        "paced-stall-only",
         0,
-        5,
+        2,
         { fps: 10, outputDir: FIXTURE_DIR, format: "png" },
         undefined,
         { ffmpegProcessTimeout: 2000 },
       );
-      expect(extracted.totalFrames).toBe(50);
+      expect(extracted.totalFrames).toBe(20);
+      expect(requested).toMatchObject({ stallTimeout: 2000 });
+      expect(requested).not.toHaveProperty("timeout");
+      expect(new Set(reported).size).toBeGreaterThan(1);
     } finally {
       vi.mocked(runFfmpeg).mockImplementation(real);
     }
@@ -2224,6 +2238,38 @@ describe.skipIf(!HAS_FFMPEG)("frame sampling at the output frame rate", () => {
       },
       60_000,
     );
+
+    it("halves frames while they still cover the box a video is shown in", async () => {
+      const firstFrameSize = async (
+        videoId: string,
+        shownBox: { width: number; height: number },
+      ) => {
+        const result = await extractVideoFramesRange(gopSource, videoId, 0, 1, {
+          fps: 30,
+          outputDir: FIXTURE_DIR,
+          format: "jpg",
+          frameRanges: [{ firstFrame: 0, frames: 1 }],
+          shownBox,
+        });
+        const [frame] = result.framePaths.values();
+        return spawnSync("ffprobe", [
+          "-v",
+          "error",
+          "-show_entries",
+          "stream=width,height",
+          "-of",
+          "csv=p=0",
+          "--",
+          frame!,
+        ])
+          .stdout.toString()
+          .trim();
+      };
+      // 64x36 source: halved as often as the box allows (even sides round up); never below the box.
+      expect(await firstFrameSize("shown-quarter", { width: 16, height: 9 })).toBe("16,10");
+      expect(await firstFrameSize("shown-third", { width: 20, height: 12 })).toBe("32,18");
+      expect(await firstFrameSize("shown-near-full", { width: 40, height: 20 })).toBe("64,36");
+    }, 30_000);
   });
 });
 
