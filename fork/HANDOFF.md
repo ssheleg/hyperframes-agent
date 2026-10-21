@@ -5,36 +5,28 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-20)
+## State (2026-10-21)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
-- `main` = upstream `v0.8.180` (merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + `fork/`; `upstream`
-  mirrors HeyGen's `main` (pushed to `c77061e3a`, three commits after `v0.8.180`).
-- Latest release `fork-v0.8.180-sshlg.1` (sha256 `72d5b034513b0a41c160aeca57f796f9929c2dd8b9a615282bf439dbcd8103e4`);
-  checks run by `fork/release.sh`: the patch's 3 tests passed, the smoke install printed `0.8.180+sshlg.1` and swept a
-  dead marker, the re-downloaded asset matched its sha256. `fork-v0.8.174-sshlg.1` and `fork-v0.8.170-sshlg.1` stay
-  published.
-- Frame Agent's `main` still pins `fork-v0.8.174-sshlg.1` (its BL-166). The request to move it to
-  `fork-v0.8.180-sshlg.1` waits for the Fabric board: on 2026-10-20 Fabric was running but its hub was not published
-  (lifecycle broker reason `hub_not_published`), so `com.submit` could not be sent. Later that day the hub answered,
-  but neither `hyperframes-agent` nor `frame-agent` is a Project in Fabric's directory (34 Projects, read from the
-  `fabric-workspace` session); adding a folder as a Project is the person's step in Fabric (+ Project, Open a project).
+- `main` = upstream `v0.8.181` (merge `2fb047c8a`, on top of `v0.8.180` merge `8595a06f6`) + the running-markers
+  sweep (`cbe3ca66a`) + `fork/`; `upstream` mirrors HeyGen's `main` (pushed to `908f2d095`, 31 commits after
+  `v0.8.180`).
+- Latest release `fork-v0.8.181-sshlg.1` (sha256 `3a61ad3809dedf9b70e9b9150518b9bb4d9fee5596408c5c40921b6b1b6e34ab`);
+  checks run by `fork/release.sh`: the patch's 3 tests passed, the smoke install printed `0.8.181+sshlg.1` and swept a
+  dead marker, the re-downloaded asset matched its sha256. Earlier releases stay published.
+- The private consumer that pins this line moved to `fork-v0.8.181-sshlg.1` on 2026-10-21 (through `0.8.180` the day
+  before), with door audits v0.8.174..v0.8.181 in its own pull requests: no new CLI command; the one new variable
+  (`HYPERFRAMES_LAMBDA_HANDLER_URL`) is read only by `lambda deploy`, which that consumer denies. Its vendored skills
+  are at `v0.8.180`, equal to `v0.8.181`'s.
 - The sixteen inherited workflows are disabled (repository settings).
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
   cleanly onto upstream `main` (`git merge-tree`, 2026-10-20). We do not wait for it.
-- Cleaned on 2026-10-20: the stale `bot/catalog-publish` branch (left by the disabled catalog workflow at
-  `v0.8.168`) was deleted from `origin`.
 
 ## Next task
 
-1. Frame Agent's move to `fork-v0.8.180-sshlg.1` is ssheleg/frame-agent#186 (branch `agent/bl-engine-0.8.180`,
-   worktree `~/DATA/_worktrees/frame-agent-engine-0.8.180`, BL-172; skills re-vendored at `v0.8.180`, door audit in the
-   PR). Its gate was not green on 2026-10-20 only because of the machine: 9 tests `ENOSPC` with the disk at 0.7 to
-   3.7 GB free, 5 deadlines missed at load average about 520; typecheck, lint and docs passed. Next: with at least
-   10 GB free and normal load, run `npm run check` in that worktree; on exit 0 merge #186 (the repository merges PRs)
-   and remove the worktree.
-2. Upstream releases after `v0.8.180`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish` and update this file.
+1. Upstream releases after `v0.8.181`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish` and update this file. The pinning
+   consumer moves its pin in its own repository (its handoff names the steps); tell it on the project board.
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
