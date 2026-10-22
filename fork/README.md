@@ -77,3 +77,9 @@ prints the line's version, and that a start removes the marker of a dead pid.
    the same thing: take upstream's side, then remove the patch's row from the table above.
 4. `git log --no-merges v<new>..main -- . ':!fork'` lists exactly the patches still carried.
 5. `fork/release.sh 1` builds on the new base (it finds the base with `git describe`), then `--publish`.
+6. `fork/door-audit.sh v<old> v<new>` lists what a consumer that confines the engine must read before it moves its pin:
+   new CLI commands, environment variables read in shipped code, new child processes and `fetch` calls, packages
+   installed at run time, and changed skills with the commands their new lines name. It reports a diff between two
+   tags, so a behaviour older than `v<old>` never shows: the CLI has installed `onnxruntime-node` and `@google/genai` from
+   npm on first use since `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`)
+   turns that off. Post the report's findings to the consumer when the release is published.

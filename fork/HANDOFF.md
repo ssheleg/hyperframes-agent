@@ -15,7 +15,7 @@ publish tarball releases that consumers pin.
   checks run by `fork/release.sh`: the patch's 3 tests passed, the smoke install printed `0.8.184+sshlg.1` and swept a
   dead marker, the re-downloaded asset matched its sha256. Earlier releases (`0.8.181`, `0.8.180`, `0.8.174`, `0.8.170`)
   stay published.
-- Door audit v0.8.181..v0.8.184 (for consumers that deny engine doors): no new CLI command. Since `v0.8.180` the CLI
+- Door audit v0.8.181..v0.8.184 (for consumers that deny engine doors): no new CLI command. Since `v0.8.51` the CLI
   installs `onnxruntime-node` and `@google/genai` from npm on first use (and `sharp` since `v0.8.182`) into
   `~/.cache/hyperframes/optional` (`packages/cli/src/utils/optionalPackages.ts`); `v0.8.182` added
   `HYPERFRAMES_NO_OPTIONAL_INSTALL` (`1` turns every such install off). Other new env names belong to `aws-lambda`,
@@ -31,7 +31,8 @@ publish tarball releases that consumers pin.
 ## Next task
 
 1. Upstream releases after `v0.8.184`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish` and update this file. The pinning
-   consumer moves its pin in its own repository (its handoff names the steps); tell it on the project board.
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.184 v<new>` and update this file. The
+   pinning consumer moves its pin in its own repository (its handoff names the steps); post the audit's findings to it on
+   the project board.
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
