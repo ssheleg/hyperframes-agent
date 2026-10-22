@@ -15,7 +15,8 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock };
 });
 
-const { findPython, describeRejectedPythonOverride } = await import("./python.js");
+const { findPython, describeRejectedPythonOverride, probePythonPackage } =
+  await import("./python.js");
 
 describe("findPython / describeRejectedPythonOverride", () => {
   beforeEach(() => {
@@ -74,5 +75,37 @@ describe("findPython / describeRejectedPythonOverride", () => {
     execFileSyncMock.mockReturnValue("Python 3.11.0");
     expect(findPython()).toBe("/opt/venv/bin/python");
     expect(execFileSyncMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("probePythonPackage", () => {
+  beforeEach(() => {
+    execFileSyncMock.mockReset();
+  });
+
+  it("returns null when the import succeeds", () => {
+    execFileSyncMock.mockReturnValue("");
+    expect(probePythonPackage("/usr/bin/python3", "kokoro_onnx")).toBeNull();
+  });
+
+  it("returns the import's own error rather than swallowing it", () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error("Command failed"), {
+        stderr:
+          'Traceback (most recent call last):\n  File "<string>", line 1\nImportError: dlopen(libespeak-ng.dylib): no suitable image found\n',
+      });
+    });
+    expect(probePythonPackage("/usr/bin/python3", "kokoro_onnx")).toBe(
+      "ImportError: dlopen(libespeak-ng.dylib): no suitable image found",
+    );
+  });
+
+  it("falls back to the process error when the import printed nothing", () => {
+    execFileSyncMock.mockImplementation(() => {
+      throw Object.assign(new Error("spawnSync /usr/bin/python3 ETIMEDOUT"), { stderr: "" });
+    });
+    expect(probePythonPackage("/usr/bin/python3", "kokoro_onnx")).toBe(
+      "spawnSync /usr/bin/python3 ETIMEDOUT",
+    );
   });
 });
