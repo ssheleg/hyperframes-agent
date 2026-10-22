@@ -55,9 +55,10 @@ ours touches them. Releases made before the rename (2026-10-19) name `sshlg/heyg
 
 ## Patches on the line
 
-| Patch                                                                   | Upstream                           | Drop when                      |
-| ----------------------------------------------------------------------- | ---------------------------------- | ------------------------------ |
-| `fix(cli): each start sweeps the running markers of CLIs that are gone` | heygen-com/hyperframes#5790 (open) | an upstream release carries it |
+| Patch                                                                              | Upstream                                       | Drop when                      |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------ |
+| `fix(cli): each start sweeps the running markers of CLIs that are gone`            | heygen-com/hyperframes#5790 (open)             | an upstream release carries it |
+| `fix(cli): speech works from a sandboxed run and says why kokoro-onnx cannot load` | branch `upstream/tts-sandbox-safe` (no PR yet) | an upstream release carries it |
 
 ## Release
 
