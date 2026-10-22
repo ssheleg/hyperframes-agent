@@ -14,9 +14,14 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...original, existsSync: vi.fn(original.existsSync) };
 });
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
+const probe = vi.hoisted(() => ({
+  failures: {} as Record<string, string>,
+  rejectedOverride: null as string | null,
+}));
 vi.mock("./python.js", () => ({
   findPython: () => "test-python",
-  hasPythonPackage: () => true,
+  probePythonPackage: (_python: string, pkg: string) => probe.failures[pkg] ?? null,
+  describeRejectedPythonOverride: () => probe.rejectedOverride,
 }));
 vi.mock("./manager.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./manager.js")>()),
@@ -32,6 +37,8 @@ describe("synthesis script cache", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    probe.failures = {};
+    probe.rejectedOverride = null;
     paths.home = fs.mkdtempSync(join(tmpdir(), "hf-tts-cache-"));
     cacheDir = join(paths.home, ".cache", "hyperframes", "tts");
     scriptPath = join(cacheDir, "synth-v3.py");
@@ -49,6 +56,7 @@ describe("synthesis script cache", () => {
   });
 
   afterEach(() => {
+    fs.chmodSync(cacheDir, 0o755);
     expect(fs.readdirSync(cacheDir).filter((name) => name.startsWith(".hf-create-"))).toEqual([]);
     fs.rmSync(paths.home, { recursive: true, force: true });
   });
@@ -111,4 +119,32 @@ describe("synthesis script cache", () => {
       }
     },
   );
+
+  it("runs the embedded script when the cache cannot be written (a sandboxed run)", async () => {
+    fs.chmodSync(cacheDir, 0o555);
+    const { synthesize } = await import("./synthesize.js");
+    await synthesize("Hello", outputPath);
+
+    expect(fs.existsSync(scriptPath)).toBe(false);
+    const call = vi.mocked(execFileSync).mock.calls.at(-1);
+    expect(call?.[0]).toBe("test-python");
+    const argv = call?.[1] as string[];
+    expect(argv[0]).toBe("-c");
+    expect(argv[1]).toContain("import kokoro_onnx");
+    expect(argv.slice(2, 5)).toEqual(["model.onnx", "voices.bin", "Hello"]);
+    expect(argv).toContain(outputPath);
+  });
+
+  it("names the interpreter and the import's own error when kokoro-onnx cannot load", async () => {
+    probe.failures.kokoro_onnx = "ImportError: dlopen(libespeak-ng.dylib): no suitable image found";
+    probe.rejectedOverride =
+      'HYPERFRAMES_PYTHON="/venv/bin/python" was rejected: spawnSync ETIMEDOUT';
+    const { synthesize } = await import("./synthesize.js");
+
+    const failure = synthesize("Hello", outputPath);
+    await expect(failure).rejects.toThrow("kokoro-onnx package");
+    await expect(failure).rejects.toThrow("test-python");
+    await expect(failure).rejects.toThrow("no suitable image found");
+    await expect(failure).rejects.toThrow('HYPERFRAMES_PYTHON="/venv/bin/python" was rejected');
+  });
 });

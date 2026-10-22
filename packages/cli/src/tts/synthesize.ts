@@ -10,7 +10,7 @@ import {
   inferLangFromVoiceId,
   type SupportedLang,
 } from "./manager.js";
-import { findPython, hasPythonPackage } from "./python.js";
+import { describeRejectedPythonOverride, findPython, probePythonPackage } from "./python.js";
 import { writeNewFileSync } from "../utils/writeNewFile.js";
 
 // ---------------------------------------------------------------------------
@@ -98,10 +98,19 @@ const ESPEAK_LANG_OVERRIDES: Partial<Record<SupportedLang, string>> = {
 const SCRIPT_DIR = join(homedir(), ".cache", "hyperframes", "tts");
 const SCRIPT_PATH = join(SCRIPT_DIR, "synth-v3.py");
 
-function ensureSynthScript(): string {
+/**
+ * Publish the script into the cache and return its path, or null when the
+ * cache cannot be written (a sandboxed run whose profile only reads
+ * ~/.cache): the caller then hands the same script to `python -c`.
+ */
+function ensureSynthScript(): string | null {
   if (!existsSync(SCRIPT_PATH)) {
-    mkdirSync(SCRIPT_DIR, { recursive: true });
-    writeNewFileSync(SCRIPT_PATH, SYNTH_SCRIPT);
+    try {
+      mkdirSync(SCRIPT_DIR, { recursive: true });
+      writeNewFileSync(SCRIPT_PATH, SYNTH_SCRIPT);
+    } catch {
+      return existsSync(SCRIPT_PATH) ? SCRIPT_PATH : null;
+    }
     // Best-effort: delete older versioned scripts left behind by previous
     // CLI releases so users don't accumulate stale files in ~/.cache.
     const currentName = basename(SCRIPT_PATH);
@@ -120,6 +129,14 @@ function ensureSynthScript(): string {
     }
   }
   return SCRIPT_PATH;
+}
+
+/** Why a required package cannot be imported, with what the user needs to act on it. */
+function missingPackageError(python: string, summary: string, reason: string): Error {
+  const lines = [summary, `Python used: ${python}. Import error: ${reason}`];
+  const rejectedOverride = describeRejectedPythonOverride();
+  if (rejectedOverride) lines.push(rejectedOverride);
+  return new Error(lines.join("\n"));
 }
 
 // ---------------------------------------------------------------------------
@@ -169,14 +186,22 @@ export async function synthesize(
     );
   }
 
-  if (!hasPythonPackage(python, "kokoro_onnx")) {
-    throw new Error(
-      "The kokoro-onnx package is not installed. Run: pip install kokoro-onnx soundfile (or point HYPERFRAMES_PYTHON at a venv python that has them)",
+  const kokoroFailure = probePythonPackage(python, "kokoro_onnx");
+  if (kokoroFailure) {
+    throw missingPackageError(
+      python,
+      "The kokoro-onnx package is not installed or cannot load. Run: pip install kokoro-onnx soundfile (or point HYPERFRAMES_PYTHON at a venv python that has them)",
+      kokoroFailure,
     );
   }
 
-  if (!hasPythonPackage(python, "soundfile")) {
-    throw new Error("The soundfile package is not installed. Run: pip install soundfile");
+  const soundfileFailure = probePythonPackage(python, "soundfile");
+  if (soundfileFailure) {
+    throw missingPackageError(
+      python,
+      "The soundfile package is not installed or cannot load. Run: pip install soundfile",
+      soundfileFailure,
+    );
   }
 
   // 2. Ensure model and voices are downloaded (parallel on first run)
@@ -185,8 +210,9 @@ export async function synthesize(
     ensureVoices({ onProgress: options?.onProgress }),
   ]);
 
-  // 3. Ensure synthesis script is cached
+  // 3. Ensure synthesis script is cached (or embed it when the cache is read-only)
   const scriptPath = ensureSynthScript();
+  const scriptArgs = scriptPath ? [scriptPath] : ["-c", SYNTH_SCRIPT];
 
   // 4. Ensure output directory exists
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -197,7 +223,7 @@ export async function synthesize(
     const espeakLang = ESPEAK_LANG_OVERRIDES[lang] ?? lang;
     const stdout = execFileSync(
       python,
-      [scriptPath, modelPath, voicesPath, text, voice, String(speed), outputPath, espeakLang],
+      [...scriptArgs, modelPath, voicesPath, text, voice, String(speed), outputPath, espeakLang],
       {
         encoding: "utf-8",
         timeout: 300_000,
