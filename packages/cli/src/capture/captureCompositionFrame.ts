@@ -115,6 +115,7 @@ export interface OpenSettledCompositionPageOptions {
   // Runs after the page exists but before page.goto, so console/pageerror/
   // request listeners can attach without missing load-time events.
   beforeNavigate?: (page: Page) => void | Promise<void>;
+  onLoaded?: () => void;
   // Started before the project was bundled; used only if it was launched with the same arguments.
   prelaunched?: PrelaunchedBrowser;
 }
@@ -331,6 +332,7 @@ export async function openSettledCompositionPage(
     await options.beforeNavigate?.(page);
     await gotoWhenSent(page, url, pageNavigationTimeoutMs(options.navigationTimeoutMs));
     await assertWebGpuAdapterAvailable(page, requiresWebGpu, softwareWebGpu);
+    options.onLoaded?.();
     const renderReadyTimedOut = !(await waitForCompositionSettle(page, options));
     return { browser: chromeBrowser, page, renderReadyTimedOut };
   } catch (err) {
@@ -511,6 +513,16 @@ export async function seekCompositionTimeline(
   timeSeconds: number,
   options: SeekCompositionTimelineOptions = {},
 ): Promise<void> {
+  await seekCompositionTimelineOnly(page, timeSeconds, options);
+  await settleCompositionSeek(page, options);
+}
+
+/** The seek alone; `settleCompositionSeek` must follow, which is what finishes a blurred frame. */
+export async function seekCompositionTimelineOnly(
+  page: CompositionSeekPage,
+  timeSeconds: number,
+  options: SeekCompositionTimelineOptions = {},
+): Promise<void> {
   if (options.waitForPreferredSeekTargetMs !== undefined) {
     await waitForPreferredSeekTarget(page, options.waitForPreferredSeekTargetMs);
   }
@@ -522,7 +534,12 @@ export async function seekCompositionTimeline(
     options.exactTime === true,
     options.skipWebglDraws === true,
   );
+}
 
+export async function settleCompositionSeek(
+  page: CompositionSeekPage,
+  options: SeekCompositionTimelineOptions = {},
+): Promise<void> {
   await page.evaluate(
     async (barrier: SeekBarrierOptions) => {
       const waitForCompletion = Reflect.get(window, "__hfWaitForSeekCompletion");

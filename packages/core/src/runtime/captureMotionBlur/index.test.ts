@@ -17,7 +17,9 @@ type Win = Window & {
       reason: string | null;
       shutterDeg: number;
       moverNames: string[];
+      failedFrames: number;
     };
+    suspend: () => void;
   };
   __hf_page_composite_pending?: boolean;
   __hf_page_composite_resolve?: () => boolean;
@@ -39,7 +41,7 @@ function fakeContext() {
 let contexts: Array<ReturnType<typeof fakeContext>> = [];
 const captureContext = () => contexts[0];
 
-function installHtmlInCanvas(): void {
+function installHtmlInCanvas(form: "old" | "new" = "old"): void {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
     const ctx = fakeContext();
     contexts.push(ctx);
@@ -51,7 +53,10 @@ function installHtmlInCanvas(): void {
       drawElementImage(): void {}
     },
   );
-  (HTMLCanvasElement.prototype as unknown as Record<string, unknown>).requestPaint = () => {};
+  const canvasProto = HTMLCanvasElement.prototype as unknown as Record<string, unknown>;
+  canvasProto.requestPaint = () => {};
+  if (form === "old") canvasProto.layoutSubtree = false;
+  else canvasProto.updateElementGeometry = () => {};
   vi.stubGlobal(
     "OffscreenCanvas",
     class {
@@ -98,7 +103,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
-  delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>).requestPaint;
+  for (const name of ["requestPaint", "layoutSubtree", "updateElementGeometry"]) {
+    delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)[name];
+  }
   delete win.__HF_PAGE_MOTION_BLUR_OFF__;
   delete win.__hfMotionBlur;
   delete win.__hf_page_composite_pending;
@@ -171,6 +178,20 @@ describe("opt-in and off switches", () => {
     expect(win.__hfMotionBlur?.report().reason).toContain("engine");
   });
 
+  it("names a distributed render as the reason when the renderer turned blur off (R19)", () => {
+    installHtmlInCanvas();
+    win.__HF_PAGE_MOTION_BLUR_OFF__ = "distributed-render";
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    expect(paintCaptureMotionBlur(0.5, { engineMode: true })).toBeNull();
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "off",
+      reason: "the renderer turned it off (distributed-render)",
+      reasonCode: "renderer-off",
+    });
+  });
+
   it("says why it is off to a root that asked for it", () => {
     initCaptureMotionBlur(host(makeRoot()));
     expect(console.info).toHaveBeenCalledWith(expect.stringContaining("html-in-canvas"));
@@ -204,6 +225,24 @@ describe("opt-in and off switches", () => {
     expect(win.__hfMotionBlur?.report().reason).toMatch(/WebGL/);
   });
 
+  it("stays off for a canvas handed to an OffscreenCanvas, whose context is out of reach", () => {
+    installHtmlInCanvas();
+    (HTMLCanvasElement.prototype as unknown as Record<string, unknown>).transferControlToOffscreen =
+      () => ({});
+    trackAcceleratedCanvases();
+    const root = makeRoot();
+    const canvas = document.createElement("canvas");
+    root.append(canvas);
+    canvas.transferControlToOffscreen();
+    initCaptureMotionBlur(host(root));
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "off",
+      reasonCode: "accelerated-canvas",
+    });
+    delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)
+      .transferControlToOffscreen;
+  });
+
   it("turns off instead of wrapping when a WebGL canvas appears after init", () => {
     installHtmlInCanvas();
     trackAcceleratedCanvases();
@@ -215,6 +254,240 @@ describe("opt-in and off switches", () => {
     void paintCaptureMotionBlur(0.5, { engineMode: true });
     expect(root.parentElement).toBe(document.body);
     expect(win.__hfMotionBlur?.report().reason).toMatch(/WebGL/);
+  });
+
+  it("stays off for an iframe in the root, which reloads when the root is wrapped (R9)", () => {
+    installHtmlInCanvas();
+    const root = makeRoot();
+    root.append(document.createElement("iframe"));
+    initCaptureMotionBlur(host(root));
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "off",
+      reasonCode: "iframe-in-root",
+    });
+  });
+
+  it("turns off instead of wrapping when an iframe appears after init (R9)", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    root.append(document.createElement("iframe"));
+    void paintCaptureMotionBlur(0.5, PLAY);
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report().reasonCode).toBe("iframe-in-root");
+  });
+
+  it("stays off for a hidden-backface card in a 3D context, but not for a flat one", () => {
+    installHtmlInCanvas();
+    const flat = makeRoot();
+    flat.innerHTML = '<div style="backface-visibility: hidden"></div>';
+    initCaptureMotionBlur(host(flat));
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+
+    resetCaptureMotionBlurForTests();
+    flat.innerHTML =
+      '<div style="transform-style: preserve-3d"><div style="backface-visibility: hidden"></div></div>';
+    initCaptureMotionBlur(host(flat));
+    expect(win.__hfMotionBlur?.report().state).toBe("off");
+    expect(win.__hfMotionBlur?.report().reason).toMatch(/backface-visibility/);
+  });
+
+  it("turns off instead of wrapping when the root gets a transform or opacity after init", () => {
+    installHtmlInCanvas();
+    for (const style of ["transform: scale(0.5)", "opacity: 0.5"]) {
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      root.setAttribute("style", style);
+      void paintCaptureMotionBlur(0.5, { engineMode: true });
+      expect(root.parentElement).toBe(document.body);
+      expect(win.__hfMotionBlur?.report().state).toBe("off");
+      expect(win.__hfMotionBlur?.report().reason).toMatch(/root/);
+      resetCaptureMotionBlurForTests();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("rescans for a hidden-backface card when the timeline changes", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    let tl = "a";
+    initCaptureMotionBlur({ ...h, timeline: () => tl });
+    void paintCaptureMotionBlur(0.5, { engineMode: true });
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+    root.insertAdjacentHTML(
+      "beforeend",
+      '<div style="transform-style: preserve-3d"><div style="backface-visibility: hidden"></div></div>',
+    );
+    tl = "b";
+    void paintCaptureMotionBlur(0.6, { engineMode: true });
+    expect(win.__hfMotionBlur?.report().reason).toMatch(/backface-visibility/);
+  });
+
+  it("blocks from the first frame a root that only starts tweening later", () => {
+    installHtmlInCanvas();
+    for (const late of [
+      (root: HTMLElement) => (root.style.transform = "translateX(8px)"),
+      (root: HTMLElement) => (root.style.opacity = "0.4"),
+    ]) {
+      const { root, h } = movingHost();
+      const slide = h.seek;
+      initCaptureMotionBlur({
+        ...h,
+        seek: (t, quiet) => {
+          slide(t, quiet);
+          if (t >= 0.7) late(root);
+          else root.removeAttribute("style");
+        },
+      });
+      void paintCaptureMotionBlur(0, { engineMode: true });
+      expect(root.parentElement).toBe(document.body);
+      expect(win.__hfMotionBlur?.report()).toMatchObject({
+        state: "off",
+        reason: expect.stringMatching(/root.*first seen at t=0\.[7-9]s/),
+      });
+      resetCaptureMotionBlurForTests();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("restores the playhead after a scan that blocked", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur({
+      ...h,
+      seek: (t, quiet) => {
+        h.seek(t, quiet);
+        root.style.opacity = t > 0.5 ? "0.5" : "1";
+      },
+    });
+    void paintCaptureMotionBlur(0.25, { engineMode: true });
+    expect(h.seek.mock.calls.at(-1)?.[0]).toBeCloseTo(0.25);
+    expect(win.__hfMotionBlur?.report().state).toBe("off");
+  });
+
+  it("sees a rotation that a later tween puts on a face with no 3D context at the start", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    const face = document.createElement("div");
+    face.setAttribute("style", "backface-visibility: hidden");
+    root.append(face);
+    initCaptureMotionBlur({
+      ...h,
+      seek: (t, quiet) => {
+        h.seek(t, quiet);
+        face.style.transform = t > 0.5 ? "rotateY(120deg)" : "none";
+      },
+    });
+    void paintCaptureMotionBlur(0, { engineMode: true });
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report().reason).toMatch(/backface-visibility.*first seen/);
+  });
+
+  it("keeps blurring around a flat backface-hidden element that moves in 2D", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    const face = document.createElement("div");
+    face.setAttribute("style", "backface-visibility: hidden");
+    root.append(face);
+    initCaptureMotionBlur({
+      ...h,
+      seek: (t, quiet) => {
+        h.seek(t, quiet);
+        face.style.transform = `translateX(${t * 50}px)`;
+      },
+    });
+    void paintCaptureMotionBlur(0.5, { engineMode: true });
+    expect(root.parentElement).toBe(captureCanvas(root));
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+  });
+
+  describe("a defect the scan missed renders that frame sharp (R10)", () => {
+    const sharpLogs = () =>
+      vi.mocked(console.info).mock.calls.filter(([m]) => String(m).includes("sharp frame"));
+
+    function engineFrame(h: ReturnType<typeof movingHost>["h"], t: number) {
+      h.seek(t, true);
+      void paintCaptureMotionBlur(t, { engineMode: true });
+    }
+
+    it("a WebGL canvas that appears and goes away: sharp meanwhile, blurred again after", () => {
+      installHtmlInCanvas();
+      trackAcceleratedCanvases();
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      engineFrame(h, 0.1);
+      expect(root.parentElement?.tagName).toBe("CANVAS");
+      const late = document.createElement("canvas");
+      root.append(late);
+      late.getContext("webgl2");
+      for (const t of [0.2, 0.3, 0.4]) {
+        engineFrame(h, t);
+        expect(root.parentElement).toBe(document.body);
+      }
+      late.remove();
+      engineFrame(h, 0.5);
+      expect(root.parentElement?.tagName).toBe("CANVAS");
+      expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failedFrames: 3 });
+      expect(sharpLogs()).toHaveLength(1);
+      expect(sharpLogs()[0]?.[0]).toContain("accelerated-canvas");
+    });
+
+    it("a root shake between scan samples: only the shaken frames are sharp, state stays on", () => {
+      installHtmlInCanvas();
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      engineFrame(h, 0.1);
+      const wrappedAt: Record<string, boolean> = {};
+      for (const t of [0.2, 0.25, 0.3, 0.35, 0.4]) {
+        root.style.transform = t > 0.22 && t < 0.36 ? "translate(6px, 0px)" : "";
+        engineFrame(h, t);
+        wrappedAt[t] = root.parentElement?.tagName === "CANVAS";
+      }
+      expect(wrappedAt).toEqual({ 0.2: true, 0.25: false, 0.3: false, 0.35: false, 0.4: true });
+      expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failedFrames: 3 });
+      expect(sharpLogs()).toHaveLength(1);
+    });
+
+    it("a hidden face flipped between the scan's backface samples", () => {
+      installHtmlInCanvas();
+      const { root, h } = movingHost();
+      const face = document.createElement("div");
+      face.setAttribute("style", "backface-visibility: hidden");
+      root.append(face);
+      const flip = (t: number, suppress: boolean) => {
+        h.seek(t, suppress);
+        face.style.transform = t > 0.4 && t < 0.5 ? "rotateY(120deg)" : "none";
+      };
+      initCaptureMotionBlur({ ...h, seek: flip });
+      flip(0.2, true);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report().state).toBe("on");
+      expect(root.parentElement?.tagName).toBe("CANVAS");
+      flip(0.45, true);
+      void paintCaptureMotionBlur(0.45, { engineMode: true });
+      expect(root.parentElement).toBe(document.body);
+      flip(0.6, true);
+      void paintCaptureMotionBlur(0.6, { engineMode: true });
+      expect(root.parentElement?.tagName).toBe("CANVAS");
+      expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failedFrames: 1 });
+      expect(sharpLogs()[0]?.[0]).toContain("backface-visibility");
+    });
+
+    it("an engine frame that is sharp resolves at once and leaves the composite step idle", async () => {
+      installHtmlInCanvas();
+      trackAcceleratedCanvases();
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      engineFrame(h, 0.1);
+      const late = document.createElement("canvas");
+      root.append(late);
+      late.getContext("webgl2");
+      win.__hf_page_composite_pending = false;
+      h.seek(0.2, true);
+      await paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hf_page_composite_pending).toBe(false);
+    });
   });
 
   it("clamps the shutter angle", () => {
@@ -235,12 +508,41 @@ describe("wrapping", () => {
     const src = captureCanvas(root);
     expect(src.tagName).toBe("CANVAS");
     expect(src.hasAttribute("layoutsubtree")).toBe(true);
+    expect(src.hasAttribute("content")).toBe(false);
+    expect(root.hasAttribute("drawable")).toBe(false);
     expect(src.hasAttribute("data-hf-ignore")).toBe(true);
     expect([src.width, src.height]).toEqual([640, 360]);
     const out = src.nextElementSibling as HTMLElement;
     expect(out.getAttribute("data-hf-motion-blur")).toBe("output");
     // The output sits over the composition: clicks must reach what is under it.
     expect(out.style.pointerEvents).toBe("none");
+  });
+
+  it("marks the canvas and the root for the content=drawable form, and unmarks on unwrap", () => {
+    installHtmlInCanvas("new");
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    const src = captureCanvas(root);
+    expect(src.getAttribute("content")).toBe("drawable");
+    expect(src.hasAttribute("layoutsubtree")).toBe(false);
+    expect(root.hasAttribute("drawable")).toBe(true);
+    root.removeAttribute("data-motion-blur");
+    initCaptureMotionBlur(h);
+    expect(root.parentElement).toBe(document.body);
+    expect(root.hasAttribute("drawable")).toBe(false);
+  });
+
+  it("turns off when a content=drawable capture canvas appears after init", () => {
+    installHtmlInCanvas("new");
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    const late = document.createElement("canvas");
+    late.setAttribute("content", "drawable");
+    root.append(late);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report().state).toBe("off");
   });
 
   it("unwraps when the root opts back out", () => {
@@ -273,46 +575,6 @@ describe("wrapping", () => {
     initCaptureMotionBlur(host(root));
     void paintCaptureMotionBlur(0.5, PLAY);
     expect(root.parentElement).toBe(document.body);
-  });
-
-  it("hides each move of the root from the runtime and re-seeks right after it (R9)", async () => {
-    installHtmlInCanvas();
-    const { root, h } = movingHost();
-    const events: string[] = [];
-    const base = h.seek;
-    const spied = {
-      ...h,
-      now: () => 0.5,
-      seek: (t: number, suppress: boolean) => {
-        base(t, suppress);
-        events.push(`seek:${t}:${suppress}`);
-      },
-      ignoreMutations: (write: () => void) => {
-        events.push("quiet:begin");
-        write();
-        events.push(`quiet:end:${root.parentElement === document.body ? "plain" : "wrapped"}`);
-      },
-    };
-    initCaptureMotionBlur(spied);
-    events.length = 0;
-    void paintCaptureMotionBlur(0.5, PLAY);
-    expect(events.slice(events.indexOf("quiet:begin")).slice(0, 3)).toEqual([
-      "quiet:begin",
-      "quiet:end:wrapped",
-      "seek:0.5:true",
-    ]);
-    events.length = 0;
-    expect(paintCaptureMotionBlur(0.5)).toBeNull(); // paused: unwraps
-    expect(events).toEqual(["quiet:begin", "quiet:end:plain", "seek:0.5:true"]);
-  });
-
-  it("does not re-seek when there was nothing to unwrap", () => {
-    installHtmlInCanvas();
-    const { h } = movingHost();
-    initCaptureMotionBlur(h);
-    h.seek.mockClear();
-    expect(paintCaptureMotionBlur(0.5)).toBeNull();
-    expect(h.seek).not.toHaveBeenCalled();
   });
 
   it("hides each move of the root from the runtime and re-seeks right after it (R9)", async () => {
@@ -672,6 +934,129 @@ describe("painting", () => {
     expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "off" });
   });
 
+  describe("a block that its cause can lift", () => {
+    /** A host whose root fades from 0.5 s while `fade.on`: the scan blocks it as root opacity. */
+    function fadingHost(fade: { on: boolean }, timeline: () => unknown = () => "tl") {
+      const { root, h } = movingHost();
+      const slide = h.seek;
+      const seek = vi.fn((t: number, quiet: boolean) => {
+        slide(t, quiet);
+        root.style.opacity = fade.on && t > 0.5 ? "0.5" : "1";
+      });
+      return { root, host: { ...h, seek, timeline } };
+    }
+
+    it("resumes blurring once the cause is gone and the scene is initialised again", () => {
+      installHtmlInCanvas();
+      const fade = { on: true };
+      const { root, host: h } = fadingHost(fade);
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report()).toMatchObject({
+        state: "off",
+        reasonCode: "root-opacity",
+      });
+      fade.on = false;
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", reasonCode: null });
+      expect(root.parentElement).toBe(captureCanvas(root));
+    });
+
+    it("blocks again, with the reason, when the cause is still there", () => {
+      installHtmlInCanvas();
+      const { root, host: h } = fadingHost({ on: true });
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(root.parentElement).toBe(document.body);
+      expect(win.__hfMotionBlur?.report()).toMatchObject({
+        state: "off",
+        reasonCode: "root-opacity",
+      });
+    });
+
+    it("re-evaluates the block when the bound timeline changes", () => {
+      installHtmlInCanvas();
+      const fade = { on: true };
+      let tl = "a";
+      const { host: h } = fadingHost(fade, () => tl);
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report().state).toBe("off");
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report().state).toBe("off");
+      fade.on = false;
+      tl = "b";
+      void paintCaptureMotionBlur(0.2, { engineMode: true });
+      expect(win.__hfMotionBlur?.report().state).toBe("on");
+    });
+
+    it("lifts a block raised after a clean scan, too", () => {
+      installHtmlInCanvas();
+      trackAcceleratedCanvases();
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      const late = document.createElement("canvas");
+      root.append(late);
+      late.getContext("webgl");
+      void paintCaptureMotionBlur(0.5, { engineMode: true });
+      expect(win.__hfMotionBlur?.report().reasonCode).toBe("accelerated-canvas");
+      late.remove();
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.5, PLAY);
+      captureCanvas(root).dispatchEvent(new Event("paint"));
+      expect(win.__hfMotionBlur?.report().state).toBe("on");
+      expect(captureContext()?.drawElementImage).toHaveBeenCalled();
+    });
+
+    it("keeps a capture-failure block for the life of the instance", async () => {
+      installHtmlInCanvas();
+      const { root, h } = movingHost();
+      initCaptureMotionBlur(h);
+      for (let i = 0; i < 3; i++) {
+        const done = paintCaptureMotionBlur(i / 30, PLAY);
+        captureContext()?.drawElementImage.mockImplementation(() => {
+          throw new Error("No cached paint record");
+        });
+        captureCanvas(root).dispatchEvent(new Event("paint"));
+        await done;
+      }
+      initCaptureMotionBlur(h);
+      void paintCaptureMotionBlur(0.5, PLAY);
+      expect(root.parentElement).toBe(document.body);
+      expect(win.__hfMotionBlur?.report()).toMatchObject({
+        state: "off",
+        reasonCode: "capture-failures",
+      });
+    });
+  });
+
+  it("counts every frame that fell back to plain DOM, though the failure streak resets", async () => {
+    vi.useFakeTimers();
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    const frame = async (t: number, fails: boolean): Promise<void> => {
+      captureContext()?.drawElementImage.mockImplementation(() => {
+        if (fails) throw new Error("No cached paint record");
+      });
+      const done = paintCaptureMotionBlur(t, { engineMode: true });
+      releaseCaptureMotionBlurFrame();
+      captureCanvas(root).dispatchEvent(new Event("paint"));
+      captureCanvas(root).dispatchEvent(new Event("paint"));
+      await done;
+    };
+    await frame(0.1, true);
+    await frame(0.2, false);
+    void paintCaptureMotionBlur(0.3, { engineMode: true });
+    releaseCaptureMotionBlurFrame();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(win.__hfMotionBlur?.report()).toMatchObject({ failures: 0, failedFrames: 2 });
+    expect(Object.keys(win.__hfMotionBlur?.report() ?? {})).toContain("failedFrames");
+  });
+
   it("keeps blurring in a render after repeated capture failures, each failed frame plain DOM", async () => {
     installHtmlInCanvas();
     const { root, h } = movingHost();
@@ -689,7 +1074,11 @@ describe("painting", () => {
       await engineFrame(i);
       expect(root.parentElement).toBe(document.body);
     }
-    expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failures: 5 });
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "on",
+      failures: 5,
+      failedFrames: 5,
+    });
     captureContext()?.drawElementImage.mockReset();
     const done = paintCaptureMotionBlur(0.5, { engineMode: true });
     expect(captureCanvas(root).tagName).toBe("CANVAS");
@@ -697,8 +1086,69 @@ describe("painting", () => {
     captureCanvas(root).dispatchEvent(new Event("paint"));
     captureCanvas(root).dispatchEvent(new Event("paint"));
     await done;
-    expect(win.__hfMotionBlur?.report()).toMatchObject({ state: "on", failures: 0, frames: 6 });
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "on",
+      failures: 0,
+      failedFrames: 5,
+      frames: 6,
+    });
     expect(contexts[1]?.drawImage.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("suspend (R13)", () => {
+  it("unwraps a wrapped root, stops all painting, and keeps the reported decision", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    expect(root.parentElement?.tagName).toBe("CANVAS");
+    const before = win.__hfMotionBlur?.report();
+    win.__hfMotionBlur?.suspend();
+    expect(root.parentElement).toBe(document.body);
+    expect(document.querySelectorAll("canvas")).toHaveLength(0);
+    expect(paintCaptureMotionBlur(0.6, PLAY)).toBeNull();
+    expect(paintCaptureMotionBlur(0.7, { engineMode: true })).toBeNull();
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report()).toEqual(before);
+  });
+
+  it("is idempotent, and suspends a page that has not wrapped yet", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    win.__hfMotionBlur?.suspend();
+    h.seek.mockClear();
+    win.__hfMotionBlur?.suspend();
+    expect(h.seek).not.toHaveBeenCalled();
+    expect(paintCaptureMotionBlur(0.5, { engineMode: true })).toBeNull();
+    expect(root.parentElement).toBe(document.body);
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
+  });
+
+  it("outlives a re-init of the same root", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur(h);
+    win.__hfMotionBlur?.suspend();
+    initCaptureMotionBlur(h);
+    expect(paintCaptureMotionBlur(0.5, PLAY)).toBeNull();
+    expect(root.parentElement).toBe(document.body);
+  });
+
+  it("exists, and does nothing, where blur is off", () => {
+    const root = makeRoot();
+    initCaptureMotionBlur(host(root));
+    expect(() => win.__hfMotionBlur?.suspend()).not.toThrow();
+    expect(win.__hfMotionBlur?.report().state).toBe("off");
+  });
+
+  it("lets the probe still decide after suspending", () => {
+    installHtmlInCanvas();
+    const { h } = movingHost();
+    initCaptureMotionBlur(h);
+    win.__hfMotionBlur?.suspend();
+    expect(win.__hfMotionBlur?.report().state).toBe("on");
   });
 });
 
@@ -762,6 +1212,117 @@ describe("device pixel ratio", () => {
   });
 });
 
+describe("probe", () => {
+  const probe = () => {
+    const api = win.__hfMotionBlur;
+    if (!api) throw new Error("no __hfMotionBlur");
+    return api.probe();
+  };
+
+  it("finds the movers without any paint, wrap or event and puts the playhead back", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur({ ...h, now: () => 0.4 });
+    expect(win.__hfMotionBlur?.report().moverNames).toEqual([]);
+    const report = probe();
+    expect(report).toMatchObject({
+      state: "on",
+      reason: null,
+      reasonCode: null,
+      moverNames: ["div#slider"],
+    });
+    expect(h.seek.mock.calls.at(-1)?.[0]).toBeCloseTo(0.4);
+    expect(root.parentElement).toBe(document.body);
+    expect(document.querySelector("canvas")).toBeNull();
+  });
+
+  it("reports no movers for a composition where nothing moves", () => {
+    installHtmlInCanvas();
+    initCaptureMotionBlur(host(makeRoot()));
+    expect(probe()).toMatchObject({ state: "on", movers: 0 });
+  });
+
+  it("does not rescan on a second call, but does when the timeline changes", () => {
+    installHtmlInCanvas();
+    const { h } = movingHost();
+    let tl = "a";
+    initCaptureMotionBlur({ ...h, timeline: () => tl });
+    probe();
+    const seeks = h.seek.mock.calls.length;
+    probe();
+    expect(h.seek.mock.calls.length).toBe(seeks);
+    tl = "b";
+    probe();
+    expect(h.seek.mock.calls.length).toBeGreaterThan(seeks);
+  });
+
+  it("reports the defect a scan finds, with its code, and a later frame stays plain", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    initCaptureMotionBlur({
+      ...h,
+      seek: (t, quiet) => {
+        h.seek(t, quiet);
+        root.style.opacity = t > 0.5 ? "0.5" : "1";
+      },
+    });
+    expect(probe()).toMatchObject({ state: "off", reasonCode: "root-opacity" });
+    expect(probe().reasonCode).toBe("root-opacity");
+    void paintCaptureMotionBlur(0.5, { engineMode: true });
+    expect(root.parentElement).toBe(document.body);
+  });
+
+  it("carries the code of a static defect and of an unsupported browser", () => {
+    installHtmlInCanvas();
+    const root = makeRoot();
+    root.innerHTML =
+      '<div style="transform-style: preserve-3d"><div style="backface-visibility: hidden"></div></div>';
+    initCaptureMotionBlur(host(root));
+    expect(probe()).toMatchObject({ state: "off", reasonCode: "backface-visibility" });
+
+    resetCaptureMotionBlurForTests();
+    vi.unstubAllGlobals();
+    delete win.__hfMotionBlur;
+    initCaptureMotionBlur(host(makeRoot()));
+    expect(probe()).toMatchObject({ state: "off", reasonCode: "unsupported-browser" });
+  });
+
+  it("does not scan again once blur is off, even when a rescan was requested", () => {
+    installHtmlInCanvas();
+    const { h } = movingHost();
+    initCaptureMotionBlur(h);
+    captureContext()?.drawElementImage.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    for (let i = 0; i < 3; i++) {
+      void paintCaptureMotionBlur(0.5, PLAY);
+      document.querySelector("canvas")?.dispatchEvent(new Event("paint"));
+    }
+    initCaptureMotionBlur(h);
+    const seeks = h.seek.mock.calls.length;
+    expect(probe()).toMatchObject({ state: "off", reasonCode: "capture-failures" });
+    expect(h.seek.mock.calls.length).toBe(seeks);
+  });
+
+  it("reports capture-failures after three failed frames", () => {
+    installHtmlInCanvas();
+    const { h } = movingHost();
+    initCaptureMotionBlur(h);
+    captureContext()?.drawElementImage.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    for (let i = 0; i < 3; i++) {
+      void paintCaptureMotionBlur(0.5, PLAY);
+      const canvas = document.querySelector("canvas");
+      canvas?.dispatchEvent(new Event("paint"));
+    }
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "off",
+      reasonCode: "capture-failures",
+    });
+  });
+});
+
 describe("guards that once survived a deliberate break (T1)", () => {
   const frameOf = async (root: HTMLElement, t: number, fail: boolean): Promise<void> => {
     captureContext()?.drawElementImage.mockImplementation(() => {
@@ -783,7 +1344,7 @@ describe("guards that once survived a deliberate break (T1)", () => {
     await frameOf(root, 0.3, true);
     expect(win.__hfMotionBlur?.report()).toMatchObject({
       state: "off",
-      reason: "capture failed 3 times in a row",
+      reasonCode: "capture-failures",
     });
   });
 
@@ -809,6 +1370,29 @@ describe("guards that once survived a deliberate break (T1)", () => {
     const times = h.seek.mock.calls.map((call) => Number(call[0]));
     expect(times.length).toBeGreaterThan(4);
     expect(times.filter((t) => t < 0)).toEqual([]);
+  });
+
+  it("disables once: one warning, and the first reason stays when unwrapping throws", () => {
+    installHtmlInCanvas();
+    const state = { fade: false, explode: false, timeline: "a" };
+    const { root, h } = movingHost();
+    const slide = h.seek;
+    h.seek = vi.fn((t: number, quiet: boolean) => {
+      if (state.explode && root.parentElement === document.body) throw new Error("seek blew up");
+      slide(t, quiet);
+      root.style.opacity = state.fade && t > 0.5 ? "0.5" : "1";
+    });
+    h.timeline = () => state.timeline;
+    initCaptureMotionBlur(h);
+    void paintCaptureMotionBlur(0.2, { engineMode: true });
+    expect(root.parentElement).toBe(captureCanvas(root));
+    Object.assign(state, { fade: true, explode: true, timeline: "b" });
+    void paintCaptureMotionBlur(0.2, { engineMode: true });
+    expect(console.warn).toHaveBeenCalledTimes(1);
+    expect(win.__hfMotionBlur?.report()).toMatchObject({
+      state: "off",
+      reasonCode: "root-opacity",
+    });
   });
 
   it("removes the hide rule and both canvases on unwrap, and the movers' hide attribute", () => {

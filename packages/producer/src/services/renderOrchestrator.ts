@@ -223,7 +223,7 @@ import {
   resolveCaptureImageFormat,
   resolveCaptureJpegQuality,
 } from "./render/captureImageFormat.js";
-import { assertMotionBlurSupported } from "./render/motionBlurRoute.js";
+import { assertMotionBlurSupported, pageMotionBlurForRoute } from "./render/motionBlurRoute.js";
 import { assertOutputScaleSupported } from "./render/outputScaleRoute.js";
 
 export function sampleDirectoryBytes(dir: string): number {
@@ -396,6 +396,7 @@ export interface RenderConfig {
    * and JPEG samples would be averaged after a lossy quantization.
    */
   motionBlur?: MotionBlurOptions;
+  pageMotionBlur?: "off";
   workers?: number;
   useGpu?: boolean;
   debug?: boolean;
@@ -3055,6 +3056,7 @@ async function executeRenderPipeline(input: {
         log,
         assertNotAborted,
         variables: job.config.variables,
+        pageMotionBlur: job.config.pageMotionBlur,
       }),
     );
     let compiled = compileResult.compiled;
@@ -3495,6 +3497,7 @@ async function executeRenderPipeline(input: {
       variables: job.config.variables,
       deviceScaleFactor,
       motionBlur: job.config.motionBlur,
+      pageMotionBlur: job.config.pageMotionBlur,
       ...(videoCaptureBeyondViewport !== undefined
         ? { captureBeyondViewport: videoCaptureBeyondViewport }
         : {}),
@@ -3513,8 +3516,11 @@ async function executeRenderPipeline(input: {
     // aspect ratio stay stable before the first injected frame. Native HDR
     // videos are included for the same reason: Chrome may not decode them at
     // all, while the renderer composites their extracted frames separately.
+    // Set once the route is known (HDR just below, layered after page-side compositing is decided).
+    let routePageMotionBlur: CaptureOptions["pageMotionBlur"];
     const buildCaptureOptions = (): CaptureOptions => ({
       ...captureOptions,
+      ...(routePageMotionBlur ? { pageMotionBlur: routePageMotionBlur } : {}),
       videoMetadataHints,
       skipReadinessVideoIds: videoReadinessSkipIds,
       subTimelineWaitMemo,
@@ -3567,6 +3573,7 @@ async function executeRenderPipeline(input: {
     const nativeHdrIds = new Set([...nativeHdrVideoIds, ...nativeHdrImageIds]);
     const hasHdrContent = Boolean(effectiveHdr && nativeHdrIds.size > 0);
     if (hasHdrContent) assertOutputScaleSupported(deviceScaleFactor, "hdr_layered");
+    routePageMotionBlur = pageMotionBlurForRoute({ hasHdrContent, useLayeredComposite: false });
     // DE priority inversion eligibility — evaluated BEFORE capture calibration
     // because when every multi-worker resolution would be inverted to 1 anyway,
     // the calibration stage (a throwaway Chrome launch + timeline-spread sample
@@ -4219,6 +4226,7 @@ async function executeRenderPipeline(input: {
         hasShaderTransitions: compiled.hasShaderTransitions && !isGif,
         isPngSequence,
       });
+    routePageMotionBlur = pageMotionBlurForRoute({ hasHdrContent, useLayeredComposite });
     const inversionFallback = resolveInversionRetryPlan({
       deWorkerInversion,
       preInversionWorkerCount: preRoutingWorkerCount,
