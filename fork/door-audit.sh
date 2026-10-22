@@ -20,12 +20,15 @@ section() { printf '\n## %s\n' "$1"; }
 echo "# Door audit $FROM..$TO ($(git rev-list --count --no-merges "$FROM..$TO") commits)"
 
 section "CLI commands (new files or registrations under packages/cli/src/commands)"
-git diff --name-status "$FROM" "$TO" -- packages/cli/src/commands ':(exclude)**/*.test.ts' | awk '$1=="A"{print "new file: "$2}'
+git diff --name-status "$FROM" "$TO" -- packages/cli/src/commands ':(exclude)**/*.test.ts' ':(exclude)**/__fixtures__/**' | awk '$1=="A"{print "new file: "$2}'
 added | grep -E 'packages/cli/src/(cli|commands/index|commands/registry)[^:]*: .*(command|name:)' || true
 
 section "Environment variables read in shipped code"
 added | grep -oE '^[^:]+: .*(process\.env\.[A-Z][A-Z0-9_]+|env\[["'"'"'][A-Z][A-Z0-9_]+["'"'"']\])' \
   | sed -E 's/^([^:]+): .*(process\.env\.|env\[["'"'"'])([A-Z][A-Z0-9_]+).*/\3  (\1)/' | sort -u || true
+# Names kept in a constant and read through process.env[name] elsewhere (const URL_ENV = "HYPERFRAMES_...").
+added | grep -E '^[^:]+: .*(env|ENV).*["'"'"'][A-Z][A-Z0-9]*_[A-Z0-9_]+["'"'"']' \
+  | sed -E 's/^([^:]+): .*["'"'"']([A-Z][A-Z0-9]*_[A-Z0-9_]+)["'"'"'].*/\2  (\1, named in a constant)/' | sort -u || true
 
 section "Child processes and network calls"
 added | grep -E '(^|[^.[:alnum:]_])(spawn|spawnSync|execFile|execFileSync|execSync|exec)\(|fetch\(' | cut -c1-200 || true
