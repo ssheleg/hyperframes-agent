@@ -54,7 +54,9 @@ cleanup() {
   [ ${#TMPS[@]} -eq 0 ] || rm -rf "${TMPS[@]}"
 }
 trap cleanup EXIT
-tmpdir() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-$1.XXXXXX")"; TMPS+=("$d"); printf '%s' "$d"; }
+# Sets the variable named by $2 rather than printing: a $(tmpdir ...) would run in a subshell, its TMPS+= would
+# never reach cleanup, and every run would leave its directories behind.
+tmpdir() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-$1.XXXXXX")"; TMPS+=("$d"); printf -v "$2" '%s' "$d"; }
 
 if [ "$DEPS" = 1 ]; then
   log "build the workspace packages the CLI bundles"
@@ -84,7 +86,7 @@ if [ -n "$PATCHED_TESTS" ]; then
 fi
 
 log "pack"
-STAGE="$(tmpdir pack)"
+tmpdir pack STAGE
 cp -R packages/cli/bin packages/cli/dist packages/cli/package.json "$STAGE/"
 for f in README.md LICENSE; do
   if [ -f "packages/cli/$f" ]; then cp "packages/cli/$f" "$STAGE/"; elif [ -f "$f" ]; then cp "$f" "$STAGE/"; fi
@@ -106,7 +108,7 @@ PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | no
 (cd "$OUT" && shasum -a 256 "$TARBALL" > "$TARBALL.sha256")
 
 log "smoke: install the tarball into an empty project and run it"
-SMOKE="$(tmpdir smoke)"
+tmpdir smoke SMOKE
 (cd "$SMOKE" && npm init -y >/dev/null && PUPPETEER_SKIP_DOWNLOAD=1 npm install --silent --no-audit --no-fund "$OUT/$TARBALL" >/dev/null)
 mkdir -p "$SMOKE/home/.hyperframes/running"
 DEAD=99999999
@@ -130,7 +132,7 @@ if git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
 fi
 git tag -a "$TAG" -m "hyperframes $VERSION: upstream $BASE plus the fork's patches" "$COMMIT"
 git push -q origin "HEAD:refs/heads/main" "refs/tags/$TAG"
-NOTES="$(tmpdir notes)/notes.md"
+tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
 {
   echo "The \`hyperframes\` CLI \`$VERSION\`: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."
   echo
@@ -144,7 +146,7 @@ NOTES="$(tmpdir notes)/notes.md"
 gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
 
 log "verify the published asset"
-CHECK="$(tmpdir check)"
+tmpdir check CHECK
 curl -fsSL -o "$CHECK/$TARBALL" "https://github.com/$REPO/releases/download/$TAG/$TARBALL"
 (cd "$CHECK" && echo "$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")  $TARBALL" | shasum -a 256 -c -)
 log "released $TAG: https://github.com/$REPO/releases/tag/$TAG"
