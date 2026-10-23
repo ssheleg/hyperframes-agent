@@ -5,13 +5,27 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-23)
+## State (2026-10-24)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
-- `main` = upstream `v0.8.189` (merge `711159342`; before it `v0.8.188` merge `88c8b8af0`, `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
+- `main` = upstream `v0.8.190` (merge `019d07c6d`; before it `v0.8.189` merge `711159342`, `v0.8.188` merge `88c8b8af0`, `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
   `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + the Node 26 / macOS patch (`cca5e193c`) + `fork/`; `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.189-sshlg.1` (commit `a77f746ce`, sha256
+- Latest release `fork-v0.8.190-sshlg.1` (commit `e20c025a1`, sha256
+  `9d7577e59ad2b3fb52e64cc3865835e7244f083fdbdd8f6ba556742df9f9f8c4`); `fork/release.sh` passed: the patches' tests
+  (7 files, 69 tests), the smoke install printed `0.8.190+sshlg.1` and swept a dead marker, the re-downloaded asset
+  matched its sha256, no `hf-fork-*` directory was left. The merge was clean; all four patches carry over. Upstream's
+  changes: motion blur picks its tier itself (`filter` when every mover only translates, else `capture`;
+  `data-motion-blur-tier` forces one) and `check` reports `motion_blur_filter_fallback`; a render no longer decodes the
+  videos it replaces with extracted frames; a long audio mix prepares its clips a few at a time; the frame cache budget
+  is shared by the capture workers; `render -c` takes an absolute entry inside the project; Studio gains a seek bar.
+- `fork/door-audit.sh v0.8.189 v0.8.190`: every section empty except one changed skill line
+  (`hyperframes/references/motion.md`, naming `hyperframes check`).
+- `fork/door-audit.sh` lists new CLI flags since `e20c025a1` (citty argument definitions added under
+  `packages/cli/src/commands`). Before that a new flag on an existing command never showed: run over past ranges it finds
+  `check --prepare-media` (`v0.8.189`), `--video-arch` and `--page-motion-blur` (`render`, `cloud render`; `v0.8.187`);
+  the last was missing from that release's report. Both are in the announcement of `v0.8.190-sshlg.1`.
+- Previous release `fork-v0.8.189-sshlg.1` (commit `a77f746ce`, sha256
   `c1eaca752f4c0e5b46acc31f4bc713cbae6c7b380ade4242bad7ab7ce46bb1f0`); `fork/release.sh` passed: the patches' tests
   (7 files, 69 tests), the smoke install printed `0.8.189+sshlg.1` and swept a dead marker, the re-downloaded asset
   matched its sha256. The merge was clean; all four patches carry over. Upstream's six fixes: long projects `check` to
@@ -77,7 +91,7 @@ publish tarball releases that consumers pin.
 - Door audit v0.8.181..v0.8.184: the CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since
   `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.
 - The private consumer that pins this line moves to each release in its own repository; its move to `0.8.185` (with
-  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) and `v0.8.189-sshlg.1` with its audit (message `fe6d3ad0`) were announced to it on the
+  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) `v0.8.189-sshlg.1` with its audit (message `fe6d3ad0`) and `v0.8.190-sshlg.1` with its audit (message `bea18764`) were announced to it on the
   board (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
 - The sixteen inherited workflows are disabled (repository settings).
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
@@ -89,17 +103,21 @@ publish tarball releases that consumers pin.
   compares realpaths and `utils/projectLock.test.ts` silences tsx's `DEP0205` in its children. The same commit sits on
   branch `pr/node26-macos` (cherry-picked onto upstream `main` `bb19f342d`, 46 tests pass); its upstream PR needs the
   operator's send instruction like the speech patch's: `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/node26-macos`.
-- Not blocking, still open: under load (load average 73) `server/fileWatcher.atomic.test.ts` and
-  `server/fileWatcher.fs.test.ts` sometimes hear nothing (`expected [] to include 'index.html'`) on unchanged `main` too:
-  FSEvents starts late and misses the first write; chromium, process and watcher tests also time out under load.
+- The watcher tests under load (fixed 2026-10-24, `a707fb95b`): FSEvents starts its stream a moment after `watch()`
+  returns and a write in that gap is never reported, so `server/fileWatcher.fs.test.ts` and
+  `server/fileWatcher.atomic.test.ts` lost their first write (four of eight parallel runs failed with
+  `expected [] to include 'index.html'`). Both now arm the watcher with a probe first (`fileWatcher.test-helpers.ts`);
+  sixteen of sixteen parallel runs pass. A test-only change, on `main` only: it can join `pr/node26-macos` when that PR is
+  sent. The product is not affected (Studio starts its watcher long before the first edit). The chromium, process and watcher
+  timeouts seen at load average 73 on 2026-10-23 were not measured again.
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
-  cleanly onto upstream `main` (`git merge-tree`, 2026-10-20). We do not wait for it.
+  cleanly onto upstream `main` (`git merge-tree`, 2026-10-24). We do not wait for it.
 
 ## Next task
 
-1. Upstream releases after `v0.8.189`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.189 v<new>` and update this file. The
+1. Upstream releases after `v0.8.190`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.190 v<new>` and update this file. The
    pinning consumer moves its pin in its own repository (its handoff names the steps); post the audit's findings to it on
-   the project board. `v0.8.189` is taken (2026-10-23).
+   the project board. `v0.8.190` is taken (2026-10-24).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
