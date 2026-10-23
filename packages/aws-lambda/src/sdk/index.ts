@@ -39,6 +39,18 @@ export {
   validateStepFunctionsInputSize,
   validateVariablesPayload,
 } from "./validateConfig.js";
-export { type PrebuiltHandler, prebuiltHandler } from "./prebuiltHandler.js";
+export {
+  type PrebuiltHandler,
+  prebuiltHandler,
+  prebuiltVideoImage,
+  type ReleaseAssetManifest,
+} from "./prebuiltHandler.js";
+export {
+  ensureEcrRepository,
+  type EnsureEcrRepositoryOptions,
+  type PushedImage,
+  pushImageToEcr,
+  type PushImageToEcrOptions,
+} from "./pushImageToEcr.js";
 export type { SerializableDistributedRenderConfig } from "../events.js";
 export type { DistributedFormat } from "../formatExtension.js";

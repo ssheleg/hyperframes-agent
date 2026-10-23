@@ -603,6 +603,71 @@ describe("processCompositionAudio", () => {
   });
 
   it.each([
+    {
+      gain: 0.5,
+      level: 1,
+      points: [
+        { time: 0, volume: 0 },
+        { time: 2, volume: 1 },
+      ],
+    },
+    {
+      gain: 2,
+      level: 3,
+      points: [
+        { time: 0, volume: 0 },
+        { time: expect.closeTo(1.3270239018, 8), volume: expect.closeTo(1.9905358528, 8) },
+        { time: 2, volume: expect.closeTo(1.9905358528, 8) },
+      ],
+    },
+  ])(
+    "applies pre-FX clip gain $gain with a ceiling-aware lane",
+    async ({ gain, level, points }) => {
+      const baseDir = mkdtempSync(join(tmpdir(), "hf-audio-base-"));
+      const workDir = mkdtempSync(join(tmpdir(), "hf-audio-work-"));
+      tempDirs.push(baseDir, workDir);
+      writeFileSync(join(baseDir, "vo.wav"), "stub");
+      const automation = JSON.stringify({
+        version: 1,
+        lanes: [
+          {
+            target: "volume",
+            points: [
+              { t: 0, v: 0 },
+              { t: 2, v: level },
+            ],
+          },
+        ],
+      });
+
+      await processCompositionAudio(
+        [
+          {
+            id: "vo",
+            src: "vo.wav",
+            start: 0,
+            end: 2,
+            mediaStart: 0,
+            layer: 0,
+            volume: gain,
+            automation,
+            fxChain: gainChain,
+            type: "audio",
+          },
+        ],
+        baseDir,
+        workDir,
+        join(baseDir, "out.m4a"),
+        2,
+      );
+
+      const fxOptions = applyAudioFxChainMock.mock.calls[0]?.[3];
+      expect(fxOptions?.inputGain).toBe(gain);
+      expect(fxOptions?.envelope?.keyframes).toEqual(points);
+    },
+  );
+
+  it.each([
     ["the master pass", {}, { masterFxChain: gainChain }],
     ["a group bus", { groupId: "bus", groupFxChain: gainChain }, {}],
   ])("removes its work directory when %s fails fatally", async (_label, extra, config) => {
@@ -636,6 +701,77 @@ describe("processCompositionAudio", () => {
       ),
     ).rejects.toThrow(AudioFxRenderError);
     expect(existsSync(workDir)).toBe(false);
+  });
+
+  const groupedEffects = (baseDir: string) => {
+    const track = (id: string, start: number) => ({
+      id,
+      src: `${id}.wav`,
+      start,
+      end: start + 1,
+      mediaStart: 0,
+      layer: 0,
+      volume: 1,
+      type: "audio" as const,
+      groupId: "sfx",
+    });
+    for (const id of ["hit", "whoosh", "pop"]) writeFileSync(join(baseDir, `${id}.wav`), "stub");
+    return [track("hit", 0), track("whoosh", 1), track("pop", 8)];
+  };
+
+  it("pads a group's members once after summing them, not each member to the film length", async () => {
+    // Per-member padding made the sub-mix cost members x film length: ~680 effects in a
+    // 10-minute film ran past the ffmpeg deadline.
+    const baseDir = mkdtempSync(join(tmpdir(), "hf-audio-base-"));
+    const workDir = mkdtempSync(join(tmpdir(), "hf-audio-work-"));
+    tempDirs.push(baseDir, workDir);
+
+    await processCompositionAudio(
+      groupedEffects(baseDir),
+      baseDir,
+      workDir,
+      join(baseDir, "out.m4a"),
+      600,
+    );
+
+    const groupMix = capturedFilterScripts.find((script) => script.includes("normalize=0"));
+    expect(groupMix).toContain("amix=inputs=3:duration=longest:dropout_transition=0:normalize=0");
+    expect(groupMix).not.toMatch(/adelay=[^;]*,apad/);
+    expect((groupMix?.match(/apad/g) ?? []).length).toBe(1);
+    expect(groupMix).toContain("apad,asetpts=N/SR/TB,atrim=0:600[out]");
+  });
+
+  it("names the deadline when a group sub-mix is killed for taking too long", async () => {
+    const baseDir = mkdtempSync(join(tmpdir(), "hf-audio-base-"));
+    const workDir = mkdtempSync(join(tmpdir(), "hf-audio-work-"));
+    tempDirs.push(baseDir, workDir);
+    runFfmpegMock.mockImplementation(async (args: string[]) =>
+      args.includes("-filter_complex_script")
+        ? {
+            success: false,
+            durationMs: 300_000,
+            stderr: "Stream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native))",
+            exitCode: 255,
+            terminationReason: "deadline",
+          }
+        : { success: true, durationMs: 1, stderr: "", exitCode: 0 },
+    );
+
+    const result = await processCompositionAudio(
+      groupedEffects(baseDir),
+      baseDir,
+      workDir,
+      join(baseDir, "out.m4a"),
+      600,
+      undefined,
+      { ffmpegProcessTimeout: 300_000 },
+    );
+
+    expect(result.success).toBe(false);
+    const failure = result.failures?.find((f) => f.elementId === "sfx");
+    expect(failure?.reason).toBe("ffmpeg_timeout");
+    expect(failure?.detail).toContain("FFmpeg timed out after 300000 ms");
+    expect(failure?.detail).toContain("FFMPEG_PROCESS_TIMEOUT_MS");
   });
 
   it("lets an FX tail run past the clip, still bounded by the composition", async () => {

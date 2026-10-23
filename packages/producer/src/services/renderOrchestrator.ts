@@ -217,7 +217,7 @@ import {
   runEncodeStage,
   type EncodeStageInput,
 } from "./render/stages/encodeStage.js";
-import { runAssembleStage } from "./render/stages/assembleStage.js";
+import { recordLimiterAttenuation, runAssembleStage } from "./render/stages/assembleStage.js";
 import { shouldUseLayeredComposite } from "./hdrCompositor.js";
 import {
   resolveCaptureImageFormat,
@@ -3372,7 +3372,8 @@ async function executeRenderPipeline(input: {
           projectDir,
           workDir,
           compiledDir,
-          duration: probeResult.duration,
+          totalFrames: probeResult.totalFrames,
+          fps: job.config.fps,
           ffmpegProcessTimeout: cfg.ffmpegProcessTimeout,
           audioGain: cfg.audioGain,
           audios: composition.audios,
@@ -3384,6 +3385,7 @@ async function executeRenderPipeline(input: {
     );
     const { audioOutputPath, hasAudio } = audioResult;
     perfStages.audioProcessMs = audioResult.audioProcessMs;
+    recordLimiterAttenuation(job, audioResult.audioLoweredDb);
     if (audioResult.audioError) {
       const audioFailures = audioResult.audioFailures ?? [];
       const failureOwner =
@@ -4493,6 +4495,7 @@ async function executeRenderPipeline(input: {
           outputWidth: captureCompositionWidth ?? width,
           outputHeight: captureCompositionHeight ?? height,
           motionBlur: job.config.motionBlur ? JSON.stringify(job.config.motionBlur) : "",
+          pageMotionBlur: job.config.pageMotionBlur,
           captureQuality: captureOptions.quality,
         });
         const segmentDir = segmentDirFor(join(projectDir, "renders"), segmentPlanHash);

@@ -1001,6 +1001,7 @@
               "concepts/frame-adapters",
               "concepts/determinism",
               "guides/html-in-canvas",
+              "guides/motion-blur",
               "guides/vfx-chain",
               "guides/figma"
             ]
@@ -1286,5 +1287,11 @@
       "destination": "/sdk/quickstart",
       "permanent": true
     }
-  ]
+  ],
+  "integrations": {
+    "posthog": {
+      "apiKey": "phc_zjjbX0PnWxERXrMHhkEJWj9A9BhGVLRReICgsfTMmpx",
+      "sessionRecording": false
+    }
+  }
 }

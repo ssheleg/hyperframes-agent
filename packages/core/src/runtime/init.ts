@@ -3413,8 +3413,8 @@ export function initSandboxRuntimeModular(): void {
         cueAheadSeconds,
         getCompositionDuration: () =>
           getSafeTimelineDurationSeconds(state.capturedTimeline, 0, timingRevision),
-        onElementVolume: (el, _effectiveVolume, authorVolume) =>
-          webAudio.setElementVolume(el, authorVolume),
+        onElementVolume: (el, _effectiveVolume, authorVolume, clipGain) =>
+          webAudio.setElementVolume(el, authorVolume, clipGain),
         isWebAudioOwned: (el) => webAudio.ownsElement(el),
         isWebAudioRouted: (el) => webAudio.routesElement(el),
         onAutoplayBlocked: () => {
@@ -4792,8 +4792,7 @@ export function initSandboxRuntimeModular(): void {
     const revision = opts?.revision ?? readCompositionTimingRevision();
     if (revision !== tweensRenderedThrough.revision)
       tweensRenderedThrough = { revision, time: Number.NEGATIVE_INFINITY };
-    const jumped = !(Math.abs(t - lastTransportSeekTime) <= 1.5 / state.canonicalFps);
-    const firstRenders = jumped && t > tweensRenderedThrough.time;
+    const firstRenders = t > tweensRenderedThrough.time;
     const hideClipsAgain = firstRenders ? showHiddenClips() : null;
     if (tl) {
       // #10: when data-duration exceeds the timeline's intrinsic length the
