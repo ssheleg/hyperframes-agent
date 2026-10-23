@@ -45,10 +45,15 @@ publish tarball releases that consumers pin.
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
   `2c1d9d50d`, the TTS tests 36 of 36). Its upstream PR is not opened: a PR to `heygen-com` needs the operator's
   explicit instruction for that send. With it: `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/tts-sandbox-safe`.
-- Not blocking, found 2026-10-22: on this Mac (Node 26.10, macOS) some inherited CLI tests fail on clean `main` too:
-  `whisper/sherpa.test.ts` (expects `/var/...`, gets the realpath `/private/var/...`), `utils/projectLock.test.ts`
-  (Node's `DEP0205` warning on the child's stderr), `server/fileWatcher.atomic.test.ts`; under load (146) also
-  chromium, process and watcher tests time out. Upstream CI runs another Node; fix upstream or when Node 26 is the target.
+- Node 26 / macOS (2026-10-23, patch `cca5e193c`, merge `d3aeb4203`): the project watcher no longer reports the
+  project folder itself as a changed file (FSEvents names it by its basename; 3 of 6 runs of
+  `server/fileWatcher.atomic.test.ts` on unchanged `main`, none of 6 with the patch). `whisper/sherpa.test.ts` now
+  compares realpaths and `utils/projectLock.test.ts` silences tsx's `DEP0205` in its children. The same commit sits on
+  branch `pr/node26-macos` (cherry-picked onto upstream `main` `bb19f342d`, 46 tests pass); its upstream PR needs the
+  operator's send instruction like the speech patch's: `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/node26-macos`.
+- Not blocking, still open: under load (load average 73) `server/fileWatcher.atomic.test.ts` and
+  `server/fileWatcher.fs.test.ts` sometimes hear nothing (`expected [] to include 'index.html'`) on unchanged `main` too:
+  FSEvents starts late and misses the first write; chromium, process and watcher tests also time out under load.
 - Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
   cleanly onto upstream `main` (`git merge-tree`, 2026-10-20). We do not wait for it.
 
