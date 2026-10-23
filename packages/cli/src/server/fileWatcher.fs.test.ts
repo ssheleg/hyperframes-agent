@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProjectWatcher, type ProjectWatcher } from "./fileWatcher.js";
+import { armWatcher } from "./fileWatcher.test-helpers.js";
 
 // Real files, no fs mock: the failure lives in how the OS watch tracks a replaced inode.
 describe("createProjectWatcher on a real directory", () => {
@@ -14,10 +15,11 @@ describe("createProjectWatcher on a real directory", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  const watchProject = (projectDir = dir) => {
+  const watchProject = async (projectDir = dir) => {
     const seen: string[] = [];
     watcher = createProjectWatcher(projectDir);
     watcher.addListener((path) => seen.push(path));
+    await armWatcher(projectDir, seen);
     return seen;
   };
   const expectReported = async (seen: string[], path: string) => {
@@ -34,7 +36,7 @@ describe("createProjectWatcher on a real directory", () => {
     mkdirSync(join(dir, "compositions"));
     writeFileSync(join(dir, "index.html"), "v0");
     writeFileSync(join(dir, "compositions", "scene.html"), "v0");
-    const seen = watchProject();
+    const seen = await watchProject();
 
     for (const path of ["index.html", join("compositions", "scene.html")]) {
       replaceByRename(join(dir, path), "stamped");
@@ -57,7 +59,7 @@ describe("createProjectWatcher on a real directory", () => {
       writeFileSync(join(project, "index.html"), "before");
       writeFileSync(join(replacement, "index.html"), "after");
       writeFileSync(join(replacement, "scenes", "intro.html"), "new scene");
-      const seen = watchProject(project);
+      const seen = await watchProject(project);
 
       renameSync(project, join(dir, "previous"));
       renameSync(replacement, project);
@@ -76,7 +78,7 @@ describe("createProjectWatcher on a real directory", () => {
       const project = join(dir, "project");
       mkdirSync(project);
       writeFileSync(join(project, "index.html"), "before");
-      const seen = watchProject(project);
+      const seen = await watchProject(project);
 
       renameSync(project, join(dir, "previous"));
       await expectReported(seen, ".");
@@ -97,7 +99,7 @@ describe("createProjectWatcher on a real directory", () => {
       mkdirSync(join(dir, "replacement"));
       writeFileSync(join(scenes, "intro.html"), "before");
       writeFileSync(join(dir, "replacement", "intro.html"), "after");
-      const seen = watchProject();
+      const seen = await watchProject();
 
       renameSync(scenes, join(dir, "previous"));
       renameSync(join(dir, "replacement"), scenes);
@@ -110,7 +112,7 @@ describe("createProjectWatcher on a real directory", () => {
   it("reports Studio's manifest writes inside .hyperframes", async () => {
     dir = mkdtempSync(join(tmpdir(), "hf-watch-"));
     mkdirSync(join(dir, ".hyperframes"));
-    const seen = watchProject();
+    const seen = await watchProject();
 
     writeFileSync(join(dir, ".hyperframes", "studio-motion.json"), "{}");
     await expectReported(seen, join(".hyperframes", "studio-motion.json"));
@@ -120,7 +122,7 @@ describe("createProjectWatcher on a real directory", () => {
     dir = mkdtempSync(join(tmpdir(), "hf-watch-"));
     mkdirSync(join(dir, "scene"));
     mkdirSync(join(dir, "scenes"));
-    const seen = watchProject();
+    const seen = await watchProject();
 
     rmSync(join(dir, "scene"), { recursive: true });
     await expectReported(seen, "scene");
@@ -130,7 +132,7 @@ describe("createProjectWatcher on a real directory", () => {
 
   it("reports files in a directory created after it started", async () => {
     dir = mkdtempSync(join(tmpdir(), "hf-watch-"));
-    const seen = watchProject();
+    const seen = await watchProject();
 
     mkdirSync(join(dir, "scenes"));
     await expectReported(seen, "scenes");
