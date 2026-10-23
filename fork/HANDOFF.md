@@ -5,13 +5,17 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-22, evening)
+## State (2026-10-23)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
 - `main` = upstream `v0.8.186` (merge `2171ab2d0`; before it `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
-  `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + `fork/`; `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.186-sshlg.1` (commit `2171ab2d0`, sha256
+  `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + the Node 26 / macOS patch (`cca5e193c`) + `fork/`; `upstream` mirrors HeyGen's `main`.
+- Latest release `fork-v0.8.186-sshlg.2` (commit `e71ffc9c4`, sha256
+  `352469a7a2de720b451a58b8930e2c5bb0af2a2084e966fb79da114e151a76aa`); `fork/release.sh` passed: the patches' tests
+  (7 files, 69 tests), the smoke install printed `0.8.186+sshlg.2` and swept a dead marker, the re-downloaded asset
+  matched its sha256; its `dist/studioServer-*.js` carries the watcher guard. It adds the Node 26 / macOS patch below.
+- Previous release `fork-v0.8.186-sshlg.1` (commit `2171ab2d0`, sha256
   `9230e4e01af9fa29eedc10f6e78087a7659b94be30d21864a54eb46c81794cf9`); `fork/release.sh` passed: the patches' tests
   (4 files, 23 tests), the smoke install printed `0.8.186+sshlg.1` and swept a dead marker, the re-downloaded asset
   matched its sha256. Its tarball also generated speech with a read-only `~/.cache/hyperframes/tts` (1.3 s WAV, the
@@ -39,8 +43,8 @@ publish tarball releases that consumers pin.
 - Door audit v0.8.181..v0.8.184: the CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since
   `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.
 - The private consumer that pins this line moves to each release in its own repository; its move to `0.8.185` (with
-  its skills kept at `v0.8.184`) is in progress there. `sshlg.2` and `v0.8.186-sshlg.1` were announced to it on the board
-  (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
+  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) were announced to it on the
+  board (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
 - The sixteen inherited workflows are disabled (repository settings).
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
   `2c1d9d50d`, the TTS tests 36 of 36). Its upstream PR is not opened: a PR to `heygen-com` needs the operator's
