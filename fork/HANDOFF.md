@@ -9,9 +9,18 @@ publish tarball releases that consumers pin.
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
-- `main` = upstream `v0.8.187` (merge `5404e6aa8`; before it `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
+- `main` = upstream `v0.8.188` (merge `88c8b8af0`; before it `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
   `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + the Node 26 / macOS patch (`cca5e193c`) + `fork/`; `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.187-sshlg.1` (commit `5404e6aa8`, sha256
+- Latest release `fork-v0.8.188-sshlg.1` (commit `88c8b8af0`, sha256
+  `43b176b47a0586a58622a023cd18ba8244960d0592afd4365713657b2601fb08`); `fork/release.sh` passed: the patches' tests
+  (7 files, 69 tests), the smoke install printed `0.8.188+sshlg.1` and swept a dead marker, the re-downloaded asset
+  matched its sha256. The merge was clean; all four patches carry over. Upstream's seven fixes: a blank media `src`
+  is no source, a composition that shadows `console` no longer breaks the runtime, renders into a folder whose name
+  holds `%`, long small-frame renders pass the disk estimate, a lint hint for nested timed video, and the arm64
+  staging script stays out of the Lambda package.
+- `fork/door-audit.sh v0.8.187 v0.8.188`: every section empty (no new command, environment variable, child process,
+  network call, run-time install or skill change).
+- Previous release `fork-v0.8.187-sshlg.1` (commit `5404e6aa8`, sha256
   `d72024934f671933252434b4ead5c09bdf3863c0c485d73960947f703d0d77cd`); `fork/release.sh` passed: the patches' tests
   (7 files, 69 tests), the smoke install printed `0.8.187+sshlg.1` and swept a dead marker, the re-downloaded asset
   matched its sha256. The merge was clean; all four patches carry over.
@@ -53,7 +62,7 @@ publish tarball releases that consumers pin.
 - Door audit v0.8.181..v0.8.184: the CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since
   `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.
 - The private consumer that pins this line moves to each release in its own repository; its move to `0.8.185` (with
-  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) and `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) were announced to it on the
+  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) were announced to it on the
   board (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
 - The sixteen inherited workflows are disabled (repository settings).
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
@@ -73,9 +82,9 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. Upstream releases after `v0.8.187`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.187 v<new>` and update this file. The
+1. Upstream releases after `v0.8.188`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.188 v<new>` and update this file. The
    pinning consumer moves its pin in its own repository (its handoff names the steps); post the audit's findings to it on
-   the project board. `v0.8.187` is taken (2026-10-23).
+   the project board. `v0.8.188` is taken (2026-10-23).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
