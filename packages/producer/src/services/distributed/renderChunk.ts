@@ -62,6 +62,7 @@ import {
 import { defaultLogger } from "../../logger.js";
 import { applyRenderWarningPolicy, collectVideoMetadataHints } from "../renderOrchestrator.js";
 import { runEncodeStage } from "../render/stages/encodeStage.js";
+import { frameCacheOptions } from "../render/frameCacheBudget.js";
 import { runCaptureStage } from "../render/stages/captureStage.js";
 import { createCapturePlan } from "../render/capturePlan.js";
 import {
@@ -307,6 +308,26 @@ export async function createVerifiedDistributedCaptureSession(
 
 function isCaptureMode(value: string): value is CaptureMode {
   return value === "beginframe" || value === "screenshot" || value === "drawelement";
+}
+
+/** Workers of one chunk launched in different modes: one worker's BeginFrame check failed and it fell back alone. */
+export class MixedCaptureModesError extends Error {
+  constructor(readonly modes: readonly string[]) {
+    super(`[renderChunk] capture workers reported inconsistent modes: ${modes.join(",")}`);
+    this.name = "MixedCaptureModesError";
+  }
+}
+
+export function observedChunkCaptureMode(
+  perfs: readonly Pick<CapturePerfSummary, "captureMode">[],
+): CaptureMode {
+  const modes = [...new Set(perfs.map((perf) => perf.captureMode))];
+  if (modes.length > 1) throw new MixedCaptureModesError(modes);
+  const [mode] = modes;
+  if (!mode || !isCaptureMode(mode)) {
+    throw new Error(`[renderChunk] capture workers reported an invalid mode: ${mode ?? "<none>"}`);
+  }
+  return mode;
 }
 
 /**
@@ -833,7 +854,10 @@ export async function renderChunk(
           : null;
       // A capture can fail before any session reads it; the failure is rethrown below.
       videoFrameLookup?.catch(() => {});
-      const createChunkVideoFrameInjector = createChunkVideoFrameInjectorFactory(videoFrameLookup);
+      const createChunkVideoFrameInjector = createChunkVideoFrameInjectorFactory(
+        videoFrameLookup,
+        frameCacheOptions(cfg, chunkWorkerCount),
+      );
 
       const captureStarted = Date.now();
       captureMode = await runCaptureWithScreenshotFallback({
@@ -894,18 +918,7 @@ export async function renderChunk(
             frameRange: range,
           });
 
-          const observedModes = new Set(capturePerfs.map((perf) => perf.captureMode));
-          if (observedModes.size !== 1 || ![...observedModes].every(isCaptureMode)) {
-            throw new Error(
-              `[renderChunk] capture workers reported invalid or inconsistent modes: ` +
-                `${[...observedModes].join(",") || "<none>"}`,
-            );
-          }
-          const [observedMode] = observedModes;
-          if (!observedMode || !isCaptureMode(observedMode)) {
-            throw new Error("[renderChunk] capture completed without an observed mode");
-          }
-          return observedMode;
+          return observedChunkCaptureMode(capturePerfs);
         },
         resetForScreenshotRetry: () => {
           // A mode switch is a whole-chunk retry. Do not allow successfully
