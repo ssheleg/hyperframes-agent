@@ -9,9 +9,24 @@ publish tarball releases that consumers pin.
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
-- `main` = upstream `v0.8.188` (merge `88c8b8af0`; before it `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
+- `main` = upstream `v0.8.189` (merge `711159342`; before it `v0.8.188` merge `88c8b8af0`, `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
   `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + the Node 26 / macOS patch (`cca5e193c`) + `fork/`; `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.188-sshlg.1` (commit `88c8b8af0`, sha256
+- Latest release `fork-v0.8.189-sshlg.1` (commit `a77f746ce`, sha256
+  `c1eaca752f4c0e5b46acc31f4bc713cbae6c7b380ade4242bad7ab7ce46bb1f0`); `fork/release.sh` passed: the patches' tests
+  (7 files, 69 tests), the smoke install printed `0.8.189+sshlg.1` and swept a dead marker, the re-downloaded asset
+  matched its sha256. The merge was clean; all four patches carry over. Upstream's six fixes: long projects `check` to
+  completion (boxed resumable proxy copies, `check --prepare-media`, an idle deadline), any number of audio clips mix in
+  stages, the same x264/x265 thread count on any host, an opaque ProRes clip extracts to jpg, the history lock works
+  without hard links, and a CI size-budget tolerance.
+- `fork/door-audit.sh v0.8.188 v0.8.189`: one new environment variable, `HYPERFRAMES_PROXY_CACHE_STALE_TEMP_MS`
+  (`studio-server/src/helpers/proxyTranscoder.ts`): how old an untouched proxy temp file in the project's own cache must
+  be before it is removed; default and ceiling 10 minutes, so it can only shorten that. The proxy transcode now runs in
+  pieces joined by the same `ffmpeg` (no new binary). New flag `check --prepare-media` (no new command). No new child
+  process kind, network call, run-time install or skill change.
+- `fork/release.sh` left its temporary directories in `TMPDIR` on every run until `a77f746ce` (`tmpdir` ran inside
+  `$(...)`, so `cleanup` saw an empty list): 26 of them, 0.9 GB, were removed on 2026-10-23 when the disk filled and the
+  first `v0.8.189` release attempt failed with `ENOSPC` before publishing anything. The fixed run left none.
+- Previous release `fork-v0.8.188-sshlg.1` (commit `88c8b8af0`, sha256
   `43b176b47a0586a58622a023cd18ba8244960d0592afd4365713657b2601fb08`); `fork/release.sh` passed: the patches' tests
   (7 files, 69 tests), the smoke install printed `0.8.188+sshlg.1` and swept a dead marker, the re-downloaded asset
   matched its sha256. The merge was clean; all four patches carry over. Upstream's seven fixes: a blank media `src`
@@ -62,7 +77,7 @@ publish tarball releases that consumers pin.
 - Door audit v0.8.181..v0.8.184: the CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since
   `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.
 - The private consumer that pins this line moves to each release in its own repository; its move to `0.8.185` (with
-  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) were announced to it on the
+  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) and `v0.8.189-sshlg.1` with its audit (message `fe6d3ad0`) were announced to it on the
   board (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
 - The sixteen inherited workflows are disabled (repository settings).
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
@@ -82,9 +97,9 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. Upstream releases after `v0.8.188`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.188 v<new>` and update this file. The
+1. Upstream releases after `v0.8.189`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.189 v<new>` and update this file. The
    pinning consumer moves its pin in its own repository (its handoff names the steps); post the audit's findings to it on
-   the project board. `v0.8.188` is taken (2026-10-23).
+   the project board. `v0.8.189` is taken (2026-10-23).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
