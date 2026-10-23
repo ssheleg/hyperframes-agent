@@ -90,6 +90,21 @@ describe("createProjectWatcher", () => {
     projectWatcher.close();
   });
 
+  it.runIf(process.platform !== "linux")(
+    "does not report the project folder itself as a changed file",
+    () => {
+      vi.useFakeTimers();
+      const projectWatcher = createProjectWatcher("/fake/project/dir");
+      const listener = vi.fn();
+      projectWatcher.addListener(listener);
+      mockWatcher.emit("change", "change", "dir");
+      mockWatcher.emit("change", "change", "index.html");
+      vi.advanceTimersByTime(30);
+      expect(listener.mock.calls).toEqual([["index.html"]]);
+      projectWatcher.close();
+    },
+  );
+
   it.runIf(process.platform === "linux")(
     "keeps watching the rest of the tree when one subdirectory cannot be watched",
     () => {
