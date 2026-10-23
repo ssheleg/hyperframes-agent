@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Lists what a consumer that confines the engine must look at between two upstream tags (fork/README.md, "Door audit"):
-# new CLI commands, environment variables read in shipped code, new child processes and network calls, packages
+# new CLI commands and flags, environment variables read in shipped code, new child processes and network calls, packages
 # installed at run time, and changed skills. It reports; a person or agent reads each hit and decides.
 #
 #   fork/door-audit.sh v0.8.181 v0.8.184
@@ -22,6 +22,20 @@ echo "# Door audit $FROM..$TO ($(git rev-list --count --no-merges "$FROM..$TO") 
 section "CLI commands (new files or registrations under packages/cli/src/commands)"
 git diff --name-status "$FROM" "$TO" -- packages/cli/src/commands ':(exclude)**/*.test.ts' ':(exclude)**/__fixtures__/**' | awk '$1=="A"{print "new file: "$2}'
 added | grep -E 'packages/cli/src/(cli|commands/index|commands/registry)[^:]*: .*(command|name:)' || true
+
+section "CLI flags (new argument definitions under packages/cli/src/commands)"
+# A flag is a citty argument: `name: {` with `type: "..."` on the same line or one of the next two added lines.
+git diff "$FROM" "$TO" -- packages/cli/src/commands ':(exclude)**/*.test.ts' ':(exclude)**/__fixtures__/**' | awk '
+  /^\+\+\+ b\// { f = substr($0, 7); pending = ""; next }
+  !/^\+/ { pending = ""; next }
+  match($0, /^\+[ \t]+"?[a-z][a-zA-Z0-9-]*"?: \{/) {
+    name = substr($0, RSTART, RLENGTH); sub(/^\+[ \t]+"?/, "", name); sub(/"?: \{$/, "", name)
+    if ($0 ~ /type: "/) { print "--" name "  (" f ")"; pending = "" } else { pending = name; left = 2 }
+    next
+  }
+  pending != "" && /type: "/ { print "--" pending "  (" f ")"; pending = ""; next }
+  pending != "" && --left == 0 { pending = "" }
+' | sort -u
 
 section "Environment variables read in shipped code"
 added | grep -oE '^[^:]+: .*(process\.env\.[A-Z][A-Z0-9_]+|env\[["'"'"'][A-Z][A-Z0-9_]+["'"'"']\])' \
