@@ -103,9 +103,14 @@ describe("withProjectLock", () => {
       );
     `;
     const children = Array.from({ length: 6 }, () =>
-      spawn(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", source], {
-        stdio: ["ignore", "ignore", "pipe"],
-      }),
+      spawn(
+        process.execPath,
+        // tsx registers through module.register(), which Node 26 reports as DEP0205 on stderr.
+        ["--disable-warning=DEP0205", "--import", "tsx", "--input-type=module", "--eval", source],
+        {
+          stdio: ["ignore", "ignore", "pipe"],
+        },
+      ),
     );
     const outcomes = await Promise.all(
       children.map(
