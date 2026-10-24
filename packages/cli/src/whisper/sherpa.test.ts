@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   truncateSync,
   writeFileSync,
@@ -76,7 +77,7 @@ describe("installSherpaRuntime", () => {
       throw new Error("stop before touching the cache");
     });
     const cancel = new AbortController();
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     await installSherpaRuntime({ run, signal: cancel.signal, dir }).catch(() => undefined);
     rmSync(dir, { recursive: true, force: true });
     expect((run.mock.calls[0] as unknown[] | undefined)?.[1]).toBe(cancel.signal);
@@ -86,7 +87,7 @@ describe("installSherpaRuntime", () => {
   });
 
   it("reinstalls a runtime that is present but does not load", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     try {
       fakeRuntime(dir, BROKEN);
       expect(await sherpaRuntimeLoadError(dir)).toBe(
@@ -108,7 +109,7 @@ describe("installSherpaRuntime", () => {
   });
 
   it("leaves a runtime that loads alone", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     try {
       fakeRuntime(dir, LOADS);
       const run = vi.fn();
@@ -123,7 +124,7 @@ describe("installSherpaRuntime", () => {
   });
 
   it("fails with the loader's error when the reinstalled runtime still does not load", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     try {
       const run = vi.fn(async (args: string[]) =>
         fakeRuntime(args[args.indexOf("--prefix") + 1]!, BROKEN),
@@ -139,7 +140,7 @@ describe("installSherpaRuntime", () => {
   it.skipIf(process.platform === "win32").each(["SIGINT", "SIGHUP"])(
     "treats a probe stopped by %s as a cancel and keeps the runtime",
     async (signal) => {
-      const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+      const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
       try {
         fakeRuntime(dir, `process.kill(process.pid, "${signal}");`);
         const run = vi.fn();
@@ -153,7 +154,7 @@ describe("installSherpaRuntime", () => {
   );
 
   it("reads its own probe timeout as a broken runtime, not a cancel, and says so", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     try {
       fakeRuntime(dir, "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);");
       expect(await sherpaRuntimeLoadError(dir, 300)).toBe("loading it timed out after 0.3 s");
@@ -163,7 +164,7 @@ describe("installSherpaRuntime", () => {
   });
 
   it("reports timeout even when the runtime handles SIGTERM and exits zero", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-"));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-runtime-")));
     try {
       fakeRuntime(
         dir,
@@ -185,7 +186,7 @@ describe("installSherpaRuntime", () => {
 describe("a pinned Sherpa copy beside the CLI", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "hf-sherpa-beside-"));
+    root = realpathSync(mkdtempSync(join(tmpdir(), "hf-sherpa-beside-")));
     writeFileSync(join(root, "speech.wav"), encodeWav(new Float32Array(100).fill(0.5), 100));
   });
   afterEach(() => {

@@ -1,4 +1,4 @@
-import { lstatSync, readdirSync, watch, type Dirent, type FSWatcher } from "node:fs";
+import { existsSync, lstatSync, readdirSync, watch, type Dirent, type FSWatcher } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { isAtomicTempPath } from "@hyperframes/core/atomic-file";
 import { isProjectIgnoredDir } from "@hyperframes/core/project-folders";
@@ -41,8 +41,19 @@ function watchProjectTree(
   onChange: (relativePath: string) => void,
 ): () => void {
   if (process.platform !== "linux") {
-    const tree = watch(projectDir, { recursive: true }, (_event, filename) => {
-      if (filename) onChange(filename.toString());
+    const tree = watch(projectDir, { recursive: true }, (event, filename) => {
+      if (!filename) return;
+      const name = filename.toString();
+      // FSEvents also reports the project folder itself, named by its basename, as a "change".
+      // That is not a file in the project; a real file of that name exists or arrives as "rename".
+      if (
+        event === "change" &&
+        name === basename(projectDir) &&
+        !existsSync(join(projectDir, name))
+      ) {
+        return;
+      }
+      onChange(name);
     });
     // An async 'error' (e.g. EMFILE) with no listener would crash the process.
     tree.on("error", () => tree.close());

@@ -6,6 +6,11 @@ import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { replaceFileAtomically } from "@hyperframes/core/atomic-file";
 import { openProjectHistory } from "@hyperframes/studio-server";
 import { createProjectWatcher } from "./fileWatcher.js";
+import {
+  armWatcher,
+  WATCH_EVENT_TIMEOUT_MS,
+  WATCH_TEST_TIMEOUT_MS,
+} from "./fileWatcher.test-helpers.js";
 
 function tempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -13,7 +18,7 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-function watchedProject() {
+async function watchedProject() {
   const dir = tempDir("hf-watch-atomic-");
   const index = join(dir, "index.html");
   writeFileSync(index, "<h1>Hello</h1>");
@@ -21,6 +26,7 @@ function watchedProject() {
   const heard: string[] = [];
   watcher.addListener((path) => heard.push(path));
   onTestFinished(() => watcher.close());
+  await armWatcher(dir, heard);
   return { dir, index, heard };
 }
 
@@ -28,20 +34,20 @@ function watchedProject() {
 const quiet = () => new Promise((settle) => setTimeout(settle, 600));
 
 async function heardOnly(heard: string[], path: string) {
-  await vi.waitFor(() => expect(heard).toContain(path));
+  await vi.waitFor(() => expect(heard).toContain(path), { timeout: WATCH_EVENT_TIMEOUT_MS });
   await quiet();
   expect(new Set(heard)).toEqual(new Set([path]));
 }
 
-describe("the project watcher, on a real file system", () => {
+describe("the project watcher, on a real file system", { timeout: WATCH_TEST_TIMEOUT_MS }, () => {
   it("hears a save only as the file it replaced, never its temp file", async () => {
-    const { index, heard } = watchedProject();
+    const { index, heard } = await watchedProject();
     replaceFileAtomically(index, "<h1>Bye</h1>");
     await heardOnly(heard, "index.html");
   });
 
   it("hears a history step's write only as the file it restored, never its temp file", async () => {
-    const { dir, index, heard } = watchedProject();
+    const { dir, index, heard } = await watchedProject();
     const history = await openProjectHistory({
       projectDir: dir,
       historyRoot: tempDir("hf-hist-"),
@@ -50,7 +56,9 @@ describe("the project watcher, on a real file system", () => {
     onTestFinished(() => history.close());
     writeFileSync(index, "<h1>Bye</h1>");
     history.noteChange("index.html");
-    await vi.waitFor(() => expect(history.list()).toHaveLength(1));
+    await vi.waitFor(() => expect(history.list()).toHaveLength(1), {
+      timeout: WATCH_EVENT_TIMEOUT_MS,
+    });
     await quiet();
     heard.length = 0;
 
