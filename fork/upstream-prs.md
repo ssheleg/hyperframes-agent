@@ -28,8 +28,9 @@ third item they named, `Studio and player captures`, already passes: it applies 
 - Signing: done 2026-10-24 on the operator's word ("давай дальше форс пуш"). `fix/cli-running-markers-prune` was moved
   from `3878df714` to the signed `d6a3ff5b7` with `--force-with-lease` against that exact head; the PR now has one
   commit. `runningCli.ts` is byte-identical to the reviewed `3878df714`. The maintainer was told in
-  https://github.com/heygen-com/hyperframes/pull/5790#issuecomment-6385121928 . Next: they queue it once checks are
-  green; nothing more is owed from our side unless a check fails.
+  https://github.com/heygen-com/hyperframes/pull/5790#issuecomment-6385121928 . At 2026-10-24 15:22 UTC every check on
+  `d6a3ff5b7` was green (53 pass, 15 skipped, CodeQL included) and the PR read `CLEAN`, `APPROVED`. Nothing more is owed
+  from our side; the maintainer queues it.
 
 ## The other two
 
