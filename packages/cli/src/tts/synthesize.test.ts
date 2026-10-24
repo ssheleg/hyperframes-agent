@@ -15,7 +15,7 @@ const { execFileSyncMock, getCapturedArgv, resetCapturedArgv } = vi.hoisted(() =
   const mock = vi.fn((cmd: string, args: string[]) => {
     // findPython's `--version` probe.
     if (args[0] === "--version") return "Python 3.11.0";
-    // hasPythonPackage's `-c "import <pkg>"` probe — succeed (no throw).
+    // probePythonPackage's `-c "import <pkg>"` probe — succeed (no throw).
     if (args[0] === "-c") return "";
     // findPython's `which`/`where` lookup.
     if (cmd === "which" || cmd === "where") return "/usr/bin/python3\n";

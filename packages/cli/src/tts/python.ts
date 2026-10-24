@@ -77,16 +77,29 @@ export function describeRejectedPythonOverride(): string | null {
   return `HYPERFRAMES_PYTHON="${override}" was rejected: ${validation.reason}`;
 }
 
-/** True if `import <pkg>` succeeds — actually executes the module. */
-export function hasPythonPackage(python: string, pkg: string): boolean {
+/**
+ * Run `import <pkg>` (actually executes the module). Returns null when it
+ * succeeds, otherwise why it failed: the import's own last stderr line (an
+ * ImportError from a missing native library reads very differently from
+ * "not installed"), or the process error when the import printed nothing.
+ */
+export function probePythonPackage(python: string, pkg: string): string | null {
   try {
     execFileSync(python, ["-c", `import ${pkg}`], {
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 10_000,
     });
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (error) {
+    const stderr =
+      error && typeof error === "object" && "stderr" in error ? String(error.stderr) : "";
+    const lastLine = stderr
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1);
+    if (lastLine) return lastLine;
+    return error instanceof Error ? error.message : String(error);
   }
 }
 
