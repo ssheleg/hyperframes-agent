@@ -3,10 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProjectWatcher, type ProjectWatcher } from "./fileWatcher.js";
-import { armWatcher } from "./fileWatcher.test-helpers.js";
+import {
+  armWatcher,
+  WATCH_EVENT_TIMEOUT_MS,
+  WATCH_TEST_TIMEOUT_MS,
+} from "./fileWatcher.test-helpers.js";
 
 // Real files, no fs mock: the failure lives in how the OS watch tracks a replaced inode.
-describe("createProjectWatcher on a real directory", () => {
+describe("createProjectWatcher on a real directory", { timeout: WATCH_TEST_TIMEOUT_MS }, () => {
   let dir = "";
   let watcher: ProjectWatcher | null = null;
 
@@ -23,7 +27,10 @@ describe("createProjectWatcher on a real directory", () => {
     return seen;
   };
   const expectReported = async (seen: string[], path: string) => {
-    await vi.waitFor(() => expect(seen).toContain(path), { timeout: 3000, interval: 25 });
+    await vi.waitFor(() => expect(seen).toContain(path), {
+      timeout: WATCH_EVENT_TIMEOUT_MS,
+      interval: 25,
+    });
     seen.length = 0;
   };
   const replaceByRename = (path: string, text: string) => {
