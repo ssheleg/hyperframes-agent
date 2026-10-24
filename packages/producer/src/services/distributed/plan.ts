@@ -51,6 +51,7 @@ import {
   normalizeVp9CpuUsed,
   resolveConfig,
   type AudioProcessingFailure,
+  declareContentAddressedUrl,
 } from "@hyperframes/engine";
 import { defaultLogger, type ProducerLogger } from "../../logger.js";
 import {
@@ -63,6 +64,7 @@ import { measurePlanSecondsPerFrame } from "./planFrameCost.js";
 import { runAudioStage } from "../render/stages/audioStage.js";
 import { runCompileStage } from "../render/stages/compileStage.js";
 import {
+  appendVideoAudioFromProbe,
   assertVideoExtractionSucceeded,
   runExtractVideosStage,
 } from "../render/stages/extractVideosStage.js";
@@ -1204,6 +1206,7 @@ async function compilePlanComposition(
   // ── Compile ──
   const remoteFiles = Object.entries(options.remoteFiles ?? {});
   const remoteLocalPath = (rel: string) => join(projectDir, ...rel.split("/"));
+  for (const [, file] of remoteFiles) declareContentAddressedUrl(file.url, file.sha256);
   // Keyed by the path each file would have had, which is what every media resolver computes.
   const urlByAbsentLocalPath = new Map(
     remoteFiles.map(([rel, file]) => [remoteLocalPath(rel), file.url]),
@@ -1725,7 +1728,7 @@ export async function buildPlanAudio(
   });
   try {
     let stageStarted = Date.now();
-    await extractPlanVideos(c, true);
+    await appendVideoAudioFromProbe(c);
     logPlanStage(c.log, "extract", stageStarted);
     stageStarted = Date.now();
     const mixed = await mixPlanAudio(c, c.compiledDir);

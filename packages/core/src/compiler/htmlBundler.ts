@@ -181,20 +181,37 @@ function rebaseRelativePath(urlValue: string, fromDir: string, toDir: string): s
   return appendSuffixToUrl(rebased, suffix);
 }
 
-function rebaseSrcsetPaths(srcsetValue: string, fromDir: string, toDir: string): string {
-  if (!srcsetValue) return srcsetValue;
-  return srcsetValue
-    .split(",")
-    .map((rawCandidate) => {
-      const candidate = rawCandidate.trim();
-      if (!candidate) return candidate;
-      const parts = candidate.split(/\s+/);
-      const first = parts[0] ?? "";
-      if (parts.length === 0 || !isRelativeUrl(first)) return candidate;
-      parts[0] = rebaseRelativePath(first, fromDir, toDir);
-      return parts.join(" ");
-    })
-    .join(", ");
+function rewriteSrcsetUrls(srcset: string, rewriteUrl: (url: string) => string): string {
+  const parts: string[] = [];
+  let position = 0;
+  let written = 0;
+
+  // Preserve URL commas per https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+  while (position < srcset.length) {
+    while (position < srcset.length && /[ \t\n\r\f,]/.test(srcset.charAt(position))) position++;
+    const start = position;
+    while (position < srcset.length && !/[ \t\n\r\f]/.test(srcset.charAt(position))) position++;
+    let end = position;
+    while (end > start && srcset.charAt(end - 1) === ",") end--;
+    if (end > start) {
+      const url = srcset.slice(start, end);
+      const rewritten = rewriteUrl(url);
+      if (rewritten !== url) {
+        parts.push(srcset.slice(written, start), rewritten);
+        written = end;
+      }
+    }
+    if (end < position) continue;
+
+    let inParens = false;
+    while (position < srcset.length) {
+      const char = srcset.charAt(position++);
+      if (char === "(") inParens = true;
+      else if (char === ")") inParens = false;
+      else if (char === "," && !inParens) break;
+    }
+  }
+  return parts.length > 0 ? parts.join("") + srcset.slice(written) : srcset;
 }
 
 function rebaseColorGradingLutPath(value: string, fromDir: string, toDir: string): string {
@@ -244,7 +261,13 @@ function rebaseEntryAuthoredAssetPaths(
   }
   for (const el of [...document.querySelectorAll("[srcset]")]) {
     const srcset = el.getAttribute("srcset");
-    if (srcset) el.setAttribute("srcset", rebaseSrcsetPaths(srcset, sourceDir, projectDir));
+    if (srcset)
+      el.setAttribute(
+        "srcset",
+        rewriteSrcsetUrls(srcset, (url) =>
+          isRelativeUrl(url) ? rebaseRelativePath(url, sourceDir, projectDir) : url,
+        ),
+      );
   }
   for (const el of [...document.querySelectorAll(`[${HF_COLOR_GRADING_ATTR}]`)]) {
     const value = el.getAttribute(HF_COLOR_GRADING_ATTR);
@@ -359,6 +382,9 @@ const INLINE_MIME: Record<string, string> = {
  */
 const MAX_INLINE_ASSET_BYTES = 2 * 1024 * 1024;
 
+// An asset is inlined once per reference, so repeats can pass V8's ~2^29-char string limit.
+const MAX_INLINED_BUNDLE_CHARS = 256 * 1024 * 1024;
+
 function safeStatSize(filePath: string): number | null {
   try {
     return statSync(filePath).size;
@@ -374,6 +400,12 @@ function warnAssetTooLargeToInline(assetPath: string, byteLength: number): void 
   );
 }
 
+function warnInlineBudgetExhausted(assetPath: string): void {
+  console.warn(
+    `[HyperFrames] Not inlining "${assetPath}" and later assets: the bundle already inlines ${MAX_INLINED_BUNDLE_CHARS / (1024 * 1024)} MB of data URLs. The bundle may not be self-contained.`,
+  );
+}
+
 type AssetInliner = (urlValue: string) => string | null;
 type InlinableAsset = { dataUrl: string | null } | { tooLarge: number };
 
@@ -383,6 +415,8 @@ function createAssetInliner(
   inlineAssets: boolean,
 ): AssetInliner {
   const assets = new Map<string, InlinableAsset>();
+  let inlinedChars = 0;
+  let budgetExhausted = false;
   const readAsset = (filePath: string, mimeType: string): InlinableAsset => {
     // Size-check before reading: an oversized asset must not be pulled into memory
     // just to be discarded.
@@ -414,7 +448,14 @@ function createAssetInliner(
       warnAssetTooLargeToInline(basePath, asset.tooLarge);
       return null;
     }
-    return asset.dataUrl === null ? null : appendSuffixToUrl(asset.dataUrl, suffix);
+    if (asset.dataUrl === null) return null;
+    if (budgetExhausted || inlinedChars + asset.dataUrl.length > MAX_INLINED_BUNDLE_CHARS) {
+      if (!budgetExhausted) warnInlineBudgetExhausted(basePath);
+      budgetExhausted = true;
+      return null;
+    }
+    inlinedChars += asset.dataUrl.length;
+    return appendSuffixToUrl(asset.dataUrl, suffix);
   };
 }
 
@@ -469,22 +510,6 @@ function rewriteColorGradingLutWithInlinedAssets(value: string, inlineAsset: Ass
   }
   Reflect.set(lut, "src", inlined);
   return JSON.stringify(parsed);
-}
-
-function rewriteSrcsetWithInlinedAssets(srcsetValue: string, inlineAsset: AssetInliner): string {
-  if (!srcsetValue) return srcsetValue;
-  return srcsetValue
-    .split(",")
-    .map((rawCandidate) => {
-      const candidate = rawCandidate.trim();
-      if (!candidate) return candidate;
-      const parts = candidate.split(/\s+/);
-      if (parts.length === 0) return candidate;
-      const maybeInlined = inlineAsset(parts[0] ?? "");
-      if (maybeInlined) parts[0] = maybeInlined;
-      return parts.join(" ");
-    })
-    .join(", ");
 }
 
 function rewriteCssUrlsWithInlinedAssets(cssText: string, inlineAsset: AssetInliner): string {
@@ -1449,7 +1474,11 @@ async function bundleProject(projectDir: string, options?: BundleOptions): Promi
   }
   for (const el of [...document.querySelectorAll("[srcset]")]) {
     const srcset = el.getAttribute("srcset");
-    if (srcset) el.setAttribute("srcset", rewriteSrcsetWithInlinedAssets(srcset, inlineAsset));
+    if (srcset)
+      el.setAttribute(
+        "srcset",
+        rewriteSrcsetUrls(srcset, (url) => inlineAsset(url) ?? url),
+      );
   }
   // Before inlining, so postcss reads paths not font bytes.
   const liveStyles = [...document.querySelectorAll("style")].filter(isAlwaysAppliedStyle);

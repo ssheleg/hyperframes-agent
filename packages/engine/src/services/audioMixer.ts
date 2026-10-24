@@ -203,6 +203,8 @@ function legacyFilterScriptOptionIsUnsupported(stderr: string): boolean {
  */
 // Caps the ffmpeg runs that prepare clips; all of a long mix's clips at once starved the host (200 clips, 200 ffmpeg).
 const inPrepareSlot = createConcurrencyLimit(Math.max(2, Math.floor(cpus().length / 2)));
+// A clip read from a URL spends its time waiting on the network, so it needs no CPU-sized limit.
+const inRemotePrepareSlot = createConcurrencyLimit(16);
 
 const MAX_VOLUME_SEGMENTS = 32;
 
@@ -580,11 +582,12 @@ export function parseAudioElements(html: string): AudioElement[] {
   const visiting = new Set<RefResolverEl>();
   const resolveStart = (el: RefResolverEl): number =>
     el.getAttribute("data-start") ? resolveReferencedStart(document, el, startCache, visiting) : 0;
-  // `end` stays a plain numeric read (the mixer derives the real segment length
-  // from data-duration / natural media downstream); guard NaN so a malformed
-  // value never poisons the mix instead of falling back to 0.
-  const parseEnd = (raw: string | null): number => {
-    return parseStrictFiniteTimingNumber(raw) ?? 0;
+  // Same rule as core's compileTimingAttrs: data-end, else start + data-duration, else 0 (unknown).
+  const resolveEnd = (el: RefResolverEl): number => {
+    const end = parseStrictFiniteTimingNumber(el.getAttribute("data-end"));
+    if (end != null) return end;
+    const duration = parseStrictFiniteTimingNumber(el.getAttribute("data-duration"));
+    return duration != null && duration > 0 ? resolveStart(el) + duration : 0;
   };
   const isHidden = isSelfOrAncestorHidden;
 
@@ -617,9 +620,10 @@ export function parseAudioElements(html: string): AudioElement[] {
       id,
       src,
       start: resolveStart(el),
-      end: parseEnd(el.getAttribute("data-end")),
+      end: resolveEnd(el),
       mediaStart: readMediaStart(el),
       playbackRate: readElementRateSpec(el),
+      loop: el.getAttribute("loop") !== null,
       layer: layerAttr ? parseInt(layerAttr) : 0,
       volume: volumeAttr ? parseFloat(volumeAttr) : 1.0,
       ...(fades.fadeIn > 0 ? { fadeIn: fades.fadeIn } : {}),
@@ -681,13 +685,14 @@ async function extractAudioSegment(
   signal?: AbortSignal,
   config?: Partial<Pick<EngineConfig, "ffmpegProcessTimeout">>,
   audioSidecarUrl?: string,
+  options?: { loop?: boolean; padToDuration?: boolean },
 ): Promise<ExtractResult> {
   const ffmpegProcessTimeout = config?.ffmpegProcessTimeout ?? DEFAULT_CONFIG.ffmpegProcessTimeout;
   const outputDir = dirname(outputPath);
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   const normalizedPlaybackRate = normalizeRateSpec(playbackRate);
   const sourceDuration = sourceTimeAt(normalizedPlaybackRate, duration);
-  // A failed local probe keeps FFmpeg's default channel conversion and the input seek; a URL probe
+  // A failed non-looping local probe keeps FFmpeg's channel conversion and input seek; a URL probe
   // is retried once, then fails: a blip must not change how the next, successful read is mixed.
   const readsUrl = isHttpUrl(srcPath);
   const metadata = readsUrl
@@ -695,7 +700,64 @@ async function extractAudioSegment(
         if (signal?.aborted) throw error;
         return extractAudioMetadata(srcPath, { signal });
       })
-    : await extractAudioMetadata(srcPath).catch(() => null);
+    : await extractAudioMetadata(srcPath).catch((error: unknown) => {
+        if (options?.loop) throw error;
+        return null;
+      });
+  const loopDuration = (metadata?.durationSeconds ?? 0) - mediaStart;
+  if (options?.loop && loopDuration > 0 && sourceDuration > loopDuration) {
+    const cycleDir = mkdtempSync(join(outputDir, ".audio-loop-"));
+    const cyclePath = join(cycleDir, "cycle.wav");
+    try {
+      const cycle = await extractAudioSegment(
+        srcPath,
+        cyclePath,
+        stage,
+        mediaStart,
+        loopDuration,
+        1,
+        signal,
+        config,
+        audioSidecarUrl,
+        { padToDuration: true },
+      );
+      if (!cycle.success) return { ...cycle, outputPath };
+      const outputArgs = preparedAudioOutputArgs(metadata, normalizedPlaybackRate, duration, null);
+      const result = await runFfmpeg(
+        [
+          "-stream_loop",
+          "-1",
+          "-t",
+          String(sourceDuration),
+          "-i",
+          cyclePath,
+          "-vn",
+          "-acodec",
+          "pcm_s16le",
+          "-ar",
+          "48000",
+          ...outputArgs,
+          "-t",
+          String(duration),
+          "-y",
+          outputPath,
+        ],
+        { signal, timeout: ffmpegProcessTimeout },
+      );
+      const failure = result.success
+        ? undefined
+        : ffmpegFailure(stage, result, ffmpegProcessTimeout);
+      return {
+        success: result.success,
+        outputPath,
+        durationMs: cycle.durationMs + result.durationMs,
+        error: failure?.detail,
+        failure,
+      };
+    } finally {
+      rmSync(cycleDir, { recursive: true, force: true });
+    }
+  }
   const inputSeek = mediaStart >= (metadata?.latestStreamLeadSeconds ?? 0);
   const start = formatFilterNumber(mediaStart);
   const timestampTrim = inputSeek
@@ -707,7 +769,12 @@ async function extractAudioSegment(
     metadata,
     normalizedPlaybackRate,
     duration,
-    warmUp > 0 ? `atrim=start=${warmUp},asetpts=PTS-STARTPTS` : timestampTrim,
+    [
+      warmUp > 0 ? `atrim=start=${warmUp},asetpts=PTS-STARTPTS` : timestampTrim,
+      ...(options?.padToDuration ? ["apad"] : []),
+    ]
+      .filter(Boolean)
+      .join(",") || null,
   );
   const readFrom = fromSidecar ? audioSidecarUrl : srcPath;
 
@@ -721,7 +788,7 @@ async function extractAudioSegment(
     readFrom,
   ];
   args.push("-vn", "-acodec", "pcm_s16le", "-ar", "48000", ...outputArgs);
-  if (normalizedPlaybackRate !== 1) args.push("-t", String(duration));
+  if (normalizedPlaybackRate !== 1 || options?.padToDuration) args.push("-t", String(duration));
   args.push("-y", outputPath);
 
   const result = await runFfmpeg(args, { signal, timeout: ffmpegProcessTimeout });
@@ -755,6 +822,23 @@ async function extractAudioSegment(
     error: failure?.detail,
     failure,
   };
+}
+
+function isRemoteElement(
+  element: { src: string },
+  baseDir: string,
+  compiledDir: string | undefined,
+  config?: { urlByAbsentLocalPath?: ReadonlyMap<string, string> },
+): boolean {
+  if (isHttpUrl(element.src)) return true;
+  if (!config?.urlByAbsentLocalPath?.size) return false;
+  try {
+    return config.urlByAbsentLocalPath.has(
+      resolveProjectRelativeSrc(element.src, baseDir, compiledDir),
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function generateSilence(
@@ -1357,7 +1441,9 @@ export async function processCompositionAudio(
 
   await Promise.all(
     elements.map((element, index) =>
-      inPrepareSlot(async () => {
+      (isRemoteElement(element, baseDir, compiledDir, config)
+        ? inRemotePrepareSlot
+        : inPrepareSlot)(async () => {
         if (effectiveSignal.aborted) {
           failures.push({
             stage: "cancelled",
@@ -1433,6 +1519,9 @@ export async function processCompositionAudio(
 
           // Fallback: if no duration was specified, probe the actual file
           if (element.end - element.start <= 0) {
+            console.warn(
+              `[audioMixer] ${element.id} has no data-duration or data-end; its length is unknown, so it plays to the end of its source`,
+            );
             let metadata;
             try {
               metadata = await extractAudioMetadata(
@@ -1467,6 +1556,7 @@ export async function processCompositionAudio(
               effectiveSignal,
               config,
               audioSidecarUrl,
+              { loop: element.loop },
             );
             if (!extractResult.success) {
               failures.push(
@@ -1495,6 +1585,8 @@ export async function processCompositionAudio(
               element.playbackRate,
               effectiveSignal,
               config,
+              undefined,
+              { loop: element.loop },
             );
             if (!prepResult.success) {
               failures.push(

@@ -71,6 +71,7 @@
       "dependencies": {
         "@hono/node-server": "^2.0.5",
         "@puppeteer/browsers": "^3.2.2",
+        "acorn": "^8.17.0",
         "adm-zip": "^0.6.0",
         "citty": "^0.2.1",
         "compare-versions": "^6.1.1",
@@ -369,6 +370,7 @@
         "@mcp-b/global": "^5.0.1",
         "@phosphor-icons/react": "^2.1.10",
         "@tanstack/react-virtual": "^3.14.13",
+        "acorn": "^8.17.0",
         "cn": "0.2.4",
         "dockview-react": "8.3.1",
         "gsap": "^3.13.0",
