@@ -7,7 +7,8 @@
 
 import { cpus, freemem } from "os";
 import { existsSync, mkdirSync, readdirSync } from "fs";
-import { copyFile, readFile, rename } from "fs/promises";
+import { copyFile, readFile } from "fs/promises";
+import { renameWithRetryAsync } from "../utils/renameWithRetry.js";
 import { join } from "path";
 import { getHeapStatistics } from "v8";
 
@@ -78,6 +79,8 @@ export interface WorkerResult {
   perf?: CapturePerfSummary;
   error?: string;
   diagnostics?: string[];
+  /** The worker session's `[Browser:PAGEERROR]` console lines, kept so the render's error count sees them. */
+  pageErrorLines?: string[];
   failure?: CaptureFailure;
 }
 
@@ -940,6 +943,7 @@ async function executeWorkerTask(
       frameStride: task.frameStride,
       durationMs: Date.now() - startTime,
       perf,
+      pageErrorLines: pageErrorLinesOf(activeSession),
     };
   } catch (error) {
     const diagnostics = session ? selectWorkerDiagnostics(session.browserConsoleBuffer) : [];
@@ -953,6 +957,7 @@ async function executeWorkerTask(
     const failure = classifyCaptureFailure(error, {
       signal,
       workerDiagnostics: [workerDiagnostic],
+      pageErrorLines: session ? pageErrorLinesOf(session) : undefined,
     });
     onFailure?.(failure);
     return {
@@ -965,6 +970,7 @@ async function executeWorkerTask(
       perf,
       error: failure.message,
       diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+      pageErrorLines: session ? pageErrorLinesOf(session) : undefined,
       failure,
     };
   } finally {
@@ -1013,6 +1019,10 @@ export interface ParallelCaptureHooks {
    * frame (the ordered writer) with the original error, not a stall.
    */
   onWorkerFailure?: (failure: CaptureFailure) => void;
+}
+
+function pageErrorLinesOf(session: CaptureSession): string[] {
+  return session.browserConsoleBuffer.filter((line) => line.includes("PAGEERROR"));
 }
 
 /**
@@ -1156,6 +1166,7 @@ export async function executeParallelCapture(
       message: `[Parallel] Capture failed: ${errorMessages}`,
       cause: representative,
       workerDiagnostics,
+      pageErrorLines: [...new Set(results.flatMap((result) => result.pageErrorLines ?? []))],
     });
   }
 
@@ -1184,7 +1195,7 @@ export async function mergeWorkerFrames(
       const sourcePath = join(task.outputDir, file);
       const targetPath = join(outputDir, file);
       try {
-        await rename(sourcePath, targetPath);
+        await renameWithRetryAsync(sourcePath, targetPath);
       } catch {
         await copyFile(sourcePath, targetPath);
       }

@@ -331,6 +331,9 @@ export {
   extractFinalVideoFrameTimestamp,
   extractAudioMetadata,
   declareContentAddressedUrl,
+  declareProbeFactsUrl,
+  PROBE_FACTS_VERSION,
+  buildProbeFactsText,
   probeMediaProfile,
   analyzeKeyframeIntervals,
   type VideoMetadata,
@@ -384,6 +387,7 @@ export {
 } from "./utils/ffmpegBinaries.js";
 
 export { trackChildProcess, killTrackedProcesses } from "./utils/processTracker.js";
+export { renameWithRetry, renameWithRetryAsync } from "./utils/renameWithRetry.js";
 
 // drawElement self-verify comparison — shared by the streaming drain
 // (producer) and the parallel disk-path verify (parallelCoordinator).

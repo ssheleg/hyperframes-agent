@@ -33,7 +33,6 @@ import {
   existsSync,
   linkSync,
   mkdirSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -52,6 +51,8 @@ import {
   resolveConfig,
   type AudioProcessingFailure,
   declareContentAddressedUrl,
+  renameWithRetry,
+  declareProbeFactsUrl,
 } from "@hyperframes/engine";
 import { defaultLogger, type ProducerLogger } from "../../logger.js";
 import {
@@ -330,6 +331,8 @@ export interface RemoteProjectFile {
   readonly url: string;
   /** A file of only this video's audio, when one was stored: the audio mix reads it, not the video. */
   readonly audioSidecarUrl?: string;
+  /** The file's stored ffprobe JSON: the plan reads it instead of probing the file over the network. */
+  readonly probeFactsUrl?: string;
   readonly sha256: string;
   readonly sizeBytes: number;
 }
@@ -1206,7 +1209,10 @@ async function compilePlanComposition(
   // ── Compile ──
   const remoteFiles = Object.entries(options.remoteFiles ?? {});
   const remoteLocalPath = (rel: string) => join(projectDir, ...rel.split("/"));
-  for (const [, file] of remoteFiles) declareContentAddressedUrl(file.url, file.sha256);
+  for (const [, file] of remoteFiles) {
+    declareContentAddressedUrl(file.url, file.sha256);
+    if (file.probeFactsUrl) declareProbeFactsUrl(file.url, file.probeFactsUrl);
+  }
   // Keyed by the path each file would have had, which is what every media resolver computes.
   const urlByAbsentLocalPath = new Map(
     remoteFiles.map(([rel, file]) => [remoteLocalPath(rel), file.url]),
@@ -1357,6 +1363,7 @@ function mixPlanAudio(c: PlanComposition, compiledDir: string) {
     masterFxChain: c.composition.masterFxChain,
     abortSignal: c.abortSignal,
     assertNotAborted: c.assertNotAborted,
+    log: c.log,
   });
 }
 
@@ -1379,6 +1386,7 @@ async function extractPlanVideos(c: PlanComposition, deferRangeExtraction: boole
     // A chunk cannot fall back to decoding a source the planner held: a missing frame set
     // renders as a silent blank video, so every declared source must extract.
     assertVideoExtractionSucceeded(extractResult.extractionResult);
+    c.log.info("[plan] extract phases", { ...extractResult.extractionResult.phaseBreakdown });
   }
   return extractResult;
 }
@@ -1452,13 +1460,13 @@ export async function buildLocalExecutionPlan(
   const videoSourcesDir = join(planDir, "video-sources");
   rmSync(videoSourcesDir, { recursive: true, force: true });
   if (existsSync(stagedVideoFrames)) {
-    renameSync(stagedVideoFrames, videoFramesDst);
+    renameWithRetry(stagedVideoFrames, videoFramesDst);
   } else {
     mkdirSync(videoFramesDst, { recursive: true });
   }
 
   if (existsSync(finalCompiledDir)) rmSync(finalCompiledDir, { recursive: true, force: true });
-  renameSync(compiledDir, finalCompiledDir);
+  renameWithRetry(compiledDir, finalCompiledDir);
 
   // `meta/videos.json` is the contract that makes distributed renders
   // pixel-comparable to in-process for compositions with video sources —
@@ -1580,7 +1588,7 @@ export async function buildLocalExecutionPlan(
 
   const planAudioPath = join(planDir, PLAN_AUDIO_RELATIVE_PATH);
   if (audioResult?.hasAudio && existsSync(audioResult.audioOutputPath)) {
-    renameSync(audioResult.audioOutputPath, planAudioPath);
+    renameWithRetry(audioResult.audioOutputPath, planAudioPath);
   }
   if (chunksCarryAudio && existsSync(planAudioPath)) {
     if (options.sliceChunkAudio) {
@@ -1737,7 +1745,7 @@ export async function buildPlanAudio(
       applyDistributedAudioWarningPolicy(c.job, mixed.audioError, mixed.audioFailures, c.log);
     }
     if (!mixed.hasAudio || !existsSync(mixed.audioOutputPath)) return { hasAudio: false };
-    renameSync(mixed.audioOutputPath, outputPath);
+    renameWithRetry(mixed.audioOutputPath, outputPath);
     return { hasAudio: true };
   } finally {
     rmSync(c.workDir, { recursive: true, force: true });

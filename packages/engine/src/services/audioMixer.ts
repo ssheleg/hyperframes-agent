@@ -1,15 +1,7 @@
 // fallow-ignore-file complexity code-duplication
 import { isSelfOrAncestorHidden, memberGroupKey, isMemberGroupHidden } from "./mediaHidden.js";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  openSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "fs";
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "fs";
+import { renameWithRetry } from "../utils/renameWithRetry.js";
 import { join, dirname, isAbsolute, relative } from "path";
 import { parseHTML } from "linkedom";
 import { extractAudioMetadata, type AudioMetadata } from "../utils/ffprobe.js";
@@ -1288,7 +1280,7 @@ async function mixGroupMembers(
   try {
     const summed = await sumInSlices(memberTracks, scratchDir, totalDuration, signal, config);
     if (!summed.success) return summed;
-    renameSync(summed.track.srcPath, outputPath);
+    renameWithRetry(summed.track.srcPath, outputPath);
     return { success: true, degradedAutomation: summed.degradedAutomation };
   } finally {
     rmSync(scratchDir, { recursive: true, force: true });
@@ -1356,9 +1348,11 @@ async function mixThroughFloatSum(
   },
 ): Promise<MixResult> {
   const sumPath = join(workDir, "master-sum.wav");
+  const mixStart = Date.now();
   const sum = await mixAudioTracks(tracks, sumPath, totalDuration, signal, config);
   if (!sum.success) return { ...sum, outputPath };
 
+  const masterStart = Date.now();
   const encoderInput = masterChain
     ? (
         await applyAudioFxChain(sumPath, masterChain, join(workDir, "master-fx.wav"), {
@@ -1367,6 +1361,7 @@ async function mixThroughFloatSum(
         })
       ).path
     : sumPath;
+  const encodeStart = Date.now();
   const encoded = await encodeAac(encoderInput, outputPath, totalDuration, {
     signal,
     timeout: config?.ffmpegProcessTimeout ?? DEFAULT_CONFIG.ffmpegProcessTimeout,
@@ -1386,8 +1381,17 @@ async function mixThroughFloatSum(
       failures: [failure],
     };
   }
-  if (config?.keepEncoderInputAt) renameSync(encoderInput, config.keepEncoderInputAt);
-  return { ...sum, outputPath, durationMs: sum.durationMs + encoded.durationMs };
+  if (config?.keepEncoderInputAt) renameWithRetry(encoderInput, config.keepEncoderInputAt);
+  return {
+    ...sum,
+    outputPath,
+    durationMs: sum.durationMs + encoded.durationMs,
+    phaseMs: {
+      mix: masterStart - mixStart,
+      master: encodeStart - masterStart,
+      encode: Date.now() - encodeStart,
+    },
+  };
 }
 
 export async function processCompositionAudio(
@@ -1760,6 +1764,7 @@ export async function processCompositionAudio(
       failures,
     };
   };
+  const prepareMs = Date.now() - startMs;
   if (failures.length > 0) return bail();
 
   // Parsed before any group is mixed, so a malformed master chain fails fast and
@@ -1907,6 +1912,7 @@ export async function processCompositionAudio(
   }
   if (failures.length > 0) return bail();
 
+  const groupsMs = Date.now() - startMs - prepareMs;
   let mixResult: MixResult;
   try {
     mixResult =
@@ -1936,6 +1942,7 @@ export async function processCompositionAudio(
   return {
     ...mixResult,
     durationMs: Date.now() - startMs,
+    phaseMs: { prepare: prepareMs, groups: groupsMs, ...mixResult.phaseMs },
     // Both, when both degraded. `mixResult.error ?? degradedNote` reported only
     // the outer mix and dropped the one that names which GROUPS lost their
     // members' automation — two different losses, and the operator needs to
