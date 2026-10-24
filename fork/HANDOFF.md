@@ -9,9 +9,26 @@ publish tarball releases that consumers pin.
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the
   `ssheleg` organisation on 2026-10-19; GitHub redirects the old address, release downloads included).
-- `main` = upstream `v0.8.191` (merge `714739c7d`; before it `v0.8.190` merge `019d07c6d`, `v0.8.189` merge `711159342`, `v0.8.188` merge `88c8b8af0`, `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
+- `main` = upstream `v0.8.192` (merge `038db04dd`; before it `v0.8.191` merge `714739c7d`, `v0.8.190` merge `019d07c6d`, `v0.8.189` merge `711159342`, `v0.8.188` merge `88c8b8af0`, `v0.8.187` merge `5404e6aa8`, `v0.8.186` merge `2171ab2d0`, `v0.8.185` merge `b0bd45480`, `v0.8.184` merge `66bfeedd2`, `v0.8.181` merge `2fb047c8a`,
   `v0.8.180` merge `8595a06f6`) + the running-markers sweep (`cbe3ca66a`) + the speech patch (`118a29e52`) + the Node 26 / macOS patch (`cca5e193c`) + `fork/`; `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.191-sshlg.1` (commit `fb4cb29f2`, sha256
+- Latest release `fork-v0.8.192-sshlg.1` (commit `3f163dc52`, sha256
+  `c3c9f9ee14dd9c9da1e42eb2b662b9c8d0813ec1f33359de7c3830d44b5d684d`); `fork/release.sh` passed at load average 51: the
+  patches' tests (9 files, 75 tests), the smoke install printed `0.8.192+sshlg.1` and swept a dead marker, the
+  re-downloaded asset matched its sha256. The merge was clean and carries every patch. It was committed without the
+  pre-commit hook, as plain `git merge --no-ff` would be: `fallow audit --base origin/main` counted four findings of
+  upstream's own in the tag as ours (unused `@types/aws-lambda` and `@types/mime-types`, the `core`/`parsers` cycle, a
+  stale suppression at `batchRender.ts:445`, all verbatim in `v0.8.192`); build, `bun run lint` and the hook's typecheck
+  commands passed on the merged tree.
+- `fork/door-audit.sh v0.8.191 v0.8.192` (66 commits): no new command, flag or run-time install. `HYPERFRAMES_SKIP_SKILLS`
+  now also silences a new stderr notice after `render`, `lint` and `validate` ("N HyperFrames skills out of date or
+  missing", read from the existing 24 h background check's cache; `HYPERFRAMES_NO_UPDATE_CHECK` too); `init` no longer
+  touches installed skills; `history` runs `git diff --no-index` for large text diffs; the engine runs `tasklist` on
+  Windows. Two skill files changed (`init-and-scaffold.md`, `skill-lifecycle.md`).
+- Upstream PR heygen-com/hyperframes#5790 was **approved** on 2026-10-24; the maintainer queues it once its commits are
+  signed and CodeQL is green. CodeQL's finding (a file system race in the test) is fixed in `d5959004e`. All three of
+  our upstream fixes now have a signed branch whose files match `main`; replacing #5790's unsigned head needs the
+  operator's word (a force push, or a new PR): [`upstream-prs.md`](upstream-prs.md).
+- Previous release `fork-v0.8.191-sshlg.1` (commit `fb4cb29f2`, sha256
   `d493a09c0f53ebb08fdcade0dd87bc84192c881987415df735c296ef016f9d37`); `fork/release.sh` passed: the patches' tests
   (9 files, 75 tests), the smoke install printed `0.8.191+sshlg.1` and swept a dead marker, the re-downloaded asset
   matched its sha256. The merge was clean; all patches carry over. The first attempt stopped on five watcher tests at
@@ -104,34 +121,32 @@ publish tarball releases that consumers pin.
 - Door audit v0.8.181..v0.8.184: the CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since
   `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.
 - The private consumer that pins this line moves to each release in its own repository; its move to `0.8.185` (with
-  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) `v0.8.189-sshlg.1` with its audit (message `fe6d3ad0`) `v0.8.190-sshlg.1` with its audit (message `bea18764`) and `v0.8.191-sshlg.1` with its audit (message `a6eaf0e1`) were announced to it on the
+  its skills kept at `v0.8.184`) is in progress there. `sshlg.2`, `v0.8.186-sshlg.1` and `v0.8.186-sshlg.2` (message `a2e6c159`) `v0.8.187-sshlg.1` with its audit (message `7d9f3c81`) and `v0.8.188-sshlg.1` with its audit (message `87d2232f`) `v0.8.189-sshlg.1` with its audit (message `fe6d3ad0`) `v0.8.190-sshlg.1` with its audit (message `bea18764`) `v0.8.191-sshlg.1` with its audit (message `a6eaf0e1`) and `v0.8.192-sshlg.1` with its audit (message `01af75d4`) were announced to it on the
   board (thread `b4d4f898`): with either, speech no longer needs a warm-up outside the run.
 - The sixteen inherited workflows are disabled (repository settings).
 - The speech patch sits on branch `pr/tts-sandbox-safe` (`c4611fbb8`, cherry-picked onto upstream `main`
   `2c1d9d50d`, the TTS tests 36 of 36). Its upstream PR is not opened: a PR to `heygen-com` needs the operator's
-  explicit instruction for that send. With it: `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/tts-sandbox-safe`.
+  explicit instruction for that send. Send the signed branch `pr/tts-sandbox-safe-signed`, not this one
+  ([`upstream-prs.md`](upstream-prs.md)).
 - Node 26 / macOS (2026-10-23, patch `cca5e193c`, merge `d3aeb4203`): the project watcher no longer reports the
   project folder itself as a changed file (FSEvents names it by its basename; 3 of 6 runs of
   `server/fileWatcher.atomic.test.ts` on unchanged `main`, none of 6 with the patch). `whisper/sherpa.test.ts` now
   compares realpaths and `utils/projectLock.test.ts` silences tsx's `DEP0205` in its children. The same commit sits on
   branch `pr/node26-macos` (cherry-picked onto upstream `main` `bb19f342d`, 46 tests pass); its upstream PR needs the
-  operator's send instruction like the speech patch's: `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/node26-macos`.
+  operator's send instruction like the speech patch's, from the signed branch `pr/node26-macos-signed`.
 - The watcher tests under load (fixed 2026-10-24, `a707fb95b`): FSEvents starts its stream a moment after `watch()`
   returns and a write in that gap is never reported, so `server/fileWatcher.fs.test.ts` and
   `server/fileWatcher.atomic.test.ts` lost their first write (four of eight parallel runs failed with
   `expected [] to include 'index.html'`). Both now arm the watcher with a probe first (`fileWatcher.test-helpers.ts`);
   sixteen of sixteen parallel runs pass. `fb4cb29f2` also waits out late bursts (a quiet second, 15 s per event); at
-  load average about 125 FSEvents still delivers nothing for 15 s, so a release run then waits for the load to fall. A test-only change, on `main` only: it can join `pr/node26-macos` when that PR is
-  sent. The product is not affected (Studio starts its watcher long before the first edit). The chromium, process and watcher
+  load average about 125 FSEvents still delivers nothing for 15 s, so a release run then waits for the load to fall. A test-only change; it is in `pr/node26-macos-signed`. The product is not affected (Studio starts its watcher long before the first edit). The chromium, process and watcher
   timeouts seen at load average 73 on 2026-10-23 were not measured again.
-- Upstream PR heygen-com/hyperframes#5790 (the same sweep) is open, no reviews; its head `3878df714` still merges
-  cleanly onto upstream `main` (`git merge-tree`, 2026-10-24). We do not wait for it.
 
 ## Next task
 
-1. Upstream releases after `v0.8.191`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.191 v<new>` and update this file. The
+1. Upstream releases after `v0.8.192`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run `fork/door-audit.sh v0.8.192 v<new>` and update this file. The
    pinning consumer moves its pin in its own repository (its handoff names the steps); post the audit's findings to it on
-   the project board. `v0.8.191` is taken (2026-10-24).
+   the project board. `v0.8.192` is taken (2026-10-24).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.

@@ -45,7 +45,7 @@ so a consumer can tell this line's build from npm's and name the commit it came 
 Pin the release tarball, not npm:
 
 ```json
-"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.191-sshlg.1/hyperframes-0.8.191-sshlg.1.tgz"
+"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.192-sshlg.1/hyperframes-0.8.192-sshlg.1.tgz"
 ```
 
 The lockfile then holds the tarball's sha512. The other engine packages (`@hyperframes/core`, `lint`,
