@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   unlinkSync,
   utimesSync,
@@ -65,16 +66,15 @@ it("removes the files of processes that are gone or stopped beating, and keeps l
   const before = process.listeners("exit");
   registerRunningCli(running);
 
-  expect(existsSync(dead)).toBe(false);
-  expect(existsSync(junk)).toBe(false);
+  // Read the folder rather than test each path: an existence check followed by a write to the same
+  // path below is what CodeQL reports as a file system race. A listing also catches a stray file.
   // A live pid whose file has not been touched for longer than the stale window is a reused pid.
-  expect(existsSync(silent)).toBe(false);
-  expect(existsSync(join(running, String(process.pid)))).toBe(true);
+  expect(readdirSync(running)).toEqual([String(process.pid)]);
 
   // The same live pid with a fresh file is another CLI that is still beating.
   writeFileSync(silent, "");
   registerRunningCli(running);
-  expect(existsSync(silent)).toBe(true);
+  expect(readdirSync(running).sort()).toEqual([String(process.pid), String(process.ppid)].sort());
 
   for (const listener of process.listeners("exit").filter((l) => !before.includes(l))) {
     listener(0);
