@@ -45,7 +45,8 @@ added | grep -E '^[^:]+: .*(env|ENV).*["'"'"'][A-Z][A-Z0-9]*_[A-Z0-9_]+["'"'"']'
   | sed -E 's/^([^:]+): .*["'"'"']([A-Z][A-Z0-9]*_[A-Z0-9_]+)["'"'"'].*/\2  (\1, named in a constant)/' | sort -u || true
 
 section "Child processes and network calls"
-added | grep -E '(^|[^.[:alnum:]_])(spawn|spawnSync|execFile|execFileSync|execSync|exec)\(|fetch\(' | cut -c1-200 || true
+# `fetch(` must start a word (`.fetch(` counts, `startPrefetch(` does not).
+added | grep -E '(^|[^.[:alnum:]_])(spawn|spawnSync|execFile|execFileSync|execSync|exec)\(|(^|[^[:alnum:]_])fetch\(' | cut -c1-200 || true
 
 section "Packages installed at run time"
 added | grep -E 'npm (i|install)|buildNpmCommand|loadOptionalPackage|OPTIONAL_PACKAGES|installAndLoad' | cut -c1-200 || true
