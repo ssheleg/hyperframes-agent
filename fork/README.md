@@ -45,7 +45,7 @@ so a consumer can tell this line's build from npm's and name the commit it came 
 Pin the release tarball, not npm:
 
 ```json
-"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.192-sshlg.1/hyperframes-0.8.192-sshlg.1.tgz"
+"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.193-sshlg.1/hyperframes-0.8.193-sshlg.1.tgz"
 ```
 
 The lockfile then holds the tarball's sha512. The other engine packages (`@hyperframes/core`, `lint`,
@@ -57,11 +57,11 @@ ours touches them. Releases made before the rename (2026-10-19) name `sshlg/heyg
 
 | Patch                                                                              | Upstream                                | Drop when                      |
 | ---------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------ |
-| `fix(cli): each start sweeps the running markers of CLIs that are gone`            | heygen-com/hyperframes#5790 (approved)  | an upstream release carries it |
 | `fix(cli): speech works from a sandboxed run and says why kokoro-onnx cannot load` | `pr/tts-sandbox-safe-signed` (not sent) | an upstream release carries it |
 | `fix(cli): ignore the project folder's own FSEvents change; Node 26 test fixes`    | `pr/node26-macos-signed` (not sent)     | an upstream release carries it |
 
-Their signed upstream branches and the steps to send them: [`upstream-prs.md`](upstream-prs.md).
+Their signed upstream branches and the steps to send them: [`upstream-prs.md`](upstream-prs.md). The running-markers
+sweep (heygen-com/hyperframes#5790) was ours until `v0.8.193` carried it.
 
 ## Release
 
@@ -78,8 +78,14 @@ prints the line's version, and that a start removes the marker of a dead pid.
 1. `git fetch upstream --tags && git push origin upstream/main:refs/heads/upstream`
 2. `git switch main && git merge --no-ff v<new>`
 3. A patch the new release already carries merges as identical text, or conflicts on lines that now say
-   the same thing: take upstream's side, then remove the patch's row from the table above.
-4. `git log --no-merges v<new>..main -- . ':!fork'` lists exactly the patches still carried.
+   the same thing: take upstream's side, then remove the patch's row from the table above. A merge committed by
+   hand (after a conflict, or `--no-commit`) runs the pre-commit hook, whose `fallow audit --base origin/main` counts
+   upstream's own findings in the new tag as ours. If every finding it names is present verbatim in the tag
+   (`git show v<new>:<path>`), and `bun run build`, `bun run lint` and the hook's typecheck commands pass, commit the
+   merge with `--no-verify` and say why in its message, as plain `git merge --no-ff` would have committed it.
+4. `git diff --stat v<new> main -- . ':!fork'` shows exactly what the line still carries. `git log v<new>..main` is
+   not that list: a patch upstream took under another commit (a squash merge) stays in the log but no longer
+   changes anything.
 5. `fork/release.sh 1` builds on the new base (it finds the base with `git describe`), then `--publish`.
 6. `fork/door-audit.sh v<old> v<new>` lists what a consumer that confines the engine must read before it moves its pin:
    new CLI commands and flags, environment variables read in shipped code, new child processes and `fetch` calls, packages

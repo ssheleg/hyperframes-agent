@@ -9,7 +9,8 @@ any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDO
 - Releases: `fork/release.sh <n> [--publish]`, tag `fork-v<base>-sshlg.<n>`, a tarball on GitHub Releases, never npm.
   The inherited GitHub workflows are disabled; do not re-enable `Publish to npm`, `Publish catalog` or `Sync skills to ClawHub`.
 - The repository is public: no private agent's name, path, port or data goes into it.
-- A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`.
+- A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`, only on the
+  operator's explicit instruction to send it. Upstream requires signed commits: see [`fork/upstream-prs.md`](fork/upstream-prs.md).
 
 # Hyperframes
 
