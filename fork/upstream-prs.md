@@ -7,13 +7,13 @@ instruction for that act; everything below is ready to send and nothing here has
 GitHub signs it (`web-flow`, verified) and its author is the operator's account. Its files match `main` byte for byte
 when it was made, so `main`'s tests and each release's `fork/release.sh` cover them.
 
-| Fix                                                                                | Ready branch (signed commit)               | Upstream state                                    |
-| ---------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------- |
-| `fix(cli): each start sweeps the running markers of CLIs that are gone`            | `pr/running-markers-signed` (`d6a3ff5b7`)  | #5790 open, approved 2026-10-24, waits on 2 items |
-| `fix(cli): speech works from a sandboxed run and says why kokoro-onnx cannot load` | `pr/tts-sandbox-safe-signed` (`5fdb537f8`) | not sent                                          |
-| `fix(cli): ignore the project folder's own FSEvents change; Node 26 test fixes`    | `pr/node26-macos-signed` (`5d6735d6b`)     | not sent                                          |
+| Fix                                                                                | Ready branch (signed commit)               | Upstream state                            |
+| ---------------------------------------------------------------------------------- | ------------------------------------------ | ----------------------------------------- |
+| `fix(cli): each start sweeps the running markers of CLIs that are gone`            | `pr/running-markers-signed` (`d6a3ff5b7`)  | #5790 head replaced 2026-10-24, see below |
+| `fix(cli): speech works from a sandboxed run and says why kokoro-onnx cannot load` | `pr/tts-sandbox-safe-signed` (`5fdb537f8`) | not sent                                  |
+| `fix(cli): ignore the project folder's own FSEvents change; Node 26 test fixes`    | `pr/node26-macos-signed` (`5d6735d6b`)     | not sent                                  |
 
-The unsigned predecessors (`fix/cli-running-markers-prune`, `pr/tts-sandbox-safe`, `pr/node26-macos`) carry commits
+The unsigned predecessors (`pr/tts-sandbox-safe`, `pr/node26-macos`, and `3878df714` that #5790 carried before) carry commits
 authored `Робот <r@e.com>`, which no GitHub account verifies; do not send them.
 
 ## #5790: running markers
@@ -25,14 +25,11 @@ third item they named, `Studio and player captures`, already passes: it applies 
 - CodeQL (high, "Potential file system race condition", `runningCli.test.ts:75`): the test checked `existsSync(silent)`
   and then wrote the same path. Fixed in `d5959004e` on `main` and in the signed branch: the test compares the folder's
   listing instead.
-- Signing: the PR's head `3878df714` is unsigned. Its branch can only be given the signed commit by a force push, which
-  our rules forbid without the operator's word. Two routes, the operator chooses:
-  1. Recommended (keeps the approval and the thread): the operator allows one force update of the PR branch.
-     `git push origin +d6a3ff5b7db3ac46fe0fc19ee561072602878b62:refs/heads/fix/cli-running-markers-prune`, then a comment
-     on #5790: "Pushed d6a3ff5: one commit, signed, with the CodeQL finding fixed (the test reads the running folder's
-     listing instead of checking each path before writing it). No other code change."
-  2. Without a force push: a new PR from the signed branch, and #5790 closed with a link to it.
-     `gh pr create -R heygen-com/hyperframes --head ssheleg:pr/running-markers-signed --title "fix(cli): each start sweeps the running markers of CLIs that are gone" --body-file <#5790's body with the Verification section updated>`
+- Signing: done 2026-10-24 on the operator's word ("давай дальше форс пуш"). `fix/cli-running-markers-prune` was moved
+  from `3878df714` to the signed `d6a3ff5b7` with `--force-with-lease` against that exact head; the PR now has one
+  commit. `runningCli.ts` is byte-identical to the reviewed `3878df714`. The maintainer was told in
+  https://github.com/heygen-com/hyperframes/pull/5790#issuecomment-6385121928 . Next: they queue it once checks are
+  green; nothing more is owed from our side unless a check fails.
 
 ## The other two
 

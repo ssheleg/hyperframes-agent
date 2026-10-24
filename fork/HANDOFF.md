@@ -26,8 +26,8 @@ publish tarball releases that consumers pin.
   Windows. Two skill files changed (`init-and-scaffold.md`, `skill-lifecycle.md`).
 - Upstream PR heygen-com/hyperframes#5790 was **approved** on 2026-10-24; the maintainer queues it once its commits are
   signed and CodeQL is green. CodeQL's finding (a file system race in the test) is fixed in `d5959004e`. All three of
-  our upstream fixes now have a signed branch whose files match `main`; replacing #5790's unsigned head needs the
-  operator's word (a force push, or a new PR): [`upstream-prs.md`](upstream-prs.md).
+  our upstream fixes now have a signed branch whose files match `main`. On the operator's word #5790's head was moved to
+  the signed `d6a3ff5b7` (`--force-with-lease`) and the maintainer told so: [`upstream-prs.md`](upstream-prs.md).
 - Previous release `fork-v0.8.191-sshlg.1` (commit `fb4cb29f2`, sha256
   `d493a09c0f53ebb08fdcade0dd87bc84192c881987415df735c296ef016f9d37`); `fork/release.sh` passed: the patches' tests
   (9 files, 75 tests), the smoke install printed `0.8.191+sshlg.1` and swept a dead marker, the re-downloaded asset
