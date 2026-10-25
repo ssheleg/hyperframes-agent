@@ -45,7 +45,7 @@ so a consumer can tell this line's build from npm's and name the commit it came 
 Pin the release tarball, not npm:
 
 ```json
-"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.193-sshlg.1/hyperframes-0.8.193-sshlg.1.tgz"
+"hyperframes": "https://github.com/ssheleg/hyperframes-agent/releases/download/fork-v0.8.198-sshlg.1/hyperframes-0.8.198-sshlg.1.tgz"
 ```
 
 The lockfile then holds the tarball's sha512. The other engine packages (`@hyperframes/core`, `lint`,
@@ -86,7 +86,10 @@ prints the line's version, and that a start removes the marker of a dead pid.
 4. `git diff --stat v<new> main -- . ':!fork'` shows exactly what the line still carries. `git log v<new>..main` is
    not that list: a patch upstream took under another commit (a squash merge) stays in the log but no longer
    changes anything.
-5. `fork/release.sh 1` builds on the new base (it finds the base with `git describe`), then `--publish`.
+5. `fork/release.sh 1` builds on the new base (it finds the base with `git describe`), then `--publish`. Its
+   watcher tests run on the real file system and fail while `fseventsd` is busy: if they fail, or
+   `ps -Ao pcpu,comm | grep fseventsd` reads 60% or more, wait for it to fall before running again
+   ([`HANDOFF.md`](HANDOFF.md), "Watcher tests under load").
 6. `fork/door-audit.sh v<old> v<new>` lists what a consumer that confines the engine must read before it moves its pin:
    new CLI commands and flags, environment variables read in shipped code, new child processes and `fetch` calls, packages
    installed at run time, and changed skills with the commands their new lines name. It reports a diff between two

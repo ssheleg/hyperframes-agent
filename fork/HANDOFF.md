@@ -5,18 +5,18 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-25)
+## State (2026-10-25, evening)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the `ssheleg`
   organisation on 2026-10-19; GitHub redirects the old address, release downloads included). The sixteen inherited
   workflows are disabled (repository settings).
-- `main` = upstream `v0.8.193` (merge `ba2c1fe96`) + two patches + `fork/`. `git diff v0.8.193 main -- . ':!fork'` shows
+- `main` = upstream `v0.8.198` (merge `44ad52549`) + two patches + `fork/`. `git diff v0.8.198 main -- . ':!fork'` shows
   exactly what we carry: the speech patch (`packages/cli/src/tts/`) and the Node 26 / macOS patch with its watcher test
   fixes (`packages/cli/src/server/fileWatcher*`, `utils/projectLock.test.ts`, `whisper/sherpa.test.ts`), plus our
   header in `CLAUDE.md`, `AGENTS.md` and `README.md`. `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.193-sshlg.1` (table below): `fork/release.sh` passed at load average 77, the patches'
-  tests (8 files, 72 tests), the smoke install printed `0.8.193+sshlg.1` and swept a dead marker, the re-downloaded
-  asset matched its sha256.
+- Latest release `fork-v0.8.198-sshlg.1` (table below). `v0.8.194` to `v0.8.197` came out the same day and were not
+  released on their own: `v0.8.198` carries them. Upstream changed none of our patches' files in
+  `v0.8.193..v0.8.198`, so the merge was clean.
 - **The running-markers sweep is upstream's now.** heygen-com/hyperframes#5790 was approved and merged on 2026-10-24
   (merge `24965372d`, in `v0.8.193`), so the line no longer carries it: `runningCli.ts` and its test are byte-identical
   to the tag. Getting it in took a signed commit (`heygen-com` requires them; ours were authored `Робот <r@e.com>`) and a
@@ -24,7 +24,8 @@ publish tarball releases that consumers pin.
   as signed branches for the operator's send instruction: [`upstream-prs.md`](upstream-prs.md).
 - The pinning consumer, Frame Agent, moves its pin in its own repository. On 2026-10-24 it pinned
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
-  on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`.
+  on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
+  `v0.8.198-sshlg.1` is message `d9a91a4f`.
 
 ## Patches
 
@@ -36,9 +37,11 @@ publish tarball releases that consumers pin.
   `utils/projectLock.test.ts` silences tsx's `DEP0205` in its children.
 - **Watcher tests under load** (`a707fb95b`, `fb4cb29f2`): FSEvents starts its stream a moment after `watch()` returns,
   and a write in that gap is never reported; the real-file-system watcher tests now arm the watcher with a probe and
-  wait out late bursts (four of eight parallel runs failed before, sixteen of sixteen pass after). At load average
-  about 125 and above (`fseventsd` itself at 120% CPU) FSEvents delivers nothing for 15 s, so a release then waits for
-  the load to fall rather than retrying.
+  wait out late bursts (four of eight parallel runs failed before, sixteen of sixteen pass after). When `fseventsd`
+  itself is busy, FSEvents delivers nothing for 15 s and these tests fail: at load average 125 with `fseventsd` at 120%
+  CPU (2026-10-24), and again at load average 54 with `fseventsd` at 224% (2026-10-25, the first `v0.8.198` publish run;
+  the check run minutes earlier had passed). So the signal is `fseventsd`'s own CPU, not the load average: before
+  `--publish`, wait until `ps -Ao pcpu,comm | grep fseventsd` reads under 60%, rather than retrying.
 
 ## Tooling fixes (2026-10-23 and 2026-10-24)
 
@@ -59,6 +62,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.8.198-sshlg.1` | `44ad52549` | 2026-10-25 | `6d9a2e895ee6d6fb7f285cfc64fac9f90dc6893f0c61483bfd3a162d2ed7095c` |
 | `fork-v0.8.193-sshlg.1` | `ba2c1fe96` | 2026-10-25 | `ebce0e37f67e4f2558e4bcd19fb9dd693b0e4ef810d9272edfdb8c2e7b1dac4a` |
 | `fork-v0.8.192-sshlg.1` | `3f163dc52` | 2026-10-24 | `c3c9f9ee14dd9c9da1e42eb2b662b9c8d0813ec1f33359de7c3830d44b5d684d` |
 | `fork-v0.8.191-sshlg.1` | `fb4cb29f2` | 2026-10-24 | `d493a09c0f53ebb08fdcade0dd87bc84192c881987415df735c296ef016f9d37` |
@@ -80,23 +84,24 @@ on 2026-10-25).
 
 What `fork/door-audit.sh <from> <to>` found that a confining consumer must know. A range not listed found nothing.
 
-| Range                | Finding                                                                                                                                                                                                                                                                                              |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| up to `v0.8.184`     | The CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.                                                                                                   |
-| `v0.8.184..v0.8.185` | The workflow skills are retired (upstream #5651): `skills/` goes from 21 to 7 and `skills update` removes the retired ones. A consumer that vendors them keeps an older tag's copy; the engine reads none of them.                                                                                   |
-| `v0.8.185..v0.8.186` | `audio read --quality best` uploads the recording to HeyGen's cloud for stems (`audio/read/stems.ts`), reading `HYPERFRAMES_AUDIO_STEMS_URL`, `HYPERFRAMES_AUDIO_API_KEY`, `HYPERFRAMES_AUDIO_STEMS_TIMEOUT_MS`; only when signed in or keyed, and an empty URL turns it off.                        |
-| `v0.8.186..v0.8.187` | All in `lambda deploy` (AWS, on request): `--video-arch arm64` (the default) pushes an arm64 image to the stack's ECR and downloads `video-arm64.oci.tar` unless `HYPERFRAMES_LAMBDA_VIDEO_IMAGE` names one (runs `tar`); `HYPERFRAMES_LAMBDA_HANDLER_URL`; `AWS_PROFILE`. New `--page-motion-blur`. |
-| `v0.8.188..v0.8.189` | `HYPERFRAMES_PROXY_CACHE_STALE_TEMP_MS` (studio-server proxy cache; default and ceiling 10 minutes); proxy transcodes run in pieces joined by the same `ffmpeg`; new flag `check --prepare-media`.                                                                                                   |
-| `v0.8.190..v0.8.191` | Skills: `snapshot --range` is written `START,END`, `--fps` takes 1 to 240 or a rational, the `hyperframes usage --json` section left `upgrade-info-misc.md`.                                                                                                                                         |
-| `v0.8.191..v0.8.192` | A stderr notice after `render`, `lint` and `validate` when skills are stale (silenced by `HYPERFRAMES_SKIP_SKILLS=1` or `HYPERFRAMES_NO_UPDATE_CHECK`); `init` no longer touches installed skills; `history` runs `git diff --no-index`; the engine runs `tasklist` on Windows.                      |
-| `v0.8.192..v0.8.193` | The engine fetches stored ffprobe facts for remote `http(s)` media (`utils/ffprobe.ts`, 10 s timeout), declared only by the distributed (cloud/Lambda) plan (`producer/src/services/distributed/plan.ts:1214`); `HF_TAIL_PROBE_SLOTS` (default 16).                                                  |
+| Range                | Finding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| up to `v0.8.184`     | The CLI installs `onnxruntime-node` and `@google/genai` from npm on first use since `v0.8.51` and `sharp` since `v0.8.182`; `HYPERFRAMES_NO_OPTIONAL_INSTALL=1` (since `v0.8.182`) turns that off.                                                                                                                                                                                                                                                                                            |
+| `v0.8.184..v0.8.185` | The workflow skills are retired (upstream #5651): `skills/` goes from 21 to 7 and `skills update` removes the retired ones. A consumer that vendors them keeps an older tag's copy; the engine reads none of them.                                                                                                                                                                                                                                                                            |
+| `v0.8.185..v0.8.186` | `audio read --quality best` uploads the recording to HeyGen's cloud for stems (`audio/read/stems.ts`), reading `HYPERFRAMES_AUDIO_STEMS_URL`, `HYPERFRAMES_AUDIO_API_KEY`, `HYPERFRAMES_AUDIO_STEMS_TIMEOUT_MS`; only when signed in or keyed, and an empty URL turns it off.                                                                                                                                                                                                                 |
+| `v0.8.186..v0.8.187` | All in `lambda deploy` (AWS, on request): `--video-arch arm64` (the default) pushes an arm64 image to the stack's ECR and downloads `video-arm64.oci.tar` unless `HYPERFRAMES_LAMBDA_VIDEO_IMAGE` names one (runs `tar`); `HYPERFRAMES_LAMBDA_HANDLER_URL`; `AWS_PROFILE`. New `--page-motion-blur`.                                                                                                                                                                                          |
+| `v0.8.188..v0.8.189` | `HYPERFRAMES_PROXY_CACHE_STALE_TEMP_MS` (studio-server proxy cache; default and ceiling 10 minutes); proxy transcodes run in pieces joined by the same `ffmpeg`; new flag `check --prepare-media`.                                                                                                                                                                                                                                                                                            |
+| `v0.8.190..v0.8.191` | Skills: `snapshot --range` is written `START,END`, `--fps` takes 1 to 240 or a rational, the `hyperframes usage --json` section left `upgrade-info-misc.md`.                                                                                                                                                                                                                                                                                                                                  |
+| `v0.8.191..v0.8.192` | A stderr notice after `render`, `lint` and `validate` when skills are stale (silenced by `HYPERFRAMES_SKIP_SKILLS=1` or `HYPERFRAMES_NO_UPDATE_CHECK`); `init` no longer touches installed skills; `history` runs `git diff --no-index`; the engine runs `tasklist` on Windows.                                                                                                                                                                                                               |
+| `v0.8.192..v0.8.193` | The engine fetches stored ffprobe facts for remote `http(s)` media (`utils/ffprobe.ts`, 10 s timeout), declared only by the distributed (cloud/Lambda) plan (`producer/src/services/distributed/plan.ts:1214`); `HF_TAIL_PROBE_SLOTS` (default 16).                                                                                                                                                                                                                                           |
+| `v0.8.193..v0.8.198` | `HYPERFRAMES_GSAP_BASE_URL` names an npm mirror (HTTPS, or HTTP on localhost) that renders and Studio preview load GSAP from; Studio preview now uses the CLI's bundled GSAP by default (#6256). The Chrome download moved into a child process (Node running the CLI's `renderSetupWorker.js browser-install`, `utils/cancellableProcess.ts`; same download source). Orphan cleanup kills only browsers carrying HyperFrames' launch marker; `HYPERFRAMES_NO_ORPHAN_CLEANUP=1` turns it off. |
 
 ## Next task
 
-1. Upstream releases after `v0.8.193`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+1. Upstream releases after `v0.8.198`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.8.193 v<new>`, add its findings to the table above and the release to the release table, and
-   post them to the consumer on the board (thread `b4d4f898`). `v0.8.193` is taken (2026-10-25).
+   `fork/door-audit.sh v0.8.198 v<new>`, add its findings to the table above and the release to the release table, and
+   post them to the consumer on the board (thread `b4d4f898`). `v0.8.198` is taken (2026-10-25).
 2. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
