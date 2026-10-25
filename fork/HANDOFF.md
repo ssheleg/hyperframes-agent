@@ -98,6 +98,10 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 
 ## Next task
 
+The working copy holds no dependencies or builds: on 2026-10-25 `node_modules`, every `packages/*/dist`, `fork/out`
+(all its tarballs are on the releases above) and `.fallow` were removed to free a full disk. Run `bun install` before
+anything else: the pre-commit hook needs it. `fork/release.sh 1` without `--skip-deps` installs and builds by itself.
+
 1. Upstream releases after `v0.8.198`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.198 v<new>`, add its findings to the table above and the release to the release table, and
