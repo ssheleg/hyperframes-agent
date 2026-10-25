@@ -1107,7 +1107,12 @@ class Engine {
     const changes = [...target]
       .filter(([path, hash]) => (this.tracked.get(path)?.hash ?? null) !== hash)
       .sort(([, a], [, b]) => Number(a !== null) - Number(b !== null));
-    const gone = changes.find(([, hash]) => hash !== null && !this.blobs.has(hash));
+    const setAsideByDeletesFirst = new Set(
+      changes.filter(([, hash]) => hash === null).map(([path]) => this.tracked.get(path)?.hash),
+    );
+    const gone = changes.find(
+      ([, hash]) => hash !== null && !this.blobs.has(hash) && !setAsideByDeletesFirst.has(hash),
+    );
     if (gone)
       throw new Error(
         `An earlier version of ${gone[0]} is not kept, so this cannot be brought back.`,
@@ -1122,6 +1127,9 @@ class Engine {
     this.windows.push(group);
     try {
       for (const [path, hash] of changes) await this.writeProjectFile(path, hash);
+      await this.blobs.release(
+        changes.flatMap(([path, hash]) => (hash ? [[hash, path] as const] : [])),
+      );
       await this.sweep();
     } finally {
       this.windows = this.windows.filter((open) => open !== group);
@@ -1138,6 +1146,9 @@ class Engine {
       const version = hash === null ? DELETED_VERSION : hashVersion(hash);
       recordFileWriteReceipt(absPath, { path, version, writeToken });
     }
+    const standing = lstatSync(absPath, { throwIfNoEntry: false });
+    if (standing?.isFile() && isUncopied(path, standing.size))
+      await this.blobs.keep(path, absPath, hash === null);
     if (hash === null) {
       this.assertWritable();
       rmSync(absPath, { force: true });

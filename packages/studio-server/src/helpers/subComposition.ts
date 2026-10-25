@@ -13,6 +13,7 @@ import {
 } from "@hyperframes/core/compiler";
 import { isFullHtmlDocument } from "@hyperframes/core/compiler/html-document";
 import { gsapCdnDist } from "@hyperframes/core/gsap-cdn";
+import { htmlHasGsapCore, insertGsapCoreBeforeHeadPlugin } from "./gsapCoreScript.js";
 
 /**
  * Rewrite relative asset paths in a parsed DOM tree. Shared across all
@@ -269,6 +270,7 @@ export function buildSubCompositionHtml(
   runtimeUrl: string,
   baseHref?: string,
   rawOverride?: string,
+  gsapBaseUrl?: string,
 ): string | null {
   const compFile = join(projectDir, compPath);
   if (!existsSync(compFile)) return null;
@@ -352,8 +354,9 @@ export function buildSubCompositionHtml(
   headContent += `\n<script ${RUNTIME_BOOTSTRAP_ATTR}="1" src="${runtimeUrl}"></script>`;
 
   // Fallback: if no index.html head was found, add minimal deps
-  if (!headContent.includes("gsap")) {
-    headContent += `\n<script src="${gsapCdnDist()}gsap.min.js"></script>`;
+  if (!htmlHasGsapCore(headContent)) {
+    const core = `<script src="${gsapCdnDist(undefined, gsapBaseUrl).replace(/&/g, "&amp;")}gsap.min.js"></script>`;
+    headContent = insertGsapCoreBeforeHeadPlugin(headContent, core) ?? `${headContent}\n${core}`;
   }
 
   const htmlOpen = htmlAttrs ? `<html ${htmlAttrs}>` : "<html>";

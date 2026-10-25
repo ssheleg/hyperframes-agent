@@ -283,7 +283,7 @@ function inlineCssFile(
   css: string,
   cssFileDir: string,
   projectDir: string,
-  visited: Set<string> = new Set(),
+  activeImports: Set<string>,
 ): string {
   const { result: strippedCss, restore: restoreComments } = withCommentsStripped(css, (s) => s);
   const importPlaceholders: string[] = [];
@@ -296,11 +296,12 @@ function inlineCssFile(
       // @import is resolved relative to the CSS file, but must stay within the
       // project root; isSafePath also blocks symlink escapes (content is inlined).
       if (!isSafePath(projectDir, resolved)) return full;
-      if (visited.has(resolved)) return "";
+      if (activeImports.has(resolved)) return "";
       const content = safeReadFile(resolved);
       if (content == null) return full;
-      visited.add(resolved);
-      const inlined = inlineCssFile(content, dirname(resolved), projectDir, visited);
+      activeImports.add(resolved);
+      const inlined = inlineCssFile(content, dirname(resolved), projectDir, activeImports);
+      activeImports.delete(resolved);
       const trimmedMedia = (mediaQuery || "").trim();
       const block = trimmedMedia ? `@media ${trimmedMedia} {\n${inlined}\n}\n` : inlined + "\n";
       const idx = importPlaceholders.length;
@@ -455,7 +456,8 @@ function createAssetInliner(
       return null;
     }
     inlinedChars += asset.dataUrl.length;
-    return appendSuffixToUrl(asset.dataUrl, suffix);
+    const hashIdx = suffix.indexOf("#");
+    return hashIdx < 0 ? asset.dataUrl : `${asset.dataUrl}${suffix.slice(hashIdx)}`;
   };
 }
 
@@ -1163,7 +1165,7 @@ async function bundleProject(projectDir: string, options?: BundleOptions): Promi
       const value = el.getAttribute(name);
       if (value !== null) style.setAttribute(name, value);
     }
-    style.textContent = inlineCssFile(css, dirname(cssPath), projectDir);
+    style.textContent = inlineCssFile(css, dirname(cssPath), projectDir, new Set([cssPath]));
     el.replaceWith(style);
   }
 

@@ -2,7 +2,13 @@
 import { setPreviewRasterScale } from "./previewRasterHints";
 import { refreshSvgSelectorAliases } from "../compiler/svgSelectorAliases";
 import { RUNTIME_FILLER } from "./protocol";
-import { preloadMedia, releaseMedia, lengthIsAuthored, stopMediaDownload } from "./preloadMedia";
+import {
+  preloadMedia,
+  prepareUpcomingMedia,
+  releaseMedia,
+  lengthIsAuthored,
+  stopMediaDownload,
+} from "./preloadMedia";
 import { installRuntimeControlBridge, postRuntimeMessage, setRuntimeProtocolFps } from "./bridge";
 import { instantTolerance } from "../clipFacts";
 import { isInClipWindow } from "./clipWindow";
@@ -173,6 +179,7 @@ import { parseStrictFiniteTimingNumber, resolveMediaElementDurationSeconds } fro
 import { cutToHostSlots, MEDIA_START_BASIS_ATTR } from "../mediaTiming";
 import { settleFirstFrameCompositionReadiness } from "../compositionReadiness";
 import { AUTHORED_DURATION_ATTR, AUTHORED_END_ATTR } from "./authoredTiming";
+import { createTimingRecordFilter } from "./mutationRecords";
 import {
   clearRuntimeData,
   setRuntimeData,
@@ -1327,6 +1334,13 @@ export function initSandboxRuntimeModular(): void {
     "id",
     "src",
   ];
+  // Sizing inputs too: postTimeline applies them, and it runs when this revision moves.
+  const COMPOSITION_TIMING_ATTRIBUTES = [
+    ...DURATION_FLOOR_INPUT_ATTRIBUTES,
+    "data-width",
+    "data-height",
+  ];
+  const recordsMoveTiming = createTimingRecordFilter(COMPOSITION_TIMING_ATTRIBUTES);
   const COMPOSITION_TIMING_MEDIA_EVENTS = ["loadedmetadata", "durationchange", "emptied"] as const;
   let durationFloorsCache: DurationFloors | null = null;
   let durationFloorsRevision = -1;
@@ -1345,7 +1359,8 @@ export function initSandboxRuntimeModular(): void {
   const queryForTransport = (selector: string): Element[] => {
     if (!compositionTimingObserver || renderCaptureSeekStarted)
       return Array.from(document.querySelectorAll(selector));
-    if (compositionTimingObserver.takeRecords().length > 0) invalidateCompositionTimingCaches();
+    if (recordsMoveTiming(compositionTimingObserver.takeRecords()))
+      invalidateCompositionTimingCaches();
     const cached = queryCache.get(selector);
     if (cached?.revision === compositionTimingRevision) return cached.nodes;
     const nodes = Array.from(document.querySelectorAll(selector));
@@ -1394,7 +1409,10 @@ export function initSandboxRuntimeModular(): void {
     const pending = compositionTimingObserver?.takeRecords() ?? [];
     write();
     const ours = compositionTimingObserver?.takeRecords() ?? [];
-    if (pending.length > 0 || ours.some((record) => record.target !== el))
+    if (
+      recordsMoveTiming(pending) ||
+      recordsMoveTiming(ours.filter((record) => record.target !== el))
+    )
       invalidateCompositionTimingCaches();
   };
 
@@ -1402,18 +1420,19 @@ export function initSandboxRuntimeModular(): void {
     const pending = compositionTimingObserver?.takeRecords() ?? [];
     write();
     compositionTimingObserver?.takeRecords();
-    if (pending.length > 0) invalidateCompositionTimingCaches();
+    if (recordsMoveTiming(pending)) invalidateCompositionTimingCaches();
   };
 
   const watchCompositionTimingInputs = () => {
     if (compositionTimingObserver || typeof MutationObserver === "undefined") return;
-    compositionTimingObserver = new MutationObserver(invalidateCompositionTimingCaches);
+    compositionTimingObserver = new MutationObserver((records) => {
+      if (recordsMoveTiming(records)) invalidateCompositionTimingCaches();
+    });
     compositionTimingObserver.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
-      // Sizing inputs too: postTimeline applies them, and it runs when this revision moves.
-      attributeFilter: [...DURATION_FLOOR_INPUT_ATTRIBUTES, "data-width", "data-height"],
+      attributeFilter: COMPOSITION_TIMING_ATTRIBUTES,
     });
     // Media duration changes are published as events, not DOM mutations, and
     // they do not bubble — so listen in the capture phase, which reaches every
@@ -1445,7 +1464,7 @@ export function initSandboxRuntimeModular(): void {
     // here makes the caches correct within a task, not just across tasks.
     // Taking the records suppresses the callback for them, which is exactly
     // equivalent since the callback only bumps the revision.
-    if (compositionTimingObserver && compositionTimingObserver.takeRecords().length > 0) {
+    if (compositionTimingObserver && recordsMoveTiming(compositionTimingObserver.takeRecords())) {
       invalidateCompositionTimingCaches();
     }
     // `window.__timelines` is a plain object: no MutationObserver and no event
@@ -2858,6 +2877,15 @@ export function initSandboxRuntimeModular(): void {
   // cannot fetch in time on a slow link.
   const armedBy = new WeakMap<HTMLMediaElement, HTMLMediaElement>();
   const armedFrom = new WeakSet<HTMLMediaElement>();
+  const approachingMedia = new WeakSet<HTMLMediaElement>();
+  const prepareInWindow = (el: HTMLMediaElement) =>
+    prepareUpcomingMedia(
+      el,
+      () =>
+        !state.tornDown &&
+        mediaNearPlayhead.get(el) === true &&
+        resolveAbsoluteMediaStartSeconds(el) > clock.now(),
+    );
   // An untracked clip (NaN) shares a track with nothing, as in the timeline payload.
   const hostOf = (el: Element) => el.parentElement?.closest("[data-composition-id]");
   // Clips due soon fetch a few at a time, earliest first: a fast cut sequence has dozens inside the
@@ -2889,6 +2917,7 @@ export function initSandboxRuntimeModular(): void {
   };
   const startPrefetch = (el: HTMLMediaElement) => {
     preloadMedia(el);
+    prepareInWindow(el);
     if (prefetching.has(el) || el.readyState >= 3) return;
     prefetching.add(el);
     for (const type of PREFETCH_SETTLED_EVENTS) el.addEventListener(type, onPrefetchSettled);
@@ -2948,7 +2977,14 @@ export function initSandboxRuntimeModular(): void {
     const spent = passed && (decided !== true || (el.networkState === 2 && el.readyState < 4));
     const near = visible || armed || (upcoming && !unslotted && !spent);
     if ((visible || !near) && endPrefetch(el)) queueMicrotask(fillPrefetchSlots);
-    if (decided === near) return;
+    const approaching = near && !visible && resolveAbsoluteMediaStartSeconds(el) > clock.now();
+    const wasApproaching = approachingMedia.has(el);
+    if (approaching) approachingMedia.add(el);
+    else approachingMedia.delete(el);
+    if (decided === near) {
+      if (approaching && !wasApproaching) prepareInWindow(el);
+      return;
+    }
     mediaNearPlayhead.set(el, near);
     if (!near) {
       if (el.preload !== "none") {
@@ -3086,6 +3122,9 @@ export function initSandboxRuntimeModular(): void {
         if (nodeAffectsAudio(rawNode)) hiddenAudioDirty = true;
       }
 
+      const hasClipWindow = rawNode.hasAttribute("data-start");
+      if (!hasClipWindow) continue;
+
       if (unchanged?.(rawNode)) continue;
 
       // Descendants must not override a hidden ancestor clip. CSS visibility can
@@ -3145,7 +3184,7 @@ export function initSandboxRuntimeModular(): void {
   // authored length, and it never awaits, so no duration the cache read can change.
   const syncTimedElementVisibility = (
     currentTime: number,
-    visibilityNodes: Element[] = queryForTransport("[data-start]"),
+    visibilityNodes: Element[] = queryForTransport("[data-start], [data-hidden]"),
     timingRevision?: number,
     playedFromSeconds?: number,
   ) =>

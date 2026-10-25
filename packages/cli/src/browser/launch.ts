@@ -1,4 +1,5 @@
 import type { Browser, LaunchOptions, PuppeteerNode } from "puppeteer-core";
+import { withHyperframesBrowserMarker } from "@hyperframes/core/browser-marker";
 import {
   resolveCaptureBrowserGpuMode,
   type BrowserGpuMode,
@@ -30,9 +31,18 @@ const EXIT_POLL_MS = 50;
 let listening = false;
 let shutdown: Promise<void> | undefined;
 
+const stopListeners = new Set<(signal: "SIGINT" | "SIGTERM") => void>();
+
+export function onStopSignal(listener: (signal: "SIGINT" | "SIGTERM") => void): () => void {
+  ownSignals();
+  stopListeners.add(listener);
+  return () => stopListeners.delete(listener);
+}
+
 /** CLI signals close browser admission and native processes before the root exits. */
 function stopForSignal(signal: "SIGINT" | "SIGTERM"): void {
   if (shutdown) return;
+  for (const listener of stopListeners) listener(signal);
   shutdown = closeManagedBrowsers();
   void shutdown.then(
     () => requestCliExit(signal === "SIGINT" ? 130 : 143),
@@ -117,7 +127,14 @@ async function launchOwnedBrowser(
   const signal = options.signal ? AbortSignal.any([options.signal, abort.signal]) : abort.signal;
   const launchedAt = Date.now();
   const launch = untilLaunchOrAbort(
-    puppeteer.launch({ ...options, pipe: true, signal, handleSIGINT: false, handleSIGTERM: false }),
+    puppeteer.launch({
+      ...options,
+      args: withHyperframesBrowserMarker(options.args),
+      pipe: true,
+      signal,
+      handleSIGINT: false,
+      handleSIGTERM: false,
+    }),
     signal,
   );
   const limit = options.timeout ?? LAUNCH_TIMEOUT_MS;

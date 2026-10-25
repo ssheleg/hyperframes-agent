@@ -6,6 +6,7 @@
  * launch args, pooled browser acquisition/release.
  */
 
+import { withHyperframesBrowserMarker } from "@hyperframes/core/browser-marker";
 import { scanHtmlOpeningTags } from "@hyperframes/parsers/html-attribute-spans";
 import type { Browser, LaunchOptions, Page, PuppeteerNode } from "puppeteer-core";
 import { execSync } from "child_process";
@@ -111,7 +112,7 @@ async function probeHardwareWebGlInfo(
     const launchOptions: LaunchOptions = {
       ...sigintLaunchOptions(),
       headless: true,
-      args: options.args,
+      args: withHyperframesBrowserMarker(options.args),
       defaultViewport: { width: 64, height: 64 },
       executablePath: options.executablePath,
       env: options.env,
@@ -643,6 +644,26 @@ function envWithoutWaylandDisplay(): NodeJS.ProcessEnv {
   return env;
 }
 
+// ANGLE and Dawn load SwiftShader via VK_ICD_FILENAMES, which these override or filter:
+// https://github.com/KhronosGroup/Vulkan-Loader/blob/main/docs/LoaderDriverInterface.md
+const VULKAN_VARS_THAT_OVERRIDE_SWIFTSHADER = [
+  "VK_DRIVER_FILES",
+  "VK_LOADER_DRIVERS_SELECT",
+  "VK_LOADER_DRIVERS_DISABLE",
+];
+
+function launchEnv(fingerprint: Readonly<BrowserLaunchFingerprint>): NodeJS.ProcessEnv | undefined {
+  if (fingerprint.withoutWaylandDisplay) return envWithoutWaylandDisplay();
+  const swiftShader = fingerprint.args.some(
+    (arg) => arg === "--use-angle=swiftshader" || arg === "--use-vulkan=swiftshader",
+  );
+  const overriding = VULKAN_VARS_THAT_OVERRIDE_SWIFTSHADER.filter((name) => name in process.env);
+  if (!swiftShader || overriding.length === 0) return undefined;
+  const env = { ...process.env };
+  for (const name of overriding) delete env[name];
+  return env;
+}
+
 /** True when a `resolvedMode` render must launch without WAYLAND_DISPLAY to reach the GPU. */
 export async function captureWithoutWaylandDisplay(
   resolvedMode: "software" | "hardware",
@@ -847,14 +868,14 @@ async function launchBrowser(
   fingerprint: Readonly<BrowserLaunchFingerprint>,
 ): Promise<{ browser: Browser; captureMode: CaptureMode }> {
   const ppt = await getPuppeteer();
-  const env = fingerprint.withoutWaylandDisplay ? envWithoutWaylandDisplay() : undefined;
+  const env = launchEnv(fingerprint);
   let captureMode = fingerprint.requestedCaptureMode;
   let browser: Browser | undefined;
   try {
     browser = await ppt.launch({
       ...sigintLaunchOptions(),
       headless: true,
-      args: [...fingerprint.args],
+      args: withHyperframesBrowserMarker(fingerprint.args),
       defaultViewport: null,
       executablePath: fingerprint.executablePath,
       env,
@@ -887,7 +908,7 @@ async function launchBrowser(
         browser = await ppt.launch({
           ...sigintLaunchOptions(),
           headless: true,
-          args: stripBeginFrameFlags([...fingerprint.args]),
+          args: withHyperframesBrowserMarker(stripBeginFrameFlags([...fingerprint.args])),
           defaultViewport: null,
           executablePath: fingerprint.executablePath,
           env,

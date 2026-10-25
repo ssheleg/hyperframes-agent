@@ -56,6 +56,12 @@
       "types": "./dist/safePath.d.ts",
       "environments": ["bun", "node"]
     },
+    "./browser-marker": {
+      "source": "./src/browserMarker.ts",
+      "runtime": "./dist/browserMarker.js",
+      "types": "./dist/browserMarker.d.ts",
+      "environments": ["bun", "node"]
+    },
     "./atomic-file": {
       "source": "./src/atomicFile.ts",
       "runtime": "./dist/atomicFile.js",
@@ -372,6 +378,12 @@
       "source": "./src/runtime/clipWindow.ts",
       "runtime": "./dist/runtime/clipWindow.js",
       "types": "./dist/runtime/clipWindow.d.ts",
+      "environments": ["browser", "bun", "node"]
+    },
+    "./runtime/clip-reveal": {
+      "source": "./src/runtime/clipReveal.ts",
+      "runtime": "./dist/runtime/clipReveal.js",
+      "types": "./dist/runtime/clipReveal.d.ts",
       "environments": ["browser", "bun", "node"]
     },
     "./runtime/stacking-context": {

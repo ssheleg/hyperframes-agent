@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/core",
-  "version": "0.8.193",
+  "version": "0.8.198",
   "description": "",
   "repository": {
     "type": "git",
@@ -67,6 +67,12 @@
       "node": "./dist/safePath.js",
       "import": "./src/safePath.ts",
       "types": "./src/safePath.ts"
+    },
+    "./browser-marker": {
+      "bun": "./src/browserMarker.ts",
+      "node": "./dist/browserMarker.js",
+      "import": "./src/browserMarker.ts",
+      "types": "./src/browserMarker.ts"
     },
     "./atomic-file": {
       "bun": "./src/atomicFile.ts",
@@ -381,6 +387,12 @@
       "import": "./src/runtime/clipWindow.ts",
       "types": "./src/runtime/clipWindow.ts"
     },
+    "./runtime/clip-reveal": {
+      "bun": "./src/runtime/clipReveal.ts",
+      "node": "./dist/runtime/clipReveal.js",
+      "import": "./src/runtime/clipReveal.ts",
+      "types": "./src/runtime/clipReveal.ts"
+    },
     "./runtime/stacking-context": {
       "bun": "./src/runtime/stackingContext.ts",
       "node": "./dist/runtime/stackingContext.js",
@@ -594,6 +606,10 @@
         "import": "./dist/safePath.js",
         "types": "./dist/safePath.d.ts"
       },
+      "./browser-marker": {
+        "import": "./dist/browserMarker.js",
+        "types": "./dist/browserMarker.d.ts"
+      },
       "./atomic-file": {
         "import": "./dist/atomicFile.js",
         "types": "./dist/atomicFile.d.ts"
@@ -803,6 +819,10 @@
         "import": "./dist/runtime/clipWindow.js",
         "types": "./dist/runtime/clipWindow.d.ts"
       },
+      "./runtime/clip-reveal": {
+        "import": "./dist/runtime/clipReveal.js",
+        "types": "./dist/runtime/clipReveal.d.ts"
+      },
       "./runtime/stacking-context": {
         "import": "./dist/runtime/stackingContext.js",
         "types": "./dist/runtime/stackingContext.d.ts"
@@ -994,6 +1014,6 @@
     "vitest": "^4.1.11"
   },
   "optionalDependencies": {
-    "esbuild": "^0.25.12"
+    "esbuild": "^0.28.2"
   }
 }

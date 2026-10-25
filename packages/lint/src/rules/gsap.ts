@@ -1401,18 +1401,18 @@ export const gsapRules: LintRule<LintContext>[] = [
     const usesGsap = allScriptTexts.some((t) =>
       /gsap\.(to|from|fromTo|timeline|set|registerPlugin)\b/.test(t),
     );
-    const hasGsapScript = allScriptSrcs.some((src) => /gsap/i.test(src));
-    // Detect GSAP bundled inline (no src attribute). Match:
-    // - Producer's CDN-inlining comment: /* inlined: ...gsap... */
-    // - GSAP library internals: _gsScope, GreenSock, gsap.config
-    // - Large inline scripts (>5KB) that reference gsap (likely bundled library)
+    const isGsapCoreSrc = (src: string) =>
+      /(^|\/)gsap(-\d+(\.\d+)*)?(\.min)?\.js$/i.test(src.split(/[?#]/)[0] ?? "");
+    const hasGsapScript = allScriptSrcs.some(isGsapCoreSrc);
+    // Inline core is its inlining marker, license banner or library body, never usage like gsap.defaults().
     const hasInlineGsap = allScriptTexts.some(
       (t) =>
-        /\/\*\s*inlined:.*gsap/i.test(t) ||
-        /\b_gsScope\b/.test(t) ||
-        /\bGreenSock\b/.test(t) ||
-        /\bgsap\.(config|defaults|version)\b/.test(t) ||
-        (t.length > 5000 && /\bgsap\b/i.test(t)),
+        [...t.matchAll(/\/\*\s*inlined:\s*(\S+)\s*\*\//gi)].some((m) =>
+          isGsapCoreSrc(m[1] ?? ""),
+        ) ||
+        /\/\*!\s*\*\s*GSAP\s+\d/.test(t) ||
+        /Missing plugin\? gsap\.registerPlugin\(\)/.test(t) ||
+        /\b_gsScope\b/.test(t),
     );
 
     if (!usesGsap || hasGsapScript || hasInlineGsap || canInheritGsapFromHost) return [];
@@ -2424,6 +2424,42 @@ export const gsapRules: LintRule<LintContext>[] = [
           snippet: truncateSnippet(win.raw),
         });
       }
+    }
+    return findings;
+  },
+
+  // svg_round_cap_hidden_dash — a round or square cap hides a path with dash == gap == pathLength and
+  // offset == dash. The next dash then starts exactly at the path end, and Chrome's float rounding
+  // leaves a sliver there that the cap paints as a dot, on some curves and not others.
+  ({ tags }) => {
+    const findings: HyperframeLintFinding[] = [];
+    for (const tag of tags) {
+      const style = readAttr(tag.raw, "style") ?? "";
+      const read = (name: string) => readAttr(tag.raw, name) ?? readStyleProperty(style, name);
+      const cap = read("stroke-linecap");
+      if (cap !== "round" && cap !== "square") continue;
+      const pathLength = Number(readAttr(tag.raw, "pathLength"));
+      const offset = Number(read("stroke-dashoffset"));
+      const dashes = (read("stroke-dasharray") ?? "").split(/[\s,]+/).map(Number);
+      const [dash, gap = dash] = dashes;
+      if (dashes.length > 2 || dash === undefined || gap === undefined) continue;
+      if (![pathLength, offset, dash, gap].every(Number.isFinite) || pathLength <= 0) continue;
+      const period = dash + gap;
+      if (period <= 0 || offset < 0) continue;
+      const nextDashAt = period - (offset % period);
+      if (offset % period < dash || Math.abs(nextDashAt - pathLength) > pathLength * 1e-6) continue;
+      findings.push({
+        code: "svg_round_cap_hidden_dash",
+        severity: "warning",
+        message:
+          `<${tag.name}> is hidden with stroke-dasharray ${dash}${dashes.length > 1 ? ` ${gap}` : ""} and stroke-dashoffset ${offset} ` +
+          `on pathLength ${pathLength}, but its ${cap} cap can still paint a dot at the end of the path (Chrome rounds the zero-length dash differently per curve).`,
+        elementId: readAttr(tag.raw, "id") ?? undefined,
+        fixHint:
+          `Make the gap longer than the path (stroke-dasharray "${pathLength} ${+(pathLength * 1.2).toFixed(3)}" with stroke-dashoffset ${+(pathLength * 1.1).toFixed(3)}), ` +
+          "or keep the element visibility:hidden until its draw tween starts.",
+        snippet: truncateSnippet(tag.raw),
+      });
     }
     return findings;
   },
