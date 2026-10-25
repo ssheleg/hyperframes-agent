@@ -15,6 +15,10 @@ match `main` byte for byte when it is made, so `main`'s tests and each release's
 | `fix(cli): speech works from a sandboxed run and says why kokoro-onnx cannot load` | `pr/tts-sandbox-safe-signed` (`5fdb537f8`) | `dd1cba49d` (2026-10-24) |
 | `fix(cli): ignore the project folder's own FSEvents change; Node 26 test fixes`    | `pr/node26-macos-signed` (`5d6735d6b`)     | `dd1cba49d` (2026-10-24) |
 
+Checked on 2026-10-25 against upstream `main` `0289d96ac` (22 commits past `v0.8.193`): upstream has changed none
+of either branch's files since `dd1cba49d` (`git diff --stat dd1cba49d upstream/main -- <the branch's files>` prints
+nothing), so both still apply as built.
+
 To send one:
 
 1. If upstream `main` moved since the branch was built, build it again on the current one under a new name, so
