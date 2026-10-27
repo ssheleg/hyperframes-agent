@@ -37,6 +37,7 @@ import { emitStudioRenderComplete, emitStudioRenderError } from "./studioRenderT
 import { startRenderCpuSampler } from "../telemetry/renderCpu.js";
 import { mountDesktopRoutes } from "./desktopRoutes.js";
 import { isDevMode } from "../utils/env.js";
+import { insideHostApp } from "../utils/desktopApp.js";
 import { runRenderSetupWorker } from "../utils/cancellableProcess.js";
 import type { ProjectLintResult } from "@hyperframes/lint";
 import { resolveRenderBrowser } from "../browser/preflight.js";
@@ -66,6 +67,7 @@ import {
   HistoryClosedError,
   historyCache,
 } from "@hyperframes/studio-server";
+import { encoderJobOptions } from "@hyperframes/studio-server/encoder-options";
 import { resolveAutoProxy } from "../utils/projectConfig.js";
 import {
   clearElementScreenshotIsolation,
@@ -515,6 +517,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
       }),
   );
   const projectHistory = () => histories.get(projectDir);
+  const hostAppOwnsHistory = insideHostApp();
   watcher.addListener((changedPath) => {
     void histories.peek(projectDir)?.then((opened) => opened?.noteChange(changedPath));
   });
@@ -526,7 +529,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
   let shuttingDown = false;
 
   const adapter: PreviewApiAdapter = {
-    history: () => projectHistory(),
+    history: () => (hostAppOwnsHistory ? null : projectHistory()),
     loadSharp: () => loadSharpInBackground("image thumbnails"),
     // Explicit option wins (preview's resolved --proxy/--no-proxy + config);
     // otherwise honor the project's hyperframes.json media.autoProxy so every
@@ -685,10 +688,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
             ...(manualEditsRenderScript ? { renderBodyScripts: [manualEditsRenderScript] } : {}),
             ...(opts.composition ? { entryFile: opts.composition } : {}),
             ...(opts.variables ? { variables: opts.variables } : {}),
-            ...(opts.crf !== undefined ? { crf: opts.crf } : {}),
-            ...(opts.videoBitrate ? { videoBitrate: opts.videoBitrate } : {}),
-            ...(opts.videoFrameFormat ? { videoFrameFormat: opts.videoFrameFormat } : {}),
-            ...(opts.hdrMode ? { hdrMode: opts.hdrMode } : {}),
+            ...encoderJobOptions(opts),
             ...(opts.useGpu ? { useGpu: true } : {}),
             ...(opts.pageMotionBlur ? { pageMotionBlur: opts.pageMotionBlur } : {}),
           });

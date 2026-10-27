@@ -209,6 +209,27 @@ describe("createStudioServer project history (D-491)", () => {
     },
   );
 
+  // A preview an agent starts inside a host app's run can outlive it; holding the lock, it refused every later run.
+  it("never opens the history inside a host app's run, which owns it", async () => {
+    const opens: unknown[] = [];
+    historyState.open = async (options) => {
+      opens.push(options);
+      throw new Error("the history was opened");
+    };
+    vi.stubEnv("HYPERFRAMES_DESKTOP_PROJECT", "/a/project");
+    try {
+      const projectDir = tmpProject();
+      server = createStudioServer({ projectDir, historyRoot: tmpProject() });
+      const historyUrl = `/api/projects/${encodeURIComponent(basename(projectDir))}/history`;
+      expect((await server.app.request(historyUrl)).status).toBe(404);
+      expect(opens).toEqual([]);
+      await server.shutdown();
+    } finally {
+      vi.unstubAllEnvs();
+      historyState.open = null;
+    }
+  });
+
   it("never makes a request wait on another process's history lock again once it was busy", async () => {
     const waits: unknown[] = [];
     historyState.open = async (options) => {
@@ -861,8 +882,12 @@ describe("Studio file-change SSE", () => {
     );
     server = createStudioServer({ projectDir });
     const projectUrl = `/api/projects/${encodeURIComponent(basename(projectDir))}`;
-    expect((await server.app.request(`${projectUrl}/preview`)).status).toBe(200);
-    expect((await server.app.request(`${projectUrl}/preview/assets/logo.png`)).status).toBe(200);
+    // An unread asset body keeps logo.png open, and Windows refuses to move a folder holding an open file.
+    for (const path of [`${projectUrl}/preview`, `${projectUrl}/preview/assets/logo.png`]) {
+      const response = await server.app.request(path);
+      expect(response.status).toBe(200);
+      await response.arrayBuffer();
+    }
     return { projectDir, projectUrl };
   }
 

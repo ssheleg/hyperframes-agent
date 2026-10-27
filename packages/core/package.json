@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/core",
-  "version": "0.8.206",
+  "version": "0.8.209",
   "description": "",
   "repository": {
     "type": "git",
@@ -79,6 +79,24 @@
       "node": "./dist/atomicFile.js",
       "import": "./src/atomicFile.ts",
       "types": "./src/atomicFile.ts"
+    },
+    "./remove-tree": {
+      "bun": "./src/removeTree.ts",
+      "node": "./dist/removeTree.js",
+      "import": "./src/removeTree.ts",
+      "types": "./src/removeTree.ts"
+    },
+    "./rename-retry": {
+      "bun": "./src/renameWithRetry.ts",
+      "node": "./dist/renameWithRetry.js",
+      "import": "./src/renameWithRetry.ts",
+      "types": "./src/renameWithRetry.ts"
+    },
+    "./remove-scratch": {
+      "bun": "./src/removeScratch.ts",
+      "node": "./dist/removeScratch.js",
+      "import": "./src/removeScratch.ts",
+      "types": "./src/removeScratch.ts"
     },
     "./project-folders": {
       "bun": "./src/projectFolders.ts",
@@ -399,6 +417,12 @@
       "import": "./src/runtime/mediaClock.ts",
       "types": "./src/runtime/mediaClock.ts"
     },
+    "./runtime/media-steer": {
+      "bun": "./src/runtime/mediaSteer.ts",
+      "node": "./dist/runtime/mediaSteer.js",
+      "import": "./src/runtime/mediaSteer.ts",
+      "types": "./src/runtime/mediaSteer.ts"
+    },
     "./runtime/clip-reveal": {
       "bun": "./src/runtime/clipReveal.ts",
       "node": "./dist/runtime/clipReveal.js",
@@ -632,6 +656,18 @@
         "import": "./dist/atomicFile.js",
         "types": "./dist/atomicFile.d.ts"
       },
+      "./remove-tree": {
+        "import": "./dist/removeTree.js",
+        "types": "./dist/removeTree.d.ts"
+      },
+      "./rename-retry": {
+        "import": "./dist/renameWithRetry.js",
+        "types": "./dist/renameWithRetry.d.ts"
+      },
+      "./remove-scratch": {
+        "import": "./dist/removeScratch.js",
+        "types": "./dist/removeScratch.d.ts"
+      },
       "./project-folders": {
         "import": "./dist/projectFolders.js",
         "types": "./dist/projectFolders.d.ts"
@@ -844,6 +880,10 @@
       "./runtime/media-clock": {
         "import": "./dist/runtime/mediaClock.js",
         "types": "./dist/runtime/mediaClock.d.ts"
+      },
+      "./runtime/media-steer": {
+        "import": "./dist/runtime/mediaSteer.js",
+        "types": "./dist/runtime/mediaSteer.d.ts"
       },
       "./runtime/clip-reveal": {
         "import": "./dist/runtime/clipReveal.js",

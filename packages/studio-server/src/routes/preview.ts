@@ -43,6 +43,8 @@ import {
 } from "../helpers/safePath.js";
 import { getMimeType } from "../helpers/mime.js";
 import { buildSubCompositionHtml, hasBaseElement } from "../helpers/subComposition.js";
+import { withRootImportMap } from "../helpers/rootImportMap.js";
+import { withRootPathsRelative } from "../helpers/rootPaths.js";
 import {
   htmlHasGsapCore,
   insertGsapCoreBeforeHeadPlugin,
@@ -440,10 +442,11 @@ export const PREVIEW_BUNDLE_OPTIONS = {
 const previewBaseHref = (projectId: string) =>
   `/api/projects/${encodeURIComponent(projectId)}/preview/`;
 
-const withPreviewBase = (html: string, projectId: string) =>
-  hasBaseElement(html)
-    ? html
-    : injectTagsAtHeadStart(html, `<base href="${previewBaseHref(projectId)}">`);
+const withPreviewBase = (html: string, projectId: string) => {
+  const base = previewBaseHref(projectId);
+  const mapped = withRootImportMap(withRootPathsRelative(html, base), base);
+  return hasBaseElement(mapped) ? mapped : injectTagsAtHeadStart(mapped, `<base href="${base}">`);
+};
 
 function resolvePreviewGsapBaseUrl(adapter: PreviewApiAdapter): string {
   const configured = process.env.HYPERFRAMES_GSAP_BASE_URL;
@@ -506,12 +509,10 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
         bundled = ensureHfIds(diskMain.html);
         mainCompositionPath = diskMain.compositionPath;
       }
-      bundled = withPreviewRuntime(bundled, adapter.runtimeUrl);
+      // <base> and root paths under it, before the runtime adds the server's own root path
+      bundled = withPreviewRuntime(withPreviewBase(bundled, project.id), adapter.runtimeUrl);
       recordPreviewReferences(project.dir, bundled);
       recordPreviewBuilt(project.dir);
-
-      // Inject <base> for relative asset resolution
-      bundled = withPreviewBase(bundled, project.id);
 
       // Also covers elements the adapter injected; ids already present are kept.
       bundled = injectStudioPreviewAugmentations(
@@ -540,9 +541,9 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       // not the pre-request snapshot that may have been saved over.
       const fallback = resolveProjectMainHtml(project.dir, project.id);
       if (fallback) {
-        const fallbackHtml = withPreviewBase(
-          withPreviewRuntime(ensureHfIds(fallback.html), adapter.runtimeUrl),
-          project.id,
+        const fallbackHtml = withPreviewRuntime(
+          withPreviewBase(ensureHfIds(fallback.html), project.id),
+          adapter.runtimeUrl,
         );
         let fallbackAugmented = injectStudioPreviewAugmentations(
           await transformPreviewHtml(fallbackHtml, adapter, project, fallback.compositionPath),
@@ -664,6 +665,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       gsapBaseUrl,
     );
     if (!html) return c.text("not found", 404);
+    html = withRootImportMap(html, baseHref);
     recordPreviewReferences(project.dir, html);
     html = ensureHfIds(await transformPreviewHtml(html, adapter, project, compPath));
     html = injectStudioPreviewAugmentations(html, adapter, project.dir, compPath, {

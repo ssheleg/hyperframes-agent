@@ -313,6 +313,9 @@ export interface CheckTimings {
   launchSettleMs: number;
   seekLoopMs: number;
   contrastMs: number;
+  gridMs: number;
+  craftMs: number;
+  overlapMs: number;
 }
 
 export interface CheckBrowserResult {
@@ -331,6 +334,7 @@ export interface CheckBrowserResult {
   craft: CraftResult;
   screenshots: CheckScreenshot[];
   timings: CheckTimings;
+  renderReadyTimedOut: boolean;
   skipped: boolean;
 }
 

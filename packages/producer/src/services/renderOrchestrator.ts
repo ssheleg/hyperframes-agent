@@ -128,11 +128,11 @@ import {
   outputUsesH264Pipeline,
   type RenderOutputFormat,
 } from "./render/renderFormat.js";
+import { resolveHlsSegmentSeconds, validateHlsRenderConfig } from "./render/hlsConfig.js";
 import {
-  resolveHlsEncoderGopLock,
-  resolveHlsSegmentSeconds,
-  validateHlsRenderConfig,
-} from "./render/hlsConfig.js";
+  resolveDeliveryEncoderOptions,
+  validateDeliveryEncoderConfig,
+} from "./render/deliveryEncoder.js";
 import { createMemorySampler, type MemorySampler, updateJobStatus } from "./render/shared.js";
 import { frameCacheOptions } from "./render/frameCacheBudget.js";
 import { buildRenderErrorDetails } from "./render/cleanup.js";
@@ -415,6 +415,12 @@ export interface RenderConfig {
   crf?: number;
   /** Target video bitrate (e.g. "10M"). Mutually exclusive with `crf`. */
   videoBitrate?: string;
+  /** Keyframe every N seconds (mp4). A maximum where chunks join, as on Lambda. */
+  keyframeIntervalSeconds?: number;
+  /** Peak bitrate cap (e.g. "8M", mp4) alongside CRF. */
+  maxBitrate?: string;
+  /** Rate-cap buffer; defaults to twice `maxBitrate`. */
+  bufferSize?: string;
   /**
    * Source-video frame extraction format. Defaults to `"auto"`, which preserves
    * the historical behavior: alpha/alpha-capable sources extract as PNG, all
@@ -1253,6 +1259,7 @@ export async function executeDiskCaptureWithAdaptiveRetry(options: {
   /** Mutated in place: the workers' page-error console lines, for the render's error count. */
   pageErrorLines?: string[];
   openAttempt?: OpenStallAttempt;
+  verifyFirstSession?: (session: CaptureSession) => Promise<void>;
 }): Promise<CaptureAttemptSummary[]> {
   const attempts: CaptureAttemptSummary[] = [];
   let currentWorkers = options.initialWorkerCount;
@@ -1331,6 +1338,7 @@ export async function executeDiskCaptureWithAdaptiveRetry(options: {
               : undefined,
             undefined,
             options.cfg,
+            { verifyFirstSession: options.verifyFirstSession },
           );
           pushWorkerDedupPerfs(workerResults, options.dedupPerfs);
           if (options.pageErrorLines) pushWorkerPageErrors(workerResults, options.pageErrorLines);
@@ -2901,6 +2909,7 @@ export async function executeRenderJob(
   // Ahead of the work dir / log file / execution context: a config the format
   // cannot honor must fail before anything is written to disk.
   validateHlsRenderConfig(job.config);
+  validateDeliveryEncoderConfig(job.config);
   const debugDir = resolveRenderDebugDir();
   const outputDir = dirname(outputPath);
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
@@ -2996,15 +3005,18 @@ async function executeRenderPipeline(input: {
   const isGif = outputFormat === "gif";
   const isHls = outputFormat === "hls";
   // Segment length and the matching GOP, resolved once. Both encoder paths
-  // spread the same `hlsEncoderGopLock`, so they cannot disagree — a GOP that
+  // spread the same `deliveryEncoder`, so they cannot disagree — a GOP that
   // is not exactly `segmentSeconds × fps` frames silently produces
   // variable-length segments instead of failing.
   const hlsSegmentSeconds = isHls ? resolveHlsSegmentSeconds(job.config) : undefined;
-  const hlsEncoderGopLock = resolveHlsEncoderGopLock(
-    outputFormat,
-    job.config.fps,
-    job.config.hlsSegmentSeconds,
-  );
+  const deliveryEncoder = resolveDeliveryEncoderOptions({
+    format: outputFormat,
+    fps: job.config.fps,
+    hlsSegmentSeconds: job.config.hlsSegmentSeconds,
+    keyframeIntervalSeconds: job.config.keyframeIntervalSeconds,
+    maxBitrate: job.config.maxBitrate,
+    bufferSize: job.config.bufferSize,
+  });
   const artifactTransaction = new ArtifactTransaction(
     outputPath,
     isPngSequence || isHls ? "directory" : "file",
@@ -4591,6 +4603,7 @@ async function executeRenderPipeline(input: {
             preset,
             effectiveQuality,
             effectiveBitrate,
+            deliveryEncoder,
             fileServer: activeFileServer,
             buildCaptureOptions,
             createRenderVideoFrameInjector,
@@ -4620,9 +4633,7 @@ async function executeRenderPipeline(input: {
       // and we fall back to the disk path below.
       let streamingHandled = false;
       if (capturePlan.kind === "sdr_segmented") {
-        const segmentedPlan = capturePlan;
         const captureFrameStart = Date.now();
-        resetCaptureAttemptProgress(job);
         const segmentFrames = resolveSegmentFrames(process.env);
         // One binding for the hash and the encoder so the two cannot drift.
         const segmentImageFormat = captureOptions.format || "jpeg";
@@ -4638,6 +4649,9 @@ async function executeRenderPipeline(input: {
           preset: preset.preset,
           quality: effectiveQuality,
           bitrate: effectiveBitrate,
+          maxBitrate: deliveryEncoder.maxBitrate,
+          bufferSize: deliveryEncoder.bufferSize,
+          gopSize: deliveryEncoder.gopSize,
           pixelFormat: preset.pixelFormat,
           imageFormat: segmentImageFormat,
           useGpu: job.config.useGpu === true,
@@ -4668,67 +4682,140 @@ async function executeRenderPipeline(input: {
           // run's segments must never be spliced into this output.
           rmSync(segmentDir, { recursive: true, force: true });
         }
-        const segmentManifest: SegmentManifest = readSegmentManifest(segmentDir) ?? {
+        const emptySegmentManifest = (): SegmentManifest => ({
           version: 1,
           planHash: segmentPlanHash,
           totalFrames,
           segmentFrames,
           completed: [],
+        });
+        let segmentManifest = readSegmentManifest(segmentDir) ?? emptySegmentManifest();
+        const invokeSegmented = () => {
+          if (capturePlan.kind !== "sdr_segmented") {
+            throw new Error(`Cannot invoke segmented stage with ${capturePlan.kind} plan`);
+          }
+          const segmentedPlan = capturePlan;
+          resetCaptureAttemptProgress(job);
+          return observeRenderStage(
+            observability,
+            "capture_segmented",
+            captureStageObservationData(),
+            () =>
+              runCaptureSegmentedStage({
+                fileServer: activeFileServer,
+                workDir,
+                framesDir,
+                videoOnlyPath,
+                job,
+                totalFrames,
+                cfg,
+                plan: segmentedPlan,
+                log,
+                probeSession,
+                outputFormat,
+                streamingEncoderOptions: {
+                  fps: job.config.fps,
+                  width: captureCompositionWidth ?? width,
+                  height: captureCompositionHeight ?? height,
+                  codec: preset.codec,
+                  preset: preset.preset,
+                  quality: effectiveQuality,
+                  bitrate: effectiveBitrate,
+                  pixelFormat: preset.pixelFormat,
+                  vp9CpuUsed: cfg.vp9CpuUsed,
+                  useGpu: job.config.useGpu,
+                  imageFormat: segmentImageFormat,
+                  hdr: preset.hdr,
+                  // Each segment sets its own GOP (at most the interval); hls never reaches this route.
+                  ...deliveryEncoder,
+                },
+                buildCaptureOptions,
+                createRenderVideoFrameInjector,
+                abortSignal: executionSignal,
+                assertNotAborted,
+                onProgress,
+                dedupPerfs,
+                segmentFrames,
+                segmentDir,
+                workerCount: segmentedPlan.workerCount,
+                browserRecycleEverySegments: resolveSegmentBrowserRecycle(process.env),
+                completedSegments,
+                onSegmentComplete: (entry) => {
+                  segmentManifest.completed = [
+                    ...segmentManifest.completed.filter((e) => e.index !== entry.index),
+                    { ...entry, completedAt: new Date().toISOString() },
+                  ];
+                  writeSegmentManifest(segmentDir, segmentManifest);
+                },
+                updateCaptureObservability,
+              }),
+          );
         };
-        const segmentedRes = await observeRenderStage(
-          observability,
-          "capture_segmented",
-          captureStageObservationData(),
-          () =>
-            runCaptureSegmentedStage({
-              fileServer: activeFileServer,
-              workDir,
-              framesDir,
-              videoOnlyPath,
-              job,
-              totalFrames,
-              cfg,
-              plan: segmentedPlan,
-              log,
-              probeSession,
-              outputFormat,
-              streamingEncoderOptions: {
-                fps: job.config.fps,
-                width: captureCompositionWidth ?? width,
-                height: captureCompositionHeight ?? height,
-                codec: preset.codec,
-                preset: preset.preset,
-                quality: effectiveQuality,
-                bitrate: effectiveBitrate,
-                pixelFormat: preset.pixelFormat,
-                vp9CpuUsed: cfg.vp9CpuUsed,
-                useGpu: job.config.useGpu,
-                imageFormat: segmentImageFormat,
-                hdr: preset.hdr,
-                // No hlsEncoderGopLock here: each segment sets its own GOP to
-                // its own length, and hls never reaches this route.
-              },
-              buildCaptureOptions,
-              createRenderVideoFrameInjector,
-              abortSignal: executionSignal,
-              assertNotAborted,
-              onProgress,
-              dedupPerfs,
-              segmentFrames,
-              segmentDir,
-              workerCount: segmentedPlan.workerCount,
-              browserRecycleEverySegments: resolveSegmentBrowserRecycle(process.env),
-              completedSegments,
-              onSegmentComplete: (entry) => {
-                segmentManifest.completed = [
-                  ...segmentManifest.completed.filter((e) => e.index !== entry.index),
-                  { ...entry, completedAt: new Date().toISOString() },
-                ];
-                writeSegmentManifest(segmentDir, segmentManifest);
-              },
-              updateCaptureObservability,
-            }),
-        );
+        let segmentedRes;
+        try {
+          segmentedRes = await invokeSegmented();
+        } catch (err) {
+          const isVerifyError = isDrawElementVerificationError(err);
+          const isDeStall = isDeRendererStallError(err);
+          if (
+            (!isVerifyError && !isDrawElementCaptureError(err) && !isDeStall) ||
+            err instanceof RenderCancelledError ||
+            executionSignal?.aborted === true
+          ) {
+            throw err;
+          }
+          deSelfVerifyFallback = isVerifyError;
+          const t = deVerifyFallbackTelemetry(err);
+          deFallbackReason = isVerifyError
+            ? t.reason
+            : isDeStall
+              ? "de_renderer_stall"
+              : "capture_error";
+          deFallbackFailedDb = t.failedDb;
+          deFallbackFrameIndex = t.frameIndex;
+          deFallbackThresholdDb = t.thresholdDb;
+          log.warn(
+            "[Render] drawElement capture failed on the segmented path; re-rendering via screenshot",
+            {
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+          observability.checkpoint(
+            "capture_segmented",
+            "drawElement capture failed; retrying with a fresh screenshot session",
+          );
+          if (probeSession) {
+            lastBrowserConsole = probeSession.browserConsoleBuffer;
+            const orphaned = probeSession;
+            probeSession = null;
+            await closeOrphanedProbeForRetry(orphaned, closeCaptureSession, log, "segmented");
+          }
+          // The plan hash does not cover the capture mode, so segments this
+          // attempt (or a resumed run) encoded with drawElement would otherwise
+          // be spliced next to screenshot ones. drawElement and screenshot
+          // frames are not byte-identical, and those segments were never
+          // self-verified, so the retry re-captures every segment.
+          rmSync(segmentDir, { recursive: true, force: true });
+          completedSegments = new Set<number>();
+          segmentManifest = emptySegmentManifest();
+          dedupPerfs.length = 0;
+          capturePlan = replanAfterFailure(capturePlan, {
+            kind: isVerifyError ? "draw_element_verification" : "draw_element_capture",
+          });
+          syncCapturePlan();
+          updateCaptureObservability({
+            forceScreenshot: capturePlan.forceScreenshot,
+            deSelfVerifyFallback,
+            deFallbackReason,
+            deFallbackFailedDb,
+            deFallbackFrameIndex,
+            deFallbackThresholdDb,
+          });
+          segmentedRes = await invokeSegmented();
+          // The first attempt's error marked the phase failed; the retry
+          // recovered it, so the render is not branded as failed.
+          observability.clearFailure("capture_segmented");
+        }
         if (segmentedRes.success) {
           streamingHandled = true;
           workerCount = segmentedRes.workerCount;
@@ -4812,7 +4899,7 @@ async function executeRenderPipeline(input: {
                   // assemble stage's `-c copy` segmentation cuts exactly on
                   // the segment boundary. Every other format leaves the
                   // encoder's open-GOP output untouched.
-                  ...hlsEncoderGopLock,
+                  ...deliveryEncoder,
                 },
                 buildCaptureOptions,
                 createRenderVideoFrameInjector,
@@ -5056,7 +5143,7 @@ async function executeRenderPipeline(input: {
           engineConfig: cfg,
           // Same value the streaming encoder above spreads — the disk and
           // chunked-concat encoders need an identical GOP lock for HLS.
-          ...hlsEncoderGopLock,
+          ...deliveryEncoder,
           abortSignal: executionSignal,
           assertNotAborted,
           onProgress,

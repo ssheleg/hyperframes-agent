@@ -1,7 +1,8 @@
 // fallow-ignore-file complexity code-duplication
 import { isSelfOrAncestorHidden, memberGroupKey, isMemberGroupHidden } from "./mediaHidden.js";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "fs";
-import { renameWithRetry } from "../utils/renameWithRetry.js";
+import { renameWithRetry } from "@hyperframes/core/rename-retry";
+import { removeScratch } from "@hyperframes/core/remove-scratch";
 import { join, dirname, isAbsolute, relative } from "path";
 import { parseHTML } from "linkedom";
 import { extractAudioMetadata, type AudioMetadata } from "../utils/ffprobe.js";
@@ -129,11 +130,12 @@ function buildRampFilterComplex(
   duration: number,
   headFilter: string | null,
   tailFilter: string | null,
+  input: string,
 ): string {
   const slices = Math.min(MAX_RAMP_SLICES, Math.max(1, Math.ceil(duration / RAMP_SLICE_SECONDS)));
   const step = duration / slices;
   const split = Array.from({ length: slices }, (_, i) => `[s${i}]`).join("");
-  const parts = [`[0:a]${headFilter ? `${headFilter},` : ""}asplit=${slices}${split}`];
+  const parts = [`[${input}]${headFilter ? `${headFilter},` : ""}asplit=${slices}${split}`];
   for (let i = 0; i < slices; i += 1) {
     const from = sourceTimeAt(lane, i * step);
     const to = sourceTimeAt(lane, (i + 1) * step);
@@ -159,16 +161,23 @@ function preparedAudioOutputArgs(
   playbackRate: RateSpec,
   duration: number,
   headFilter: string | null,
+  stream: string | null,
 ): string[] {
   const channelFilter = metadata?.channels === 1 ? STEREO_CHANNEL_FILTER : null;
   const outputArgs = channelFilter ? [] : ["-ac", "2"];
   if (typeof playbackRate === "object") {
-    const graph = buildRampFilterComplex(playbackRate, duration, headFilter, channelFilter);
+    const graph = buildRampFilterComplex(
+      playbackRate,
+      duration,
+      headFilter,
+      channelFilter,
+      stream ?? "0:a",
+    );
     return ["-filter_complex", graph, "-map", "[out]", ...outputArgs];
   }
   const filters = [headFilter, channelFilter, buildAtempoFilter(playbackRate)].filter(Boolean);
   if (filters.length > 0) outputArgs.push("-af", filters.join(","));
-  return outputArgs;
+  return [...(stream ? ["-map", stream] : []), ...outputArgs];
 }
 
 function escapeExpressionCommas(expression: string): string {
@@ -718,7 +727,13 @@ async function extractAudioSegment(
         { padToDuration: true },
       );
       if (!cycle.success) return { ...cycle, outputPath };
-      const outputArgs = preparedAudioOutputArgs(metadata, normalizedPlaybackRate, duration, null);
+      const outputArgs = preparedAudioOutputArgs(
+        metadata,
+        normalizedPlaybackRate,
+        duration,
+        null,
+        null,
+      );
       const result = await runFfmpeg(
         [
           "-stream_loop",
@@ -751,7 +766,7 @@ async function extractAudioSegment(
         failure,
       };
     } finally {
-      rmSync(cycleDir, { recursive: true, force: true });
+      removeScratch(cycleDir);
     }
   }
   const inputSeek = mediaStart >= (metadata?.latestStreamLeadSeconds ?? 0);
@@ -771,6 +786,7 @@ async function extractAudioSegment(
     ]
       .filter(Boolean)
       .join(",") || null,
+    metadata ? `0:a:${metadata.audioStream}` : null,
   );
   const readFrom = fromSidecar ? audioSidecarUrl : srcPath;
 
@@ -979,7 +995,7 @@ async function mixAudioTracksFlat(
       currentArgs[currentArgs.indexOf("-filter_complex_script")] = "-/filter_complex";
       return await runFfmpeg(currentArgs, { signal, timeout: ffmpegProcessTimeout });
     } finally {
-      rmSync(scriptDir, { recursive: true, force: true });
+      removeScratch(scriptDir);
     }
   };
 
@@ -1163,7 +1179,7 @@ async function mixGroupMembersFlat(
       currentArgs[currentArgs.indexOf("-filter_complex_script")] = "-/filter_complex";
       return await runFfmpeg(currentArgs, { signal, timeout: ffmpegProcessTimeout });
     } finally {
-      rmSync(scriptDir, { recursive: true, force: true });
+      removeScratch(scriptDir);
     }
   };
 
@@ -1249,8 +1265,8 @@ async function sumInSlices(
       signal,
       config,
     );
-    rmSync(running.srcPath, { force: true });
-    rmSync(slicePath, { force: true });
+    removeScratch(running.srcPath);
+    removeScratch(slicePath);
     if (!folded.success) return folded;
     running = wavTrack(id, foldedPath);
   }
@@ -1273,10 +1289,10 @@ async function mixGroupMembers(
   try {
     const summed = await sumInSlices(memberTracks, scratchDir, totalDuration, signal, config);
     if (!summed.success) return summed;
-    renameWithRetry(summed.track.srcPath, outputPath);
+    renameWithRetry(summed.track.srcPath, outputPath, { copyFallback: true });
     return { success: true, degradedAutomation: summed.degradedAutomation };
   } finally {
-    rmSync(scratchDir, { recursive: true, force: true });
+    removeScratch(scratchDir);
   }
 }
 
@@ -1321,7 +1337,7 @@ async function mixAudioTracks(
         }
       : mixed;
   } finally {
-    rmSync(scratchDir, { recursive: true, force: true });
+    removeScratch(scratchDir);
   }
 }
 
@@ -1374,7 +1390,8 @@ async function mixThroughFloatSum(
       failures: [failure],
     };
   }
-  if (config?.keepEncoderInputAt) renameWithRetry(encoderInput, config.keepEncoderInputAt);
+  if (config?.keepEncoderInputAt)
+    renameWithRetry(encoderInput, config.keepEncoderInputAt, { copyFallback: true });
   return {
     ...sum,
     outputPath,

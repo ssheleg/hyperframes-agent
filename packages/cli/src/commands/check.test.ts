@@ -2248,7 +2248,9 @@ describe("check pipeline", () => {
         (finding) => finding.code === "check_runtime_failure",
       );
       expect(failure?.message).toMatch(/^Check did not finish within its deadline/);
-      expect(failure?.message).toContain("while running the overlap pass.");
+      expect(failure?.message).toContain(
+        "while running the overlap pass (overlap probes from 0s).",
+      );
       expect(failure?.message).toContain("checking samples 0.0, running the overlap pass 120.0.");
     } finally {
       vi.useRealTimers();
@@ -3398,7 +3400,7 @@ describe("check report telemetry", () => {
       noMotion(),
     );
 
-    expect(result.timings).toEqual({ launchSettleMs: 0, seekLoopMs: 20, contrastMs: 5 });
+    expect(result.timings).toMatchObject({ launchSettleMs: 0, seekLoopMs: 20, contrastMs: 5 });
   });
 });
 

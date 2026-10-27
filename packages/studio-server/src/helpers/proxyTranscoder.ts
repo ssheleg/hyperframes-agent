@@ -14,6 +14,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } 
 import { hdrToSdrToneMapFilter, type PreviewProxyBox } from "@hyperframes/core";
 import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
 import { alphaDecoderFor } from "@hyperframes/parsers/media-alpha";
+import { ffmpegHasHdrFilters } from "./hdrFilters.js";
 import { probeFirstFrameColour, probeMediaMetadata } from "./mediaMetadata.js";
 import { cleanupProxyCache } from "./proxyCache.js";
 import {
@@ -352,30 +353,8 @@ interface RememberedFailure {
 
 const failedTranscodes = new Map<string, RememberedFailure>();
 
-let hdrFilterCheck: { ffmpegPath: string; promise: Promise<void> } | undefined;
-
-function ensureHdrFilters(ffmpegPath: string): Promise<void> {
-  if (hdrFilterCheck?.ffmpegPath === ffmpegPath) return hdrFilterCheck.promise;
-  const promise = new Promise<void>((resolveCheck, rejectCheck) => {
-    const proc = spawn(ffmpegPath, ["-hide_banner", "-filters"], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout = "";
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-    proc.on("error", () => rejectCheck(new FfmpegMissingFilterError()));
-    proc.on("close", (code) => {
-      if (code !== 0 || !/\bzscale\b/.test(stdout) || !/\btonemap\b/.test(stdout)) {
-        rejectCheck(new FfmpegMissingFilterError());
-      } else {
-        resolveCheck();
-      }
-    });
-  });
-  hdrFilterCheck = { ffmpegPath, promise };
-  return promise;
+async function ensureHdrFilters(ffmpegPath: string): Promise<void> {
+  if (!(await ffmpegHasHdrFilters(ffmpegPath))) throw new FfmpegMissingFilterError();
 }
 
 function rememberFailure(cachePath: string, error: unknown): void {
@@ -727,6 +706,10 @@ async function runFfmpeg(
   const videoFilter = await buildVideoFilter(ffmpegPath, sourcePath, metadata, keepsAlpha, box);
   const alphaDecoder = keepsAlpha ? alphaDecoderFor(metadata.color.codecName) : null;
   const decoderArgs = alphaDecoder ? ["-c:v", alphaDecoder] : [];
+  const streamArgs = [
+    ...["-map", "0:V:0"],
+    ...(metadata.audioStream === undefined ? [] : ["-map", `0:a:${metadata.audioStream}`]),
+  ];
   const totalSeconds = metadata.durationSeconds;
   // libvpx scales poorly across threads, so alpha pieces run side by side with the cores shared out.
   const gate = keepsAlpha ? ALPHA_PIECE_GATE : UNGATED;
@@ -746,6 +729,7 @@ async function runFfmpeg(
         ...decoderArgs,
         "-i",
         sourcePath,
+        ...streamArgs,
         ...(range ? ["-t", String(range.lengthSeconds)] : []),
         "-vf",
         videoFilter,

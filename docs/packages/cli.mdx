@@ -222,11 +222,34 @@ link-local and special-use addresses are refused. IPv6-only sites are currently
 unsupported. Plain WebSocket upgrades are refused; slow or refused resources
 may be absent from the capture.
 
-Capture needs direct internet access. Since 0.8.164 it does not use
-`HTTPS_PROXY` or `HTTP_PROXY`: its own proxy dials each checked public address
-itself. Where the only way out is a proxy, as in some sandboxes and corporate
-networks, every page fails with `net::ERR_TUNNEL_CONNECTION_FAILED`, even though
-`curl` reaches the same site through that proxy.
+By default capture needs direct internet access and ignores `HTTPS_PROXY` and
+`HTTP_PROXY`: its own proxy dials each checked public address itself. Where the
+only way out is an egress proxy, as in some sandboxes, hosted agents and
+corporate networks, set `HYPERFRAMES_CAPTURE_PROXY` to that proxy's `http://`
+URL (credentials in the URL are sent as `Proxy-Authorization`):
+
+```bash
+HYPERFRAMES_CAPTURE_PROXY=http://127.0.0.1:3128 npx hyperframes capture https://stripe.com
+```
+
+Then every connection capture makes — the browser's page traffic and every
+asset, font, Lottie and video download, including `capture --video` — goes to
+that proxy, by hostname: `CONNECT host:443` for HTTPS, an absolute-URL request
+for HTTP. Capture resolves no names itself. It still refuses non-HTTP(S) URLs,
+URL credentials, literal private, loopback, link-local and special-use IPv4
+addresses and local-looking names (`localhost`, `.local`, `.internal`, …)
+before contacting the proxy, and HTTPS certificates are still verified end to
+end through the tunnel. What moves to the proxy is the DNS check: without the
+setting, capture resolves a name, checks every answer and connects to that
+checked number, so DNS rebinding cannot slip a private address in between. With
+it, the proxy resolves and connects, so the proxy must refuse private and
+internal destinations itself, resolving, checking and connecting as one step. A
+proxy refusal makes that page or asset fail like any other unreachable
+resource. An empty or unset value keeps the default behaviour; a value that is
+not an `http://` URL stops `capture` with an error. `.env` files cannot set it.
+Optional AI image captioning calls its vision API through Node's own `fetch`,
+which this setting does not change; use `--skip-vision` or Node's
+`NODE_USE_ENV_PROXY=1` there.
 
 Capture uses a temporary browser profile with non-proxied WebRTC UDP disabled.
 The profile and proxy are removed when the browser closes. The Chromium sandbox
@@ -272,6 +295,8 @@ thin with counts on it was cut short.
 | `--skip-vision`     | Do not run AI image captioning                                                                                                                    |
 | `--max-screenshots` | Maximum page-capture files, including the full-page plate; derived contact sheets are excluded. Positive integer; default 21. A value of 1 captures only the top viewport.                                                                              |
 | `--json`            | Structured output for programmatic use                                                                                                             |
+| `--local-file`      | Capture a local HTML file, or a directory's `index.html`, instead of a URL. See [Local HTML files](#local-html-files).                                       |
+| `--local-root`      | With `--local-file`: the directory the page may read local files from. Default: the file's directory.                                                |
 | `--video <folder>`  | Switch to video-download mode against a captured folder's manifest. Pair with `--list`, `--index`, or `--video-url`.                               |
 
 You get `AGENTS.md`, `CLAUDE.md`, `meta.json`, scroll screenshots, extracted
@@ -291,6 +316,33 @@ For AI image descriptions, set `GEMINI_API_KEY` in a `.env` file
 (~$0.001/image), or `OPENROUTER_API_KEY` to route any vision model through
 [OpenRouter](https://openrouter.ai) — it wins if both are set, and
 `HYPERFRAMES_OPENROUTER_MODEL` overrides the model.
+
+#### Local HTML files
+
+`--local-file` captures an HTML file on disk instead of a URL, for example a
+page someone uploaded. Pass a directory to open its `index.html`.
+
+```bash
+npx hyperframes capture --local-file ./upload/index.html -o upload-capture --json
+npx hyperframes capture --local-file ./site/pages/about.html --local-root ./site
+```
+
+The URL argument still accepts only public HTTP(S) URLs; a `file://` URL there
+is refused as before. With `--local-file`, the CLI serves the file's directory
+(or `--local-root`, which must contain the file) on a loopback port for the
+length of the capture, and Chrome loads the page from it. Only regular files
+whose real path is inside that root are served, the HTML file included: `../`
+paths and symlinks that leave it answer 404, a symlinked HTML file that points
+outside is refused, and the page cannot read `file://` URLs. Every other
+request, remote or private, goes through the capture proxy and the
+public-address policy above, so a reference to a private address stays refused
+and counts as `unavailable`. Local images, fonts and stylesheets are copied
+into the capture like remote ones; `--skip-assets` skips images and SVGs
+exactly as it does for a URL. The temporary server never appears in the
+output: `url` in the JSON result, `meta.json` (`source`, and an `id` named after
+the file or its folder), `AGENTS.md` and the extracted files all use `file://`
+URLs of the same paths inside the root. With `HYPERFRAMES_CAPTURE_PROXY` set,
+local files are still read directly; every other request goes to that proxy.
 
 ### `transcribe`
 
@@ -620,6 +672,9 @@ npx hyperframes beats [dir]
 npx hyperframes beats [dir] --json   # { ok, file, count, bpm }
 ```
 
+`beats` takes the project folder, not a media file. For the beats of one audio
+or video file, run `npx hyperframes audio <file> --only beats --json`.
+
 `beats` finds the music track — an `<audio>` element with
 `data-timeline-role="music"`, or an id like `music`, `bgm`, or `soundtrack` —
 decodes it with ffmpeg, runs the same beat tracker Studio uses, and writes
@@ -649,6 +704,7 @@ Measure how sound moves in time, so a cut or an animation can land on it.
 
 ```bash
 npx hyperframes audio sfx/whoosh.mp3                  # one file, in file seconds
+npx hyperframes audio sfx/hit.wav sfx/whoosh.mp3      # several files, one report
 npx hyperframes audio sfx/hit.wav --place-at 4.2      # not in the film yet: where it lands if it starts at 4.2 s
 npx hyperframes audio --element '#riser'              # one clip of the film, in film seconds
 npx hyperframes audio --at 12                         # every sound playing at 12 s
@@ -705,17 +761,40 @@ npx hyperframes audio refs/episode.mp4 --read --range 60,70   # only what overla
 ```
 
 - **voice**: one line per sentence with its text, speaking rate against the
-  recording's mean, pitch when it is 3 semitones or more off the median, and a
-  rising or falling end; pauses of 0.4 s or more between sentences.
+  recording's mean, pitch when it is 3 semitones or more off the median, a
+  rising or falling end, and, where music plays under it, the voice's and the
+  music's integrated loudness over just that overlap and which is louder:
+  `voice -14 LUFS, music -18 LUFS: voice 4 dB over music`, `…: music 4 dB over
+  voice`, or `…: level with each other` within 0.5 dB. Drums count as music;
+  both are measured on the mono downmix. Pauses of 0.4 s or more between words keep
+  the `pause` kind and say what still plays through them: the effects in them,
+  the music or ambience with its times, the recording's level when no bed is
+  read, or `silent` under -55 dBFS.
 - **effects**: each sound effect with a kind (`riser`, `boom`, `thump`, `whoosh`,
   `click`, `tick`, `ding`, `hit`), the group of identical sounds it belongs to
-  (`S1` is the most used), band, attack, tail, how far it stands over the music,
-  and where it falls in a pause. Quick runs of one sound are a single line with a
-  count; hits on the music's beat are the music's own drums, and sounds more than
-  20 dB under the recording are separation residue nobody hears; both are left out.
+  (`S1` is the most used), band, attack, tail, its peak, and where it falls in a
+  pause. The peak is the loudest 20 ms of the whole recording at the effect, in
+  dBFS, so it does not depend on how a stem was separated or encoded; the figure
+  after it names its reference: `+4 dB over music` against the music's level in
+  the second before the effect (after it, when the music starts with it), `+12 dB
+  over what played before` against the recording's median level in the half
+  second before, or `out of silence`. A sound ends where the next one starts, so
+  a run of drum hits is not read as one long riser. Quick runs of one sound are a
+  single line with a count; hits on the music's beat are the music's own drums,
+  and sounds more than 20 dB under the recording are separation residue nobody
+  hears; both are left out.
 - **music**: the bed split at its cut-outs, each part naming its piece, the
   instruments that carry it and its tempo, whether it starts, resumes after a
-  break, returns or is new, and where it fades.
+  break, returns or is new, and where it fades. Music and ambience must be
+  sustained: where sound fills less than half of the surrounding 2 s, as with
+  scattered hits or a short tone that bridge into the music, the bed is read for
+  effects instead, and the music starts where its sound holds.
+- **ambience**: stretches of the bed without detected musical evidence, reported
+  with their level in dBFS and called quiet under -45 dBFS. The gate counts a
+  beat detected within that stretch, concentrated pitch-class energy, or multiple
+  leading stems as evidence of music. This is a signal heuristic, not a guarantee: tonal or
+  rhythmic noise can count as music, and music with weak evidence can count as
+  ambience. Breaks are reported only between adjacent music stretches.
 
 Sentences come from a transcript: `--transcript <file>`, or
 `<recording>.transcript.json` beside the recording. Without one, voice lines
@@ -729,7 +808,10 @@ same origin's direct-upload endpoints. The separation request waits for the
 stems; an in-progress response or dropped connection retries the same request
 with the same idempotency key (`HYPERFRAMES_AUDIO_STEMS_TIMEOUT_MS`, 30 minutes
 by default). Effects are read
-from the drums stem and the music from the other four. Without stems, effects are
+from the drums stem and from the other four stems wherever they hold neither
+music nor ambience, each stem on its own so a click inside a tone is still
+found; the music and ambience are read from those four stems; the header
+lists only the stems that carry sound, with their level. Without stems, effects are
 read from the mix outside speech and the music is not read; with neither stems nor
 a transcript, voice and effects are not read either, because the mix alone does
 not tell speech from music. Each case says so in a warning.
@@ -737,6 +819,22 @@ not tell speech from music. Each case says so in a warning.
 The result is computed once per file content and kept in `.hyperframes/read-audio`
 under the project, with the stems; the text output ends with the path of the
 whole recording's text, and `--json` returns the analysis.
+
+Read schema version 4 adds `effects.events[].peakDb` (dBFS); `riseDb` is now the
+peak over the recording's level before the effect and `null` when that was
+silent, and `overMusicDb` measures the music next to the effect, not under its
+peak. Sentences gain `againstMusic: { voiceLufs, musicLufs } | null`, and pauses
+gain `recordingDb`, the recording's level through the pause. Version 3 analyses are
+recomputed from cached stems.
+
+Read schema version 3 changes `analysis.stems` from names to `{ name, db }[]`,
+ordered loudest first. Only stems with frames at or above -55 dBFS are listed;
+`db` is the rounded power-average level of those frames, not an average of dB
+values or the level across silent gaps. `analysis.ambience` contains
+`{ start, end, db }` stretches, or `null` when stems were not read. Music energy
+and effect levels over music exclude stretches classified as ambience. Version 2
+cached analyses are recomputed using existing cached stems; JSON consumers must
+use `stem.name` instead of treating each stem as a string.
 
 Every measurement comes from a provider ladder, tried in this order until one
 answers:
@@ -1446,6 +1544,11 @@ history. That path is resolved to an absolute one, and every agent on a project 
 lock lives there, while the turn marker lives in the project. A running preview server records to
 its own location.
 
+`history`, `render`, `check` and `snapshot` look for that preview server by probing local ports
+3002-3101 and 5190. Set `HYPERFRAMES_NO_PREVIEW_DISCOVERY=1` to skip the probe, for example where
+outbound connections are fenced and every refused probe is reported: history then always opens
+directly, as when no preview is running. `--selection` and `--context` still look for a preview.
+
 When a file in the entry has changed since, `undo` writes nothing, exits 2 and
 lists the newer entries. Run it again with `--just-this` to put back only that
 entry's files over the newer edits, or `--back-to-before` to go back to before
@@ -1496,6 +1599,9 @@ Quality and file size:
 | ---------------------- | --------------- | -------------------------------------------------------------------------------------------------------- |
 | `--crf`                | from `--quality`| Override MP4/WebM encoder CRF, 0–51. Lower is better quality. Not with `--video-bitrate`; rejected for MOV. |
 | `--video-bitrate`      | from `--quality`| Target MP4/WebM bitrate, e.g. `10M` or `5000k`. Not with `--crf`; rejected for MOV.                       |
+| `--keyframe-interval`  | encoder default | MP4 only. A keyframe at least every N seconds, e.g. `2`, so a player can seek or switch rendition at that spacing. |
+| `--max-bitrate`        | uncapped        | MP4 only. Peak video bitrate cap, e.g. `8M`, held alongside the `--crf` or `--quality` target rather than replacing it. |
+| `--buffer-size`        | 2 × `--max-bitrate` | MP4 only. Buffer the cap is measured over, e.g. `16M`. Needs `--max-bitrate`. |
 | `--vp9-cpu-used`       | encoder default | libvpx-vp9 speed/quality trade-off for WebM, -8 to 8. Env: `PRODUCER_VP9_CPU_USED`.                       |
 | `--gif-loop`           | `0`             | GIF loop count, `0` for forever. Range 0–65535, `--format gif` only.                                     |
 | `--hls-segment-seconds`| `4`             | HLS target segment length in whole seconds, 1–60. `--format hls` only. Also fixes the encoder GOP so every segment starts on a keyframe. |
@@ -2277,6 +2383,9 @@ And these drive `render` and `render-batch`:
 | `--chunk-size`          | auto                                | Frames per chunk. By default each chunk is sized to finish inside the Lambda timeout                              |
 | `--max-parallel-chunks` | auto                                | Chunks per render. By default one wave across the deploy's `--concurrency` (or 90% of the account's unreserved concurrency), widened when a chunk would outrun the Lambda timeout |
 | `--target-chunk-frames` | —                                   | Ceiling on frames per chunk. The planner adds chunks — up to `--max-parallel-chunks` — to stay under it, and short videos still collapse to fewer. Ignored when `--chunk-size` is set. |
+| `--keyframe-interval`   | —                                   | MP4 only. Longest gap between keyframes, in seconds. Chunk joins add keyframes, so this is a maximum; with a chunk shorter than the interval the chunk length wins. |
+| `--max-bitrate`         | —                                   | MP4 only. Peak video bitrate cap, e.g. `8M`. Each chunk is capped on its own, so a join between two chunks can burst up to one `--buffer-size`. |
+| `--buffer-size`         | 2 × `--max-bitrate`                 | MP4 only. Buffer for the cap, e.g. `16M`. Needs `--max-bitrate`. |
 | `--variables`           | —                                   | JSON object reaching every chunk worker as `window.__hfVariables`                                                  |
 | `--variables-file`      | —                                   | Read those from a JSON file                                                                                       |
 | `--strict-variables`    | off                                 | Fail instead of warn on an undeclared or mistyped key                                                             |

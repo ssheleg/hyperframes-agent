@@ -3,8 +3,10 @@ import {
   buildZeroDurationDiagnostic,
   evaluateHfDiagnostic,
   extractMediaMetadata,
+  isHdrColorSpace,
   sdrCanvasColourFilters,
 } from "@hyperframes/engine";
+import { parseTimeoutMs } from "../utils/timeoutArg.js";
 import type { Page } from "puppeteer-core";
 import { reportArtifacts } from "../utils/toolContext.js";
 import { withProjectLock } from "../utils/projectLock.js";
@@ -30,7 +32,16 @@ import { runWithConcurrencyLimit } from "../utils/concurrency.js";
 import { CliRuntimeError, failCommand } from "../utils/commandResult.js";
 // fallow-ignore-file complexity
 import { defineCommand } from "citty";
-import { existsSync, mkdtempSync, readFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join, relative, isAbsolute, basename, posix } from "node:path";
 import {
@@ -47,8 +58,11 @@ import {
   type ZoomTarget,
 } from "../capture/captureCompositionFrame.js";
 import {
+  firstFrameColourArgs,
+  hdrToSdrToneMapFilter,
   isClipVisibleAt,
   isInClipWindow,
+  parseFirstFrameColour,
   readElementRateSpec,
   sourceTimeAt,
   timeAtSourceTime,
@@ -61,7 +75,7 @@ import {
   lintProject,
 } from "../utils/lintProject.js";
 import { formatLintFindings } from "../utils/lintFormat.js";
-import { normalizeErrorMessage } from "../utils/errorMessage.js";
+import { normalizeErrorMessage, atStep } from "../utils/errorMessage.js";
 import { describeSharpLoadFailure } from "../utils/sharpLoadFailure.js";
 import { serveStaticProjectHtml } from "../utils/staticProjectServer.js";
 import { c } from "../ui/colors.js";
@@ -125,10 +139,16 @@ const FFMPEG_EXTRACT_TIMEOUT_MS = 30_000;
 const FALLBACK_SEEK_LEAD_SECONDS = 5;
 const RENDER_READY_TIMEOUT_MS = DEFAULT_CONFIG.playerReadyTimeout;
 
+export function timeoutUnitHint(timeoutMs: number): string {
+  return timeoutMs < 1_000
+    ? ` --timeout is in milliseconds, so ${timeoutMs} is ${timeoutMs} ms; 45000 is 45 s.`
+    : "";
+}
+
 export async function renderNotReadyError(page: Page, timeoutMs: number): Promise<Error> {
   const diagnostic = await evaluateHfDiagnostic(page).then(buildZeroDurationDiagnostic, () => "");
   return new Error(
-    `The composition was not render-ready after ${timeoutMs}ms, so no frame was saved (raise --timeout if it loads slowly).\n${diagnostic}`,
+    `The composition was not render-ready after ${timeoutMs}ms, so no frame was saved (raise --timeout if it loads slowly).${timeoutUnitHint(timeoutMs)}\n${diagnostic}`,
   );
 }
 /** Each 4K decode is already multi-threaded, so a few at once fill the cores without exhausting memory. */
@@ -139,8 +159,45 @@ export function formatSnapshotTimestamp(time: number): string {
   return `${Number(time.toFixed(3))}s`;
 }
 
+/** The captured stills that are on disk with bytes, as absolute paths; the rest are missing. */
+export function snapshotsOnDisk(projectDir: string, paths: string[]) {
+  const written: string[] = [];
+  const missing: string[] = [];
+  for (const path of paths) {
+    const absolute = resolve(projectDir, path);
+    let size = 0;
+    try {
+      size = statSync(absolute).size;
+    } catch {
+      // absent: counted as missing below
+    }
+    (size > 0 ? written : missing).push(absolute);
+  }
+  return { written, missing };
+}
+
 export const SNAPSHOT_IMAGE_NAME =
   /^(?:(?:frame-\d+-|ref-(?:\d+-)?)?at-[\d.]+s\.png|pair-(?:\d+-)?at-[\d.]+s\.jpg|(?:beat-\d+|seam-\d+-\d+)-at-[\d.]+s\.png|(?:contact-sheet|review-beats|review-phone)(?:-\d+)?\.jpg|review-seam-\d+\.jpg)$/;
+
+/** Removes the stills an earlier run left in the folder, so two runs never mix; returns what it removed. */
+export function clearEarlierStills(snapshotDir: string): string[] {
+  const cleared: string[] = [];
+  try {
+    for (const file of readdirSync(snapshotDir)) {
+      if (!SNAPSHOT_IMAGE_NAME.test(file)) continue;
+      const path = resolve(snapshotDir, file);
+      rmSync(path, { force: true });
+      cleared.push(path);
+    }
+  } catch {
+    // best-effort: capture proceeds even if the folder cannot be cleaned
+  }
+  return cleared;
+}
+
+export function clearedNote(count: number, snapshotDir: string): string {
+  return `cleared ${count} stills from an earlier run in ${resolve(snapshotDir)}`;
+}
 
 /** --keep names a still by its millisecond label, so two distinct times may not share one. */
 function assertDistinctKeepNames(times: number[]): void {
@@ -406,6 +463,16 @@ function warnColourUnknownOnce(): void {
   );
 }
 
+let warnedNoHdrFilters = false;
+
+function warnNoHdrFiltersOnce(): void {
+  if (warnedNoHdrFilters) return;
+  warnedNoHdrFilters = true;
+  console.warn(
+    `   ${c.warn("⚠")} A video in this project is HDR, but this ffmpeg has no zscale/tonemap (libzimg), so the still shows it as the browser does and will not match an SDR export. Install an ffmpeg with libzimg.`,
+  );
+}
+
 class FrameExtractTimeoutError extends Error {}
 
 export async function extractVideoFrameToBuffer(
@@ -425,24 +492,50 @@ export async function extractVideoFrameToBuffer(
       holdLastFrame,
     );
     if (seek === null) return null;
-    const args = ["-hide_banner", "-loglevel", "error"];
-    if (useVp9AlphaDecoder) args.push("-c:v", "libvpx-vp9");
-    if (seek.seek !== undefined) args.push("-ss", String(seek.seek));
-    args.push("-i", videoPath, "-map", "0:v:0");
-    const filters: string[] = [];
-    if (seek.select !== undefined) filters.push(`select=gte(t-start_t\\,${seek.select})`);
     const metadata = findFFprobe() ? await extractMediaMetadata(videoPath) : null;
-    if (metadata) filters.push(...sdrCanvasColourFilters(metadata));
-    else warnColourUnknownOnce();
-    // Shrink so the short side still covers the displayed box at any rotation or fit; never enlarge.
-    if (displayedPixels > 0) {
-      filters.push(
-        `scale='min(iw,${displayedPixels})':'min(ih,${displayedPixels})':force_original_aspect_ratio=increase`,
-      );
+    if (!metadata) warnColourUnknownOnce();
+    // HDR footage takes the tone map the SDR export uses, so a still matches the render.
+    const toneMap =
+      metadata && isHdrColorSpace(metadata.colorSpace)
+        ? hdrToSdrToneMapFilter(
+            metadata.colorSpace ?? {},
+            parseFirstFrameColour(
+              (
+                await runFfmpegOnce(
+                  ffmpegPath,
+                  firstFrameColourArgs(videoPath),
+                  FFMPEG_EXTRACT_TIMEOUT_MS,
+                )
+              ).stderr,
+            ),
+          )
+        : null;
+    const frameArgs = (toneMapFilter: string | null): string[] => {
+      const args = ["-hide_banner", "-loglevel", "error"];
+      if (useVp9AlphaDecoder) args.push("-c:v", "libvpx-vp9");
+      if (seek.seek !== undefined) args.push("-ss", String(seek.seek));
+      args.push("-i", videoPath, "-map", "0:v:0");
+      const filters: string[] = [];
+      if (seek.select !== undefined) filters.push(`select=gte(t-start_t\\,${seek.select})`);
+      if (metadata) {
+        if (toneMapFilter) filters.push(toneMapFilter);
+        filters.push(...sdrCanvasColourFilters(metadata, toneMapFilter !== null));
+      }
+      // Shrink so the short side still covers the displayed box at any rotation or fit; never enlarge.
+      if (displayedPixels > 0) {
+        filters.push(
+          `scale='min(iw,${displayedPixels})':'min(ih,${displayedPixels})':force_original_aspect_ratio=increase`,
+        );
+      }
+      if (filters.length > 0) args.push("-vf", filters.join(","));
+      args.push("-frames:v", "1", "-q:v", "2", "-y", outPath);
+      return args;
+    };
+    let result = await runFfmpegOnce(ffmpegPath, frameArgs(toneMap), FFMPEG_EXTRACT_TIMEOUT_MS);
+    if (toneMap && result.code !== 0 && /no such filter/i.test(result.stderr)) {
+      warnNoHdrFiltersOnce();
+      result = await runFfmpegOnce(ffmpegPath, frameArgs(null), FFMPEG_EXTRACT_TIMEOUT_MS);
     }
-    if (filters.length > 0) args.push("-vf", filters.join(","));
-    args.push("-frames:v", "1", "-q:v", "2", "-y", outPath);
-    const result = await runFfmpegOnce(ffmpegPath, args, FFMPEG_EXTRACT_TIMEOUT_MS);
     if (result.timedOut) {
       throw new FrameExtractTimeoutError(
         `FFmpeg timed out after ${FFMPEG_EXTRACT_TIMEOUT_MS / 1000}s extracting the frame of ${videoPath} at ${timeSeconds.toFixed(2)}s`,
@@ -512,16 +605,17 @@ export function parseZoomScale(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_ZOOM_SCALE;
 }
 
-/**
- * Seeking the timeline to EXACTLY `data-duration` renders blank — the runtime
- * treats t >= clip-end as past-end and unmounts the clip (verified on a V4 3D
- * artifact: t=8.0 of an 8s clip was pure white, t=7.76 showed the final hero).
- * So the "final frame" must be sampled just-before-end. The blank tail observed
- * spanned the last ~2.5% of the timeline, hence a 3%-of-duration nudge (floored
- * at 50ms so very short clips still back off a readable amount).
- */
+// Seeking to exactly the end renders blank, so the tail frame backs off 3% of the duration,
+// by at least 50 ms and at most 250 ms.
+const TAIL_BACKOFF_MIN_SECONDS = 0.05;
+const TAIL_BACKOFF_MAX_SECONDS = 0.25;
+
 export function tailFrameTime(duration: number): number {
-  return Math.max(0, duration - Math.max(0.05, duration * 0.03));
+  const backoff = Math.min(
+    TAIL_BACKOFF_MAX_SECONDS,
+    Math.max(TAIL_BACKOFF_MIN_SECONDS, duration * 0.03),
+  );
+  return Math.max(0, duration - backoff);
 }
 
 /**
@@ -692,7 +786,7 @@ async function captureSnapshots(
       });
 
       if (duration <= 0 && !opts.at?.length) {
-        return { paths: [], warnings, pairSheetsSkipped: false };
+        return { paths: [], cleared: [], warnings, pairSheetsSkipped: false };
       }
 
       const readTiming = () =>
@@ -762,17 +856,9 @@ async function captureSnapshots(
 
       const snapshotDir = opts.outputDir ?? artifactDirectory(projectDir, "snapshots");
       mkdirSync(snapshotDir, { recursive: true });
-      try {
-        const { readdirSync } = await import("node:fs");
-        for (const file of opts.keep ? [] : readdirSync(snapshotDir)) {
-          if (SNAPSHOT_IMAGE_NAME.test(file)) {
-            const path = resolve(snapshotDir, file);
-            replaced.push(path);
-            rmSync(path, { force: true });
-          }
-        }
-      } catch {
-        /* best-effort — proceed even if cleanup fails */
+      if (!opts.keep) replaced.push(...clearEarlierStills(snapshotDir));
+      if (replaced.length > 0) {
+        log(`   ${c.warn("⚠")} ${clearedNote(replaced.length, snapshotDir)}`);
       }
 
       // Chrome-headless ignores programmatic <video>.currentTime writes, so
@@ -834,7 +920,9 @@ async function captureSnapshots(
         const time = positions[i]!;
 
         const seekOptions = { exactTime: true, waitForImagesMs: SCREENSHOT_IMAGE_WAIT_MS };
-        await seekCompositionTimelineOnly(page, time, seekOptions);
+        await atStep(`seeking to ${time}s, frame ${i + 1} of ${positions.length}`, () =>
+          seekCompositionTimelineOnly(page, time, seekOptions),
+        );
 
         if (cameraExpr) await page.evaluate(cameraExpr);
 
@@ -1020,7 +1108,9 @@ async function captureSnapshots(
         } else {
           writeCaptureFileSync(
             framePath,
-            await page.screenshot({ type: "png", omitBackground: true }),
+            await atStep(`capturing the frame at ${time}s`, () =>
+              page.screenshot({ type: "png", omitBackground: true }),
+            ),
           );
         }
         artifacts.push({
@@ -1103,6 +1193,7 @@ async function captureSnapshots(
 
   return {
     paths: savedPaths,
+    cleared: replaced,
     warnings,
     pairSheetsSkipped: pairSheetFailure !== null,
     ...(review && reviewList
@@ -1122,6 +1213,8 @@ async function captureSnapshots(
 interface CapturedSnapshots {
   /** Project-relative where possible, as printed. */
   paths: string[];
+  /** Stills of an earlier run this one removed from the folder before capturing. */
+  cleared: string[];
   /** Why a frame may differ from the composition: shown on the console and in `--json`. */
   warnings: string[];
   /** --against wrote no pair sheets because sharp could not load. */
@@ -1193,6 +1286,14 @@ function snapshotEnvelope(
     ok: true,
     outputDir,
     frames,
+    ...(captured.cleared.length > 0
+      ? {
+          cleared: {
+            count: captured.cleared.length,
+            note: clearedNote(captured.cleared.length, outputDir),
+          },
+        }
+      : {}),
     contactSheets: extra.contactSheets.map((sheet) => resolve(sheet)),
     ...(captured.warnings.length > 0 ? { warnings: captured.warnings } : {}),
     ...(extra.describedPath ? { descriptions: extra.describedPath } : {}),
@@ -1407,7 +1508,7 @@ export default defineCommand({
       }
       failCommand();
     }
-    const timeout = parseInt(args.timeout as string, 10) || RENDER_READY_TIMEOUT_MS;
+    const timeout = parseTimeoutMs(args.timeout, RENDER_READY_TIMEOUT_MS);
     const describePrompt = resolveDescribePrompt(args.describe);
 
     const camera = args.angle ? parseAngle(String(args.angle)) : undefined;
@@ -1454,17 +1555,27 @@ export default defineCommand({
           review: reviewMode,
           log,
         });
-        const paths = captured.paths;
-        const framePaths = paths.map((path) => resolve(project.dir, path));
+        const onDisk = snapshotsOnDisk(project.dir, captured.paths);
+        const paths = onDisk.written;
+        const framePaths = paths;
         reportArtifacts("snapshot", "frame", framePaths);
 
-        if (paths.length === 0) {
+        if (captured.paths.length === 0) {
           fail(`\n${c.error("✗")} Could not determine composition duration — no frames captured`);
         }
 
-        log(`\n${c.success("◇")}  ${paths.length} snapshots saved to ${snapshotDir}`);
+        const short = onDisk.missing.length > 0;
+        const mark = short ? c.error("✗") : c.success("◇");
+        const count = short ? `${paths.length} of ${captured.paths.length}` : String(paths.length);
+        log(`\n${mark}  ${count} snapshots saved to ${snapshotDir}`);
         for (const p of paths) {
           log(`   ${p}`);
+        }
+        if (short) {
+          const gone = onDisk.missing.map((path) => `\n   missing: ${path}`).join("");
+          fail(
+            `${c.error("✗")} Only ${paths.length} of ${captured.paths.length} snapshots are on disk in ${snapshotDir}.${gone}`,
+          );
         }
         if (against) {
           log(
