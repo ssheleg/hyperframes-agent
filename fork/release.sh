@@ -34,7 +34,10 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [ "$BRANCH" = "main" ] || { echo "release from main, not $BRANCH" >&2; exit 1; }
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "the tree has uncommitted changes" >&2; exit 1; }
 
-BASE="$(git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' --exclude '*-*' --abbrev=0)"
+# The newest upstream release merged into HEAD. Not `git describe`: through merges it picks the tag fewest
+# commits away, which after `merge v0.8.209` was v0.8.206.
+BASE="$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk '!/-/' | head -n1)"
+[ -n "$BASE" ] || { echo "no upstream release tag is merged into HEAD" >&2; exit 1; }
 COMMIT="$(git rev-parse HEAD)"
 VERSION="${BASE#v}+sshlg.${N}"
 LABEL="${BASE#v}-sshlg.${N}"

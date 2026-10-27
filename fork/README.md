@@ -86,7 +86,7 @@ prints the line's version, and that a start removes the marker of a dead pid.
 4. `git diff --stat v<new> main -- . ':!fork'` shows exactly what the line still carries. `git log v<new>..main` is
    not that list: a patch upstream took under another commit (a squash merge) stays in the log but no longer
    changes anything.
-5. `fork/release.sh 1` builds on the new base (it finds the base with `git describe`), then `--publish`. Its
+5. `fork/release.sh 1` builds on the new base (the base is the newest `v*.*.*` tag merged into `HEAD`), then `--publish`. Its
    watcher tests run on the real file system and fail while `fseventsd` is busy: if they fail, or
    `ps -Ao pcpu,comm | grep fseventsd` reads 60% or more, wait for it to fall before running again
    ([`HANDOFF.md`](HANDOFF.md), "Watcher tests under load").
