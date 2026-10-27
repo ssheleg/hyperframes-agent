@@ -30,6 +30,7 @@ import {
   exportClipWindow,
   hasClipStarted,
   isInClipWindow,
+  mediaElementTime,
   parseStrictFiniteTimingNumber,
   readMediaStart,
   toFps,
@@ -66,7 +67,10 @@ import {
   writeUrlDownloadTelemetry,
 } from "../utils/urlDownloader.js";
 import { runFfmpeg, type RunFfmpegResult } from "../utils/runFfmpeg.js";
-import { isFfmpegFilterAvailable } from "../utils/psnrFilterAvailability.js";
+import {
+  isFfmpegFilterAvailable,
+  isFfmpegHwaccelAvailable,
+} from "../utils/psnrFilterAvailability.js";
 import { DEFAULT_CONFIG, type EngineConfig } from "../config.js";
 import { unwrapTemplate } from "../utils/htmlTemplate.js";
 import {
@@ -904,6 +908,13 @@ function chromeGuessForUntaggedMatrix(metadata: VideoMetadata): string[] {
   return [`setparams=colorspace=${hd ? "bt709" : "smpte170m"}`];
 }
 
+export function sdrCanvasColourFilters(metadata: VideoMetadata, toneMappedToSdr = false): string[] {
+  if (!isHdrColorSpaceUtil(metadata.colorSpace)) {
+    return [...chromeGuessForUntaggedMatrix(metadata), SDR_CANVAS_PASSTHROUGH_FILTER];
+  }
+  return toneMappedToSdr ? [SDR_CANVAS_PASSTHROUGH_FILTER] : [];
+}
+
 /**
  * Longest stretch of output one ffmpeg process extracts; longer ranges split into segments
  * that run side by side. Segments sample the same absolute times as a single pass, so their
@@ -933,7 +944,7 @@ interface SegmentedExtraction {
   fps: number;
   segments: readonly FrameRange[];
   gate: typeof inExtractionSlot;
-  runOptions: { signal?: AbortSignal; stallTimeout: number };
+  runOptions: { signal?: AbortSignal; timeout: number };
 }
 
 /** Split runs so no single ffmpeg process extracts more than `segmentFrames` frames. */
@@ -1075,7 +1086,13 @@ async function extractVideoFramesRangeUnredacted(
   const isHdr = isHdrColorSpaceUtil(metadata.colorSpace);
   const isMacOS = process.platform === "darwin";
   const toneMappedToSdr = options.toneMapHdrToSdr === true && isHdr && (await toneMapsWithZscale());
-  const decodeWithVideoToolbox = isHdr && isMacOS && !toneMappedToSdr;
+  const keepsHdrForChrome = isHdr && isMacOS && !toneMappedToSdr;
+  const decodeWithVideoToolbox =
+    keepsHdrForChrome ||
+    (isMacOS &&
+      !metadata.hasAlpha &&
+      !codecMayHaveAlpha(metadata.videoCodec) &&
+      (await isFfmpegHwaccelAvailable("videotoolbox")));
 
   const sampleAtOutputFps = !options.finalFrameOnly;
   if (options.frameRanges && (!sampleAtOutputFps || metadata.isVFR)) {
@@ -1112,7 +1129,7 @@ async function extractVideoFramesRangeUnredacted(
   }
 
   const vfFilters: string[] = [];
-  if (decodeWithVideoToolbox) {
+  if (keepsHdrForChrome) {
     vfFilters.push("format=nv12");
   }
   const samplingAt = vfFilters.length;
@@ -1144,10 +1161,7 @@ async function extractVideoFramesRangeUnredacted(
     vfFilters.push(hdrToSdrToneMapFilter(metadata.colorSpace ?? {}, frameColour));
   }
   if (toneMappedToSdr || (!isHdr && !options.sdrToHdrTransfer)) {
-    vfFilters.push(
-      ...(isHdr ? [] : chromeGuessForUntaggedMatrix(metadata)),
-      SDR_CANVAS_PASSTHROUGH_FILTER,
-    );
+    vfFilters.push(...sdrCanvasColourFilters(metadata, toneMappedToSdr));
     if (format === "jpg") {
       if (options.shownBox) vfFilters.push(halveToCoverScaleFilter(options.shownBox));
       vfFilters.push(SDR_JPEG_AS_BT601_FULL_RANGE_FILTER);
@@ -1158,8 +1172,7 @@ async function extractVideoFramesRangeUnredacted(
   if (format === "png") encodeArgs.push("-compression_level", "1");
   encodeArgs.push("-y", outputPattern);
 
-  // A long 4K run can take far longer than the timeout and still be healthy; only a stall is a hang.
-  const runOptions = { signal, stallTimeout: ffmpegProcessTimeout };
+  const runOptions = { signal, timeout: ffmpegProcessTimeout };
   const filterArgsFor = (seek: number): string[] => {
     const filters = [...vfFilters];
     filters.splice(samplingAt, 0, ...samplingFilters(seek));
@@ -2705,9 +2718,9 @@ function getFrameIndexAtTime(
     const cycle = Math.max(0, resolvePlayableVideoDuration(extracted.metadata) - mediaStart);
     if (cycle > 0 && sourceTime >= cycle) sourceTime %= cycle;
   }
-  // Add epsilon before flooring to avoid IEEE 754 boundary errors where
-  // e.g. 0.28 * 25 === 6.999999999999999 instead of 7.
-  const frameIndex = Math.floor(sourceTime * extracted.fps + 1e-9);
+  // The frame the preview's <video> shows at this source time, so render and preview pick the same one.
+  const shownTime = mediaElementTime(mediaStart + sourceTime) - mediaStart;
+  const frameIndex = Math.floor(shownTime * extracted.fps);
   if (frameIndex < 0 || extracted.totalFrames <= 0) return null;
   if (
     isVideoHiddenBeforeStreamStart(

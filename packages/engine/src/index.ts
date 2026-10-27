@@ -170,6 +170,7 @@ export {
   cdpSessionCache,
   probeBeginFrameLiveness,
   initTransparentBackground,
+  capturesAlpha,
   captureAlphaPng,
   applyDomLayerMask,
   removeDomLayerMask,
@@ -252,7 +253,9 @@ export {
   VIDEO_FRAME_FORMATS,
   isVideoFrameFormat,
   EXTRACT_CACHE_MIN_AGE_MS,
+  sdrCanvasColourFilters,
 } from "./services/videoFrameExtractor.js";
+export { isSelfOrAncestorHidden } from "./services/mediaHidden.js";
 export { directorySizeBytes, gcExtractionCache } from "./services/extractionCache.js";
 
 export {
@@ -339,6 +342,7 @@ export {
   PROBE_FACTS_VERSION,
   buildProbeFactsText,
   probeMediaProfile,
+  runFfprobe,
   analyzeKeyframeIntervals,
   type VideoMetadata,
   type AudioMetadata,

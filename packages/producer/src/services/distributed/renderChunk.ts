@@ -61,7 +61,12 @@ import {
   type ShownBox,
 } from "@hyperframes/engine";
 import { defaultLogger } from "../../logger.js";
-import { applyRenderWarningPolicy, collectVideoMetadataHints } from "../renderOrchestrator.js";
+import {
+  applyRenderWarningPolicy,
+  collectVideoMetadataHints,
+  frameStallRule,
+} from "../renderOrchestrator.js";
+import { RenderObservabilityRecorder, observeRenderStage } from "../render/observability.js";
 import {
   canEncodeWhileCapturing,
   encodeWhileCapturing,
@@ -95,6 +100,7 @@ import {
   type PlanVideosJson,
   readFfmpegVersion,
 } from "./shared.js";
+import { effectiveChunkFrames } from "./chunkWeights.js";
 import { chunkAudioSource, chunksWithSubRange, muxChunkWithAudio } from "./chunkAudio.js";
 import { DISTRIBUTED_RENDER_CAPABILITIES, readPlanProtocolV1 } from "./planProtocol.js";
 import { readValidatedPlanV2Materialization } from "./planV2.js";
@@ -220,6 +226,11 @@ export interface RenderChunkOptions {
    * this many, one browser per 20 frames; never lowers it.
    */
   maxCaptureWorkers?: number;
+  interleaveCapture?: boolean;
+}
+
+export function interleavesCapture(overlapping: boolean, options?: RenderChunkOptions): boolean {
+  return overlapping && options?.interleaveCapture === true;
 }
 
 /** A browser starts in about 3 s, a small share of 20 frames' capture. */
@@ -730,9 +741,10 @@ export async function renderChunk(
     // `PlanJson` doesn't carry the compiled hints needed to call it
     // directly. The existing adaptive-retry path reduces workers if
     // compositor contention surfaces as CDP timeouts.
+    const captureFrames = effectiveChunkFrames(framesInChunk, slice.captureCost);
     const chunkWorkerCount = resolveChunkCaptureWorkers(
-      framesInChunk,
-      calculateOptimalWorkers(framesInChunk, undefined, cfg),
+      captureFrames,
+      calculateOptimalWorkers(captureFrames, undefined, cfg),
       options?.maxCaptureWorkers,
     );
 
@@ -744,6 +756,7 @@ export async function renderChunk(
     // (boot, warmup, hash, IO) vs frame-proportional work. Consumed from the
     // perf sidecar / ChunkResult by the orchestration's telemetry.
     let sessionBootMs = 0;
+    let videoExtractMs = 0;
     let captureStageMs = 0;
     let encodeStageMs = 0;
     let captureMode: CaptureMode | undefined;
@@ -831,6 +844,7 @@ export async function renderChunk(
       // its own injector hook because the hook remembers the last injected frame
       // per video; sharing that state across a fresh retry page can suppress the
       // first injection and produce a blank/stale frame.
+      const extractStarted = Date.now();
       const deferredVideoFrames = planVideos
         ? extractDeferredVideoFramesForChunk({
             planDir,
@@ -841,6 +855,9 @@ export async function renderChunk(
             cfg,
             remoteSources,
             shownBoxes,
+          }).then((frames) => {
+            videoExtractMs = Date.now() - extractStarted;
+            return frames;
           })
         : Promise.resolve([]);
       extraction = deferredVideoFrames;
@@ -972,27 +989,36 @@ export async function renderChunk(
           overlap.current = canEncodeWhileCapturing(encodeInput, chunkWorkerCount, cpus().length)
             ? encodeWhileCapturing(encodeInput, framesInChunk)
             : null;
-          await runCaptureStage({
-            fileServer,
-            workDir,
-            framesDir,
-            job,
-            totalFrames: framesInChunk,
-            cfg: captureCfg,
-            plan: capturePlan,
-            log,
-            probeSession: captureSession,
-            captureAttempts,
-            // This sink records each worker's effective capture mode so a
-            // fallback remains observable to adapters and smoke tests.
-            dedupPerfs: capturePerfs,
-            buildCaptureOptions: () => captureOptions,
-            createRenderVideoFrameInjector: createChunkVideoFrameInjector,
-            abortSignal: undefined,
-            assertNotAborted: () => {},
-            frameRange: range,
-            onFrameLanded: (frame) => overlap.current?.onFrameLanded(frame),
-          }).catch(async (captureError: unknown) => {
+          await observeRenderStage(
+            new RenderObservabilityRecorder({ pipelineStartMs: start, log }),
+            "capture_chunk",
+            { chunkIndex },
+            (openAttempt) =>
+              runCaptureStage({
+                fileServer,
+                workDir,
+                framesDir,
+                job,
+                totalFrames: framesInChunk,
+                cfg: captureCfg,
+                plan: capturePlan,
+                log,
+                probeSession: captureSession,
+                captureAttempts,
+                // This sink records each worker's effective capture mode so a
+                // fallback remains observable to adapters and smoke tests.
+                dedupPerfs: capturePerfs,
+                buildCaptureOptions: () => captureOptions,
+                createRenderVideoFrameInjector: createChunkVideoFrameInjector,
+                abortSignal: undefined,
+                assertNotAborted: () => {},
+                frameRange: range,
+                onFrameLanded: (frame) => overlap.current?.onFrameLanded(frame),
+                interleaveFrames: interleavesCapture(overlap.current !== null, options),
+                openAttempt,
+              }),
+            { stall: frameStallRule(job) },
+          ).catch(async (captureError: unknown) => {
             await overlap.current?.abort();
             overlap.current = null;
             throw captureError;
@@ -1094,6 +1120,8 @@ export async function renderChunk(
       sessionBootMs,
       captureStageMs,
       encodeStageMs,
+      // Wall time of the chunk's own video frame extraction; it overlaps captureStageMs, so do not add them.
+      videoExtractMs,
       workers: chunkWorkerCount,
       captureMode,
       // Device-pixel box each video's frames were extracted to cover; a video not listed kept full size.

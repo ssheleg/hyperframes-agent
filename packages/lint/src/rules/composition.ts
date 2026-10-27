@@ -3,10 +3,12 @@ import selectorParser from "postcss-selector-parser";
 import {
   findHtmlTag,
   extractTimelineRegistryKeys,
+  parseHtmlStructure,
   readAttr,
   readDecodedAttr,
   readJsonAttr,
   stripCssComments,
+  stripHtmlComments,
   stripJsComments,
   stripJsCode,
   truncateSnippet,
@@ -659,6 +661,8 @@ function variablesDeclarationFindings(
         code: "invalid_composition_variables_declaration",
         severity: "error",
         message: `data-composition-variables entry [${i}] must be an object with id, type, label, and default.`,
+        fixHint:
+          'Replace the entry with an object such as {"id":"title","type":"string","label":"Title","default":"Hello"}.',
         snippet: truncateSnippet(tag.raw),
       });
       continue;
@@ -674,6 +678,7 @@ function variablesDeclarationFindings(
         code: "invalid_composition_variables_declaration",
         severity: "error",
         message: `data-composition-variables entry [${i}] is missing or has invalid: ${missing.join(", ")}. Type must be one of string, number, color, boolean, enum, font, image.`,
+        fixHint: `Give entry [${i}] a string id and label, a supported type, and a default, e.g. {"id":"title","type":"string","label":"Title","default":"Hello"}.`,
         snippet: truncateSnippet(tag.raw),
       });
       continue;
@@ -684,17 +689,19 @@ function variablesDeclarationFindings(
         severity: "error",
         message: `data-composition-variables entry [${i}] has a default that does not match its type, or an enum without an options array.`,
         fixHint:
-          "Use number defaults for number variables, boolean defaults for boolean variables, and string defaults for other types. Enum variables also require an options array.",
+          "Use number defaults for number variables, boolean defaults for boolean variables, and string defaults for other types. Font/image also accept font {name, source} or image {url, alt?, fit?} objects. Enum variables also require an options array.",
         snippet: truncateSnippet(tag.raw),
       });
       continue;
     }
-    const id = String(e.id);
+    const id = e.id;
+    const mediaUrl =
+      e.type === "image" && typeof e.default !== "string" ? e.default.url : e.default;
     if (
       (e.type === "image" || varSrcIds.has(id)) &&
-      typeof e.default === "string" &&
-      e.default.length > 0 &&
-      !isSafeMediaUrl(e.default)
+      typeof mediaUrl === "string" &&
+      mediaUrl.length > 0 &&
+      !isSafeMediaUrl(mediaUrl)
     ) {
       findings.push({
         code: "unloadable_media_variable_default",
@@ -732,14 +739,18 @@ function declaredIdsForBindingCheck(tags: readonly OpenTag[]): Set<string> | nul
   return declared;
 }
 
-function isInsideInertTemplate(tag: OpenTag, tags: readonly OpenTag[]): boolean {
+function isInsideTag(tag: OpenTag, tags: readonly OpenTag[], name: string): boolean {
   return tags.some(
     (candidate) =>
-      candidate.name === "template" &&
+      candidate.name === name &&
       candidate.closeIndex != null &&
       tag.index > candidate.index &&
       tag.index < candidate.closeIndex,
   );
+}
+
+function isInsideInertTemplate(tag: OpenTag, tags: readonly OpenTag[]): boolean {
+  return isInsideTag(tag, tags, "template");
 }
 
 // `(?<![\w-])` not `\b`: the hyphen in a custom property is a word break, so a
@@ -1534,6 +1545,29 @@ export const compositionRules: Array<(ctx: LintContext) => HyperframeLintFinding
         snippet: truncateSnippet(rootTag.raw),
       },
     ];
+  },
+
+  // subcomposition_style_outside_template
+  // Mounting keeps only the <template> content and the <head> stylesheet links.
+  ({ rawSource, options }) => {
+    if (!options.isSubComposition) return [];
+    const { tags } = parseHtmlStructure(stripHtmlComments(rawSource));
+    if (!tags.some((tag) => tag.name === "template")) return [];
+    const dropped = tags.filter((tag) => {
+      if (isInsideInertTemplate(tag, tags)) return false;
+      if (tag.name === "style") return true;
+      const rel = (readAttr(tag.raw, "rel") || "").toLowerCase().split(/\s+/);
+      return tag.name === "link" && rel.includes("stylesheet") && !isInsideTag(tag, tags, "head");
+    });
+    return dropped.map((tag) => ({
+      code: "subcomposition_style_outside_template",
+      severity: "warning" as const,
+      message:
+        `<${tag.name}> sits outside this sub-composition's <template>. Mounting keeps only the template's ` +
+        "content, so these styles never apply in preview, snapshot or render.",
+      fixHint: "Move it inside <template>, next to the composition root.",
+      snippet: truncateSnippet(tag.raw),
+    }));
   },
 
   // root_composition_missing_duration_source

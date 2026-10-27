@@ -56,6 +56,8 @@ import {
   readDeclaredDefaults,
   parseHostVariableValues,
   headStyleRuns,
+  isAlwaysAppliedStyle,
+  dedupeFontFaceRules,
   inlineScriptRuns,
   parsesAsScript,
   styleElementsFor,
@@ -72,7 +74,7 @@ import {
 } from "@hyperframes/parsers/asset-resolution";
 import { extractMediaMetadata, extractAudioMetadata } from "../utils/ffprobe.js";
 import { isPathInside, toExternalAssetKey } from "../utils/paths.js";
-import { collectRenderMedia } from "./renderMediaCollector.js";
+import { collectHiddenVideoIds, collectRenderMedia } from "./renderMediaCollector.js";
 import {
   type VideoElement,
   type ImageElement,
@@ -98,6 +100,7 @@ import {
   normalizeSystemFontPrimaryFamilies,
 } from "@hyperframes/core/fonts/embed";
 import { prepareAnimatedGifInputs } from "./animatedGifPrep.js";
+import { prepareHeifImageInputs } from "./heifImagePrep.js";
 import { createStudioPositionSeekReapplyScript } from "@hyperframes/studio-server/manual-edits-render-script";
 import { getPositionEditsRenderScript } from "@hyperframes/core/runtime/position-edits-render";
 import { defaultLogger, type ProducerLogger } from "../logger.js";
@@ -126,8 +129,6 @@ export interface CompiledComposition {
   hasShaderTransitions: boolean;
   /** Author HTML/CSS/scripts use a CSS 3D rendering context (pre-CDN-inline scan). */
   usesThreeDTransforms: boolean;
-  /** Author HTML/CSS use mix-blend-mode (pre-CDN-inline scan). */
-  usesMixBlendMode: boolean;
   /** Ancestors of the composition root carry a background-image (gradient/url). */
   hasAncestorBackgroundImage: boolean;
 }
@@ -409,12 +410,6 @@ export function detectThreeDTransformUsage(html: string): boolean {
   return THREE_D_CONTEXT_PATTERN.test(html);
 }
 
-const MIX_BLEND_MODE_PATTERN = /mix-blend-mode\s*:/i;
-
-function detectMixBlendModeUsage(html: string): boolean {
-  return MIX_BLEND_MODE_PATTERN.test(html);
-}
-
 /** A background declaration whose value paints an image (gradient or url). */
 const BACKGROUND_IMAGE_DECL_PATTERN =
   /(?:^|;|\{)\s*background(?:-image)?\s*:[^;}]*(?:\bgradient\s*\(|url\s*\()/i;
@@ -672,9 +667,10 @@ async function compileHtmlFile(
   // Phase 2: Bound authored audio to playable source (parallel ffprobe).
   // Explicit video slots may outlive their source and hold the final frame.
   const preResolved = extractResolvedMedia(compiledHtml);
+  const hiddenVideoIds = collectHiddenVideoIds(compiledHtml);
   const clampResults = await Promise.all(
     preResolved
-      .filter((el) => !!el.src && !el.loop)
+      .filter((el) => !!el.src && !el.loop && !hiddenVideoIds.has(el.id))
       .map(async (el) => {
         const { duration: maxDuration } = await resolveMediaDuration(
           el.src!,
@@ -945,6 +941,12 @@ function coalesceHeadStylesAndBodyScripts(html: string): string {
   const head = document.querySelector("head");
   const body = document.querySelector("body");
   if (!head && !body) return html;
+
+  const liveStyles = [...document.querySelectorAll("style")].filter(isAlwaysAppliedStyle);
+  const dedupedStyles = dedupeFontFaceRules(liveStyles.map((el) => el.textContent || ""));
+  liveStyles.forEach((el, i) => {
+    el.textContent = dedupedStyles[i] ?? "";
+  });
 
   const styleEls = head ? Array.from(head.querySelectorAll("style")) : [];
   const importRe = /@import\s+url\([^)]*\)\s*;|@import\s+["'][^"']+["']\s*;/gi;
@@ -1940,10 +1942,7 @@ export interface CompileForRenderOptions {
   allowSystemFontCapture?: boolean;
   /** Caller cancellation propagated through compile-time font fetches. */
   abortSignal?: AbortSignal;
-  /**
-   * Optional persistent cache directory for prep-time animated GIF → WebM
-   * transcodes. When omitted, the render's downloadDir is used.
-   */
+  /** Persistent cache directory for the animated GIF and HEIC prep transcodes; defaults to downloadDir. */
   animatedGifCacheDir?: string;
   /** FFmpeg timeout for animated GIF transcodes. */
   ffmpegProcessTimeout?: number;
@@ -2094,7 +2093,6 @@ export async function compileForRender(
   // `transformPerspective`, so scanning post-inline HTML would flag every
   // composition that loads GSAP from a CDN.
   const usesThreeDTransforms = detectThreeDTransformUsage(sanitizedHtml);
-  const usesMixBlendMode = detectMixBlendModeUsage(sanitizedHtml);
   const hasAncestorBackgroundImage = detectAncestorBackgroundImage(sanitizedHtml);
 
   const normalizedFontHtml = normalizeSystemFontPrimaryFamilies(
@@ -2165,12 +2163,29 @@ export async function compileForRender(
   const { html: htmlWithLocalizedFonts, remoteMediaAssets: remoteFontAssets } =
     await localizeRemoteFontFaces(htmlWithLocalBg, downloadDir);
 
+  // Chrome cannot decode HEIC, and ffprobe reads a tiled one as video streams,
+  // so convert to JPEG before the media-type preflight sees it.
+  const {
+    html: htmlWithJpegs,
+    preparedAssets: preparedHeifAssets,
+    preparedImages: preparedHeifImages,
+  } = await prepareHeifImageInputs(htmlWithLocalizedFonts, {
+    projectDir,
+    downloadDir,
+    cacheDir: options.animatedGifCacheDir,
+    sourceAssets: remoteImageAssets,
+    timeoutMs: options.ffmpegProcessTimeout,
+  });
+  if (preparedHeifImages.length > 0) {
+    defaultLogger.info(`[Compiler] Converted ${preparedHeifImages.length} HEIC image(s) to JPEG`);
+  }
+
   const gifSourceAssets = new Map<string, string>(remoteImageAssets);
   const {
     html: htmlWithPreparedGifs,
     preparedAssets: preparedGifAssets,
     preparedGifs,
-  } = await prepareAnimatedGifInputs(htmlWithLocalizedFonts, {
+  } = await prepareAnimatedGifInputs(htmlWithJpegs, {
     projectDir,
     downloadDir,
     cacheDir: options.animatedGifCacheDir,
@@ -2201,6 +2216,9 @@ export async function compileForRender(
     externalAssets.set(relPath, absPath);
   }
   for (const [relPath, absPath] of preparedGifAssets) {
+    externalAssets.set(relPath, absPath);
+  }
+  for (const [relPath, absPath] of preparedHeifAssets) {
     externalAssets.set(relPath, absPath);
   }
 
@@ -2273,7 +2291,6 @@ export async function compileForRender(
     renderModeHints,
     hasShaderTransitions,
     usesThreeDTransforms,
-    usesMixBlendMode,
     hasAncestorBackgroundImage,
   };
 }
@@ -2365,10 +2382,10 @@ export async function discoverMediaFromBrowser(page: Page): Promise<BrowserMedia
       if (!id) return;
 
       // currentSrc is authoritative for <video>/<audio><source> and responsive images.
-      const ownSrc = htmlEl.getAttribute("src");
-      const blankSrc =
-        ownSrc !== null && ownSrc.trim() === "" && !htmlEl.querySelector("source[src]");
-      const src = blankSrc ? "" : htmlEl.currentSrc || htmlEl.src || ownSrc || "";
+      const resolvedSrc = htmlEl.currentSrc || htmlEl.src || htmlEl.getAttribute("src") || "";
+      const withoutQueryAndHash = (url: string) => url.replace(/[?#][\s\S]*$/, "");
+      const isPageItself = withoutQueryAndHash(resolvedSrc) === withoutQueryAndHash(location.href);
+      const src = isPageItself ? "" : resolvedSrc;
       const start = parseFloat(htmlEl.getAttribute("data-start") || "0");
       const endRaw = htmlEl.getAttribute("data-end");
       const durationRaw = htmlEl.getAttribute("data-duration");

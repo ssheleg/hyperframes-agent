@@ -11,7 +11,7 @@ import {
 } from "@hyperframes/studio-server/history";
 import { formatFindingTimes } from "../utils/checkFindings.js";
 import { withProjectLock } from "../utils/projectLock.js";
-import { reportArtifacts } from "../utils/toolContext.js";
+import { readToolContext, reportArtifacts, type ToolContext } from "../utils/toolContext.js";
 import { defineCommand, parseArgs } from "citty";
 import type { ArgsDef } from "citty";
 import type { Example } from "./_examples.js";
@@ -375,6 +375,10 @@ async function runPrepareMedia(
   setCommandExitCode(failed.length === 0 ? 0 : 1);
 }
 
+function checkReview(): ToolContext["checkReview"] {
+  return readToolContext().checkReview;
+}
+
 function parseCheckOptions(args: Record<string, unknown>): CheckOptions {
   const maxTransitionSamples = positiveInteger(args["max-transition-samples"], 0);
   return {
@@ -389,8 +393,11 @@ function parseCheckOptions(args: Record<string, unknown>): CheckOptions {
     tolerance: nonNegativeNumber(args.tolerance, DEFAULT_CHECK_OPTIONS.tolerance),
     timeout: Math.max(500, positiveInteger(args.timeout, DEFAULT_CHECK_OPTIONS.timeout)),
     contrast: args.contrast !== false,
+    ...(checkReview()?.skipContrastInMotion ? { skipContrastInMotion: true } : {}),
     strict: args.strict === true,
     snapshots: args.snapshots === true,
+    ...(checkReview()?.findingFrames ? { findingFrames: true } : {}),
+    ...(checkReview()?.inspect ? { inspect: true } : {}),
     captionZone: parseCaptionZone(args["caption-zone"]),
     frameCheck: parseFrameCheck(args["frame-check"]),
     layout: parseLayout(args.layout),
@@ -639,6 +646,7 @@ function printHumanReport(report: CheckReport): void {
   printSection("Motion", report.motion);
   printContrastSection(report);
   printCraftSection(report);
+  printSection("Audio", report.audio);
   printSnapshotSection(report);
   console.log();
   const label = report.ok ? c.success("Check passed") : c.error("Check failed");

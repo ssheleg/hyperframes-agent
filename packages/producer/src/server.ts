@@ -88,6 +88,7 @@ interface RenderInput {
   pageMotionBlur?: RenderConfig["pageMotionBlur"];
   outputDynamicRange?: "auto" | "hdr" | "sdr";
   workers?: number;
+  maxRenderMs?: number;
   crf?: number;
   videoBitrate?: string;
   useGpu: boolean;
@@ -123,13 +124,18 @@ interface PreparedRenderInput {
 }
 
 const DEFAULT_SERVER_FPS = { num: 30, den: 1 } as const;
+const SSE_KEEPALIVE_MS = 30_000;
 const SAFE_RENDER_ERROR_CODES = new Set<string>([
   "ASSET_MEDIA_TYPE_MISMATCH",
+  "HEIF_IMAGE_CONVERSION_FAILED",
+  "HEIF_TOOL_UNAVAILABLE",
   "NOT_MEDIA_PAYLOAD",
   "INVALID_VIDEO_METADATA",
   "VIDEO_SOURCE_UNRENDERABLE",
   "VIDEO_EXTRACTION_FAILED",
   "ENCODER_INTERRUPTED",
+  "RENDER_TOO_SLOW",
+  "RENDER_STAGE_STALLED",
 ]);
 
 /**
@@ -224,6 +230,7 @@ export function parseRenderOptions(body: Record<string, unknown>): Omit<RenderIn
   const fps = parseServerFps(body.fps);
   const quality = parseServerQuality(body.quality);
   const workers = typeof body.workers === "number" ? body.workers : undefined;
+  const maxRenderMs = typeof body.maxRenderMs === "number" ? body.maxRenderMs : undefined;
   const useGpu = body.gpu === true;
   const debug = body.debug === true;
   // Preserve the pre-structured-warning HTTP contract for callers that do
@@ -248,6 +255,7 @@ export function parseRenderOptions(body: Record<string, unknown>): Omit<RenderIn
     fps,
     quality,
     workers,
+    maxRenderMs,
     crf,
     videoBitrate,
     useGpu,
@@ -309,6 +317,7 @@ function buildRenderJobConfig(input: RenderInput, outputPath: string, log: Produ
       quality: input.quality,
       format: input.format ?? "mp4",
       workers: input.workers,
+      maxRenderMs: input.maxRenderMs,
       crf: input.crf,
       videoBitrate: input.videoBitrate,
       useGpu: input.useGpu,
@@ -352,6 +361,14 @@ function resolvePreparedRenderOutput(
 function validateRenderOverrides(body: Record<string, unknown>): string | undefined {
   const encoder = parseEncoderOptions(body, parseServerFormat(body.format) ?? "mp4");
   if (!encoder.ok) return encoder.error;
+  if (
+    body.maxRenderMs !== undefined &&
+    (typeof body.maxRenderMs !== "number" ||
+      !Number.isInteger(body.maxRenderMs) ||
+      body.maxRenderMs < 0)
+  ) {
+    return "maxRenderMs must be a non-negative integer number of milliseconds";
+  }
   if (body.variables !== undefined && !isPlainObject(body.variables)) {
     return 'variables must be a JSON object keyed by variable id (e.g. {"title":"Hello"})';
   }
@@ -846,6 +863,10 @@ export function createRenderHandlers(options: HandlerOptions = {}): RenderHandle
           }),
         });
       }
+      const reportProgress = createSseProgressReporter(stream, requestId);
+      const keepalive = setInterval(() => {
+        Promise.resolve(reportProgress(job, job.currentStage)).catch(() => {});
+      }, SSE_KEEPALIVE_MS);
       const release = await renderSemaphore.acquire();
 
       try {
@@ -853,9 +874,10 @@ export function createRenderHandlers(options: HandlerOptions = {}): RenderHandle
           job,
           input.projectDir,
           absoluteOutputPath,
-          createSseProgressReporter(stream, requestId),
+          reportProgress,
           abortController.signal,
-        );
+        ).finally(release);
+        clearInterval(keepalive);
 
         const fileSize = outputFileSize(absoluteOutputPath);
         const outputToken = store.register(absoluteOutputPath);
@@ -876,6 +898,7 @@ export function createRenderHandlers(options: HandlerOptions = {}): RenderHandle
           }),
         });
       } catch (error) {
+        clearInterval(keepalive);
         await writeRenderStreamFailure({
           error,
           job,
@@ -885,7 +908,6 @@ export function createRenderHandlers(options: HandlerOptions = {}): RenderHandle
           log,
         });
       } finally {
-        release();
         c.req.raw.signal.removeEventListener("abort", onRequestAbort);
         cleanupTempDir(cleanupProjectDir, log);
       }

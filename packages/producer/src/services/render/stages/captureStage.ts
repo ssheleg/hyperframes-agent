@@ -70,6 +70,7 @@ import { wrapCaptureStageError } from "../captureStageError.js";
 import { reportFrameProgress, reportWorkerStartup } from "../shared.js";
 import { withWorkerPageErrors } from "../perfSummary.js";
 import type { SdrDiskCapturePlan } from "../capturePlan.js";
+import type { OpenStallAttempt } from "../observability.js";
 
 export interface CaptureStageInput {
   fileServer: FileServerHandle;
@@ -117,6 +118,9 @@ export interface CaptureStageInput {
    */
   frameRange?: { startFrame: number; endFrame: number };
   onFrameLanded?: (frame: LandedFrame) => void;
+  interleaveFrames?: boolean;
+  /** Each capture attempt opens one, so a stalled attempt is retried by the ladders below. */
+  openAttempt?: OpenStallAttempt;
 }
 
 export interface CaptureStageResult {
@@ -352,7 +356,7 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
     }
   }
 
-  const captureOptions = buildCaptureOptions();
+  const captureOptions = { ...buildCaptureOptions(), deFrameFallback: false };
   const remedy = diskCaptureRemedy(cfg, job.config.format ?? "mp4", job.duration ?? 0, workerCount);
   const checkDiskProjection = createDiskCaptureProjection({
     framesDir,
@@ -377,8 +381,10 @@ export async function runCaptureStage(input: CaptureStageInput): Promise<Capture
       createBeforeCaptureHook: createRenderVideoFrameInjector,
       abortSignal,
       frameRangeStart: frameRange?.startFrame,
+      interleaveFrames: input.interleaveFrames,
       dedupPerfs,
       pageErrorLines: workerPageErrors,
+      openAttempt: input.openAttempt,
       onProgress: (progress) => {
         if (progress.latestWorkerPhase) {
           if (progress.capturedFrames === 0) reportWorkerStartup(job, progress, onProgress);
@@ -469,6 +475,11 @@ async function runSequentialDiskCapture(
   let resumeFrom = 0;
 
   while (true) {
+    const attempt = input.openAttempt?.();
+    const assertAttemptActive = () => {
+      assertNotAborted();
+      attempt?.throwIfAborted();
+    };
     const videoInjector = createRenderVideoFrameInjector();
     const session =
       probeSession ??
@@ -489,11 +500,11 @@ async function runSequentialDiskCapture(
         probeSession = null;
       }
       await ensureSessionReady(session);
-      assertNotAborted();
+      assertAttemptActive();
       lastBrowserConsole = session.browserConsoleBuffer;
 
       await captureSessionFrames(session, {
-        input,
+        input: { ...input, assertNotAborted: assertAttemptActive },
         rangeStart,
         rangeEnd,
         resumeFrom,

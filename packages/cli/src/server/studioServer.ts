@@ -569,11 +569,21 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
       const { injectDeterministicFontFaces } = await import("@hyperframes/core/fonts/embed");
       const { prepareAnimatedGifInputs } =
         await import("../../../producer/src/services/animatedGifPrep.js");
+      const { prepareHeifImageInputs } =
+        await import("../../../producer/src/services/heifImagePrep.js");
       const { downloadToTemp, writeUrlDownloadTelemetry } =
         await import("../../../producer/src/utils/urlDownloader.js");
       const gifOutputDir = join(project.dir, ".hyperframes", "prepared-assets", "gif");
       const gifDownloadDir = join(project.dir, ".hyperframes", "prepared-assets", "downloads");
-      const prepared = await prepareAnimatedGifInputs(html, {
+      const heifOutputDir = join(project.dir, ".hyperframes", "prepared-assets", "heif");
+      const { html: htmlWithJpegs } = await prepareHeifImageInputs(html, {
+        projectDir: project.dir,
+        downloadDir: gifDownloadDir,
+        outputDir: heifOutputDir,
+        outputSrcPrefix: ".hyperframes/prepared-assets/heif",
+        onFailure: (error) => console.warn(`[studio] ${error.message}`),
+      });
+      const prepared = await prepareAnimatedGifInputs(htmlWithJpegs, {
         projectDir: project.dir,
         downloadDir: gifDownloadDir,
         outputDir: gifOutputDir,
@@ -646,7 +656,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
           state.status = "cancelled";
           for (const suffix of ["", ".meta.json"]) {
             const fp = suffix
-              ? opts.outputPath.replace(/\.(mp4|webm|mov)$/, suffix)
+              ? opts.outputPath.replace(/\.(mp4|webm|mov|gif)$/, suffix)
               : opts.outputPath;
             try {
               if (existsSync(fp)) unlinkSync(fp);
@@ -670,6 +680,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
             fps: opts.fps,
             quality: opts.quality as "draft" | "standard" | "high",
             format: opts.format,
+            ...(opts.gifLoop !== undefined ? { gifLoop: opts.gifLoop } : {}),
             outputResolution: opts.outputResolution,
             ...(manualEditsRenderScript ? { renderBodyScripts: [manualEditsRenderScript] } : {}),
             ...(opts.composition ? { entryFile: opts.composition } : {}),
@@ -702,7 +713,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
           if (job.audioLoweredDb !== undefined) state.audioLoweredDb = job.audioLoweredDb;
           state.status = "complete";
           state.progress = 100;
-          const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov)$/, ".meta.json");
+          const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov|gif)$/, ".meta.json");
           writeFileSync(
             metaPath,
             JSON.stringify({
@@ -736,7 +747,7 @@ export function createStudioServer(options: StudioServerOptions): StudioServer {
             cpu.stop(),
           );
           try {
-            const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov)$/, ".meta.json");
+            const metaPath = opts.outputPath.replace(/\.(mp4|webm|mov|gif)$/, ".meta.json");
             writeFileSync(metaPath, JSON.stringify({ status: "failed" }));
           } catch {
             /* ignore */

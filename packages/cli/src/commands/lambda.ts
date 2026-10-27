@@ -127,11 +127,23 @@ export default defineCommand({
         "arm64 | x86_64: where the plan and chunks run; arm64 adds a container-image function (default: arm64)",
     },
     "skip-build": { type: "boolean", description: "Reuse existing handler.zip (deploy)" },
+    warm: {
+      type: "boolean",
+      default: true,
+      description: "Warm the video function once after deploy (--no-warm skips it)",
+    },
 
     // sites / render
     "site-id": { type: "string", description: "Explicit site id (overrides content hash)" },
-    width: { type: "string", description: "Render width in pixels" },
-    height: { type: "string", description: "Render height in pixels" },
+    width: {
+      type: "string",
+      description:
+        "Output width in pixels: the composition's width, or a whole-number multiple of it (3840 on a 1920x1080 composition renders at scale 2)",
+    },
+    height: {
+      type: "string",
+      description: "Output height in pixels, at the same multiple as --width",
+    },
     "output-resolution": {
       type: "string",
       description:
@@ -266,6 +278,7 @@ export default defineCommand({
           lambdaMemoryMb: parsePositiveInt(args.memory, "--memory"),
           videoArch: parseVideoArch(args["video-arch"]),
           skipBuild: Boolean(args["skip-build"]),
+          warm: args.warm !== false,
         });
         return;
       }

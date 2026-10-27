@@ -103,6 +103,11 @@ async function getPreviewSignature(projectDir: string): Promise<string> {
   return match![1]!;
 }
 
+const TAGGED_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAABGNJQ1ABAQABlXPCVgAAAAxJREFUeJxj0NfXBwABHgCOTp25kgAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 describe("registerPreviewRoutes", () => {
   it("adds its <base> even when a script mentions one, and keeps an authored <base>", async () => {
     const projectDir = createProjectDir();
@@ -1378,6 +1383,8 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
   >;
 
   async function loadPreviewModule(opts: {
+    copyProgress?: number;
+    retried?: string[];
     resolveProxyImpl?: (
       projectDir: string,
       absoluteSourcePath: string,
@@ -1390,6 +1397,7 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
       browserHostile: boolean;
       representativeMime: string | null;
       hasAlpha: boolean;
+      source?: { width: number; height: number; bitDepth: number; bitrate: number };
     } | null>;
   }): Promise<typeof import("./preview.js")> {
     vi.resetModules();
@@ -1411,6 +1419,8 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
       waitForProxy,
       ProxyWaitTimeoutError,
       PROXY_PENDING_RETRY_AFTER_SECONDS,
+      proxyCopyProgress: () => opts.copyProgress,
+      retryProxyCopy: (_dir: string, file: string) => void opts.retried?.push(file),
       ProxyTranscodeError: FakeProxyTranscodeError,
       ProxyCapacityError: FakeProxyCapacityError,
       PROXY_PARAMS_VERSION: "v1",
@@ -1424,7 +1434,10 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
       ...(await vi.importActual<typeof import("../helpers/mediaCodecMap.js")>(
         "../helpers/mediaCodecMap.js",
       )),
-      scanProjectMediaCodecMap: opts.scanMapImpl ?? (async () => ({})),
+      scanProjectMedia: async (...args: Parameters<ScanMapImpl>) => ({
+        codecMap: await (opts.scanMapImpl ?? (async () => ({})))(...args),
+        sourceFacts: {},
+      }),
       createMediaCodecProbeCache: () => new Map(),
       probeAssetCodec:
         opts.probeAssetCodecImpl ??
@@ -1434,18 +1447,6 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
           representativeMime: null,
           hasAlpha: false,
         })),
-      decideMediaProxyEligibility: (
-        facts: {
-          browserHostile: boolean;
-          hasAlpha: boolean;
-        } | null,
-      ) => {
-        if (!facts) return { eligible: false, reason: "unknown_codec" };
-        if (!facts.browserHostile) {
-          return { eligible: false, reason: "browser_safe_codec" };
-        }
-        return { eligible: true };
-      },
       isProxyVariant: (value: string) => value === "h264" || value === "vp8",
       isProxyVariantRequest: (value: string) =>
         value === "auto" || value === "h264" || value === "vp8",
@@ -1578,9 +1579,72 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
       expect(sized.headers.get("ETag")).not.toBe(full.headers.get("ETag"));
     });
 
+    describe("a lighter copy of a file Chrome can play", () => {
+      const playable = (width: number, height: number) => async () => ({
+        codecName: "h264",
+        browserHostile: false,
+        representativeMime: null,
+        hasAlpha: false,
+        source: { width, height, bitDepth: 8, bitrate: 10_000_000 },
+      });
+
+      it("is made at the asked box when the file is heavy there", async () => {
+        const projectDir = createProjectDir();
+        writeFileSync(join(projectDir, "clip.mp4"), "original-bytes");
+        const resolveProxyMock = vi.fn(async () => {
+          const proxyPath = join(projectDir, "light.mp4");
+          writeFileSync(proxyPath, "light-bytes");
+          return proxyPath;
+        });
+        const { registerPreviewRoutes: register } = await loadPreviewModule({
+          resolveProxyImpl: resolveProxyMock,
+          probeAssetCodecImpl: playable(3840, 2160),
+        });
+        const app = new Hono();
+        register(app, createAdapter(projectDir));
+
+        const res = await app.request(
+          "http://localhost/projects/demo/preview/clip.mp4?hf-proxy=h264&hf-proxy-light=1&hf-proxy-box=724x362",
+        );
+
+        expect(res.status).toBe(200);
+        expect(await res.text()).toBe("light-bytes");
+        expect(resolveProxyMock).toHaveBeenCalledWith(
+          projectDir,
+          join(projectDir, "clip.mp4"),
+          "h264",
+          { width: 724, height: 362 },
+        );
+      });
+
+      it("is refused when the file is not heavy at that box, and without the ask", async () => {
+        const projectDir = createProjectDir();
+        writeFileSync(join(projectDir, "clip.mp4"), "original-bytes");
+        const resolveProxyMock = vi.fn(async () => "should-not-be-called");
+        const { registerPreviewRoutes: register } = await loadPreviewModule({
+          resolveProxyImpl: resolveProxyMock,
+          probeAssetCodecImpl: playable(1920, 1080),
+        });
+        const app = new Hono();
+        register(app, createAdapter(projectDir));
+
+        const small = await app.request(
+          "http://localhost/projects/demo/preview/clip.mp4?hf-proxy=h264&hf-proxy-light=1&hf-proxy-box=2048x1218",
+        );
+        const unasked = await app.request(
+          "http://localhost/projects/demo/preview/clip.mp4?hf-proxy=h264&hf-proxy-box=724x362",
+        );
+
+        expect(small.status).toBe(422);
+        expect(unasked.status).toBe(422);
+        expect(resolveProxyMock).not.toHaveBeenCalled();
+      });
+    });
+
     it.each([
       ["a size off the ladder", "?hf-proxy=h264&hf-proxy-box=1000x2000"],
       ["a size without a copy", "?hf-proxy-box=1448x2048"],
+      ["a lighter copy without a size", "?hf-proxy=h264&hf-proxy-light=1"],
     ])("refuses %s before making anything", async (_name, query) => {
       const projectDir = createProjectDir();
       writeFileSync(join(projectDir, "clip.mp4"), "original-hevc-bytes");
@@ -1841,6 +1905,28 @@ describe("hf-proxy negotiation and media codec map injection (U3)", () => {
       expect(ready.status).toBe(200);
       expect(await ready.text()).toBe("proxy-bytes");
       expect(mediaProxyDemand().proxyRequests - before).toBe(1);
+    });
+
+    it("says how far a copy has got on the 202, and forgets a failure when asked to retry", async () => {
+      const projectDir = createProjectDir();
+      writeFileSync(join(projectDir, "clip.mp4"), "original-hevc-bytes");
+      const retried: string[] = [];
+      const { registerPreviewRoutes: register } = await loadPreviewModule({
+        resolveProxyImpl: () => new Promise<string>(() => {}),
+        copyProgress: 0.4249,
+        retried,
+      });
+      const app = new Hono();
+      register(app, createAdapter(projectDir));
+      const url = "http://localhost/projects/demo/preview/clip.mp4?hf-proxy=h264";
+
+      const first = await app.request(url);
+      expect(first.status).toBe(202);
+      expect(first.headers.get("X-HF-Proxy-Progress")).toBe("0.425");
+      expect(retried).toEqual([]);
+
+      await app.request(`${url}&hf-proxy-box=1448x2048&hf-proxy-retry=1`);
+      expect(retried).toEqual([join(projectDir, "clip.mp4")]);
     });
 
     it("rejects a path-traversal attempt through the proxied path (404, no transcode)", async () => {
@@ -2812,5 +2898,21 @@ describe("bundled GSAP local root", () => {
     expect(() => appForHost(projectDir, "", { gsapLocalRoot: "//cdn.example/npm" })).toThrow(
       "same-origin path",
     );
+  });
+});
+
+describe("preview asset colour tags", () => {
+  it("serves a BT.709-tagged PNG without the tag, so the file's own values show", async () => {
+    const projectDir = createProjectDir();
+    writeFileSync(join(projectDir, "tagged.png"), TAGGED_PNG);
+    const app = new Hono();
+    registerPreviewRoutes(app, createAdapter(projectDir));
+
+    const response = await app.request("http://localhost/projects/demo/preview/tagged.png");
+
+    const body = Buffer.from(await response.arrayBuffer());
+    expect(body.includes("cICP")).toBe(false);
+    expect(body.includes("IDAT")).toBe(true);
+    expect(response.headers.get("Content-Length") ?? String(body.length)).toBe(String(body.length));
   });
 });

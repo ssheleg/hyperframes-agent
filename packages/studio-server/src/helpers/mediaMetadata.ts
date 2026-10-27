@@ -3,6 +3,7 @@ import { extname } from "node:path";
 import {
   firstFrameColourArgs,
   parseFirstFrameColour,
+  type PreviewSourceFacts,
   type ToneMapSourceColour,
 } from "@hyperframes/core";
 import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
@@ -77,6 +78,9 @@ export interface MediaMetadata {
   /** Video stream carries alpha (pix_fmt or the VP8/VP9 alpha_mode tag). */
   hasAlpha?: boolean;
   durationSeconds?: number;
+  source?: PreviewSourceFacts;
+  /** Every stream as `type:codec[flags]`, for a failure report. */
+  streams?: string[];
   probeError?: string;
 }
 
@@ -89,7 +93,10 @@ interface FfprobeStream {
   color_transfer?: string;
   color_primaries?: string;
   bits_per_raw_sample?: string;
-  disposition?: { attached_pic?: number };
+  width?: number;
+  height?: number;
+  bit_rate?: string;
+  disposition?: Record<string, number | undefined>;
   tags?: Record<string, string | undefined>;
 }
 
@@ -192,6 +199,61 @@ export async function probeFirstFrameColour(
   return result.status === 0 ? parseFirstFrameColour(String(result.stderr)) : {};
 }
 
+function bitDepthOf(stream: FfprobeStream): number {
+  const raw = Number(stream.bits_per_raw_sample);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  const suffixed = /(\d{1,3})(?:le|be)$/.exec(stream.pix_fmt ?? "");
+  return suffixed ? Number(suffixed[1]) : 8;
+}
+
+function sourceFactsOf(
+  stream: FfprobeStream | undefined,
+  formatBitrate: string | undefined,
+): PreviewSourceFacts | undefined {
+  if (!stream?.width || !stream.height) return undefined;
+  const bitrate = Number(stream.bit_rate ?? formatBitrate);
+  return {
+    width: stream.width,
+    height: stream.height,
+    bitDepth: bitDepthOf(stream),
+    bitrate: Number.isFinite(bitrate) ? bitrate : 0,
+  };
+}
+
+const STREAM_SUMMARY_MAX = 12;
+
+function summarizeStream(stream: FfprobeStream): string {
+  const flags = Object.entries(stream.disposition ?? {})
+    .filter(([, on]) => on === 1)
+    .map(([name]) => name);
+  return `${stream.codec_type ?? "?"}:${stream.codec_name ?? "?"}[${flags.join(",")}]`;
+}
+
+type ProbeOutput = {
+  streams?: FfprobeStream[];
+  format?: { duration?: string; bit_rate?: string };
+};
+
+function metadataFromProbe(kind: MediaMetadata["kind"], parsed: ProbeOutput): MediaMetadata {
+  const stream = parsed.streams?.find((item) => {
+    if (kind === "image") return item.codec_type === "video";
+    return item.codec_type === kind && item.disposition?.attached_pic !== 1;
+  });
+  const metadata: MediaMetadata = {
+    kind,
+    color: classifyMediaColor(stream),
+    streams: (parsed.streams ?? []).slice(0, STREAM_SUMMARY_MAX).map(summarizeStream),
+  };
+  if (kind === "video") {
+    metadata.hasAudio = (parsed.streams ?? []).some((item) => item.codec_type === "audio");
+    metadata.hasAlpha = stream !== undefined && videoStreamHasAlpha(stream);
+    const duration = Number(parsed.format?.duration);
+    if (Number.isFinite(duration) && duration > 0) metadata.durationSeconds = duration;
+    metadata.source = sourceFactsOf(stream, parsed.format?.bit_rate);
+  }
+  return metadata;
+}
+
 export async function probeMediaMetadata(
   filePath: string,
   runner: FfprobeRunner = execFileRunner,
@@ -216,7 +278,7 @@ export async function probeMediaMetadata(
       "-v",
       "error",
       "-show_entries",
-      "stream=codec_type,codec_name,profile,pix_fmt,color_space,color_transfer,color_primaries,bits_per_raw_sample:stream_disposition=attached_pic:stream_tags=alpha_mode:format=duration",
+      "stream=codec_type,codec_name,profile,pix_fmt,color_space,color_transfer,color_primaries,bits_per_raw_sample,width,height,bit_rate:stream_disposition:stream_tags=alpha_mode:format=duration,bit_rate",
       "-of",
       "json",
       "--",
@@ -233,22 +295,7 @@ export async function probeMediaMetadata(
   }
 
   try {
-    const parsed = JSON.parse(String(result.stdout || "{}")) as {
-      streams?: FfprobeStream[];
-      format?: { duration?: string };
-    };
-    const stream = parsed.streams?.find((item) => {
-      if (kind === "image") return item.codec_type === "video";
-      return item.codec_type === kind && item.disposition?.attached_pic !== 1;
-    });
-    const metadata: MediaMetadata = { kind, color: classifyMediaColor(stream) };
-    if (kind === "video") {
-      metadata.hasAudio = (parsed.streams ?? []).some((item) => item.codec_type === "audio");
-      metadata.hasAlpha = stream !== undefined && videoStreamHasAlpha(stream);
-      const duration = Number(parsed.format?.duration);
-      if (Number.isFinite(duration) && duration > 0) metadata.durationSeconds = duration;
-    }
-    return metadata;
+    return metadataFromProbe(kind, JSON.parse(String(result.stdout || "{}")) as ProbeOutput);
   } catch {
     return { kind, color: classifyMediaColor(null), probeError: "ffprobe returned invalid json" };
   }

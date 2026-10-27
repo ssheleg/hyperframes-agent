@@ -30,11 +30,19 @@ const hideHiddenClipContents = (clip: string) => {
   return `${clip} * { visibility: hidden !important; } ${filterOutputLayers} { filter: none !important; }`;
 };
 
-export function showHiddenClips(): () => void {
-  const hidden = Array.from(document.querySelectorAll<HTMLElement>(`[${CLIP_HIDDEN_ATTR}]`));
+export function showHiddenClips(only: (el: HTMLElement) => boolean = () => true): () => void {
+  return showClips(
+    Array.from(document.querySelectorAll<HTMLElement>(`[${CLIP_HIDDEN_ATTR}]`)).filter(only),
+  );
+}
+
+export function showClips(hidden: Array<Element & ElementCSSInlineStyle>): () => void {
   const putMarksBack = hidden.map((el) => revealClip(el));
   return () => {
-    for (const el of hidden) el.style.visibility = "hidden";
+    for (const el of hidden) {
+      if (el.style.getPropertyValue("visibility") !== "hidden")
+        el.style.setProperty("visibility", "hidden", "important");
+    }
     for (const putMarkBack of putMarksBack) putMarkBack();
   };
 }

@@ -1,12 +1,24 @@
 import { BrowserCleanupError, onStopSignal } from "../browser/launch.js";
 import type { CheckProgress } from "./checkProgress.js";
-import { CheckDeadline, CheckDeadlineError, type CheckPhase } from "./checkDeadline.js";
+import {
+  CheckDeadline,
+  CheckDeadlineError,
+  CheckStoppedError,
+  type CheckPhase,
+} from "./checkDeadline.js";
 import {
   checkSnapshotDirectory,
   beginCheckSnapshots,
   finishCheckSnapshots,
 } from "./checkSnapshotDirectory.js";
-import { findingElementKey, groupSampledFindings } from "./checkFindings.js";
+import { findingAtRoot, findingElementKey, groupSampledFindings } from "./checkFindings.js";
+import {
+  MAX_FINDING_FRAME_TIMES,
+  selectFindingFrames,
+  withFindingFrameFields,
+  findingFrameRequests,
+} from "./checkFindingFrames.js";
+export { selectFindingFrames } from "./checkFindingFrames.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import type { PrelaunchedBrowser } from "../capture/captureCompositionFrame.js";
@@ -40,6 +52,7 @@ import {
 import { findMotionSpec, readMotionSpec, type MotionAssertion } from "./motionSpec.js";
 import { auditCraft } from "./craftAudit.js";
 import { inspectHdrAutoPromotion } from "./hdrPromotion.js";
+import { collectProjectMedia, type ProjectMedia } from "./projectMedia.js";
 import { normalizeErrorMessage } from "./errorMessage.js";
 import {
   parseColorRGBA,
@@ -58,12 +71,13 @@ import type {
   CheckDependencies,
   CheckFinding,
   CheckFindingCropRequest,
+  CheckFindingFrameRequest,
+  CheckFindingFrames,
   CheckGeometryCandidate,
   CheckOptions,
   CheckReport,
   CheckScreenshot,
   CheckSection,
-  CheckSeverity,
   ContrastAuditEntry,
   CraftFinding,
   CraftFrame,
@@ -84,6 +98,7 @@ export type {
   CheckDependencies,
   CheckFinding,
   CheckFindingCropRequest,
+  CheckFindingFrameRequest,
   CheckOptions,
   CheckReport,
   CheckSection,
@@ -603,9 +618,12 @@ async function collectContrastAt(
   collected: GridSamples,
 ): Promise<void> {
   const contrastStart = Date.now();
-  const capture = options.snapshots
-    ? await driver.collectContrast(time, annotationBoxesFrom(issuesAtTime))
-    : await driver.collectContrast(time);
+  const annotations = options.snapshots ? annotationBoxesFrom(issuesAtTime) : undefined;
+  const capture = options.skipContrastInMotion
+    ? await driver.collectContrast(time, annotations, true)
+    : options.snapshots
+      ? await driver.collectContrast(time, annotations)
+      : await driver.collectContrast(time);
   collected.contrastMs += Date.now() - contrastStart;
   collected.contrastEntries.push(...capture.entries);
   if (capture.pngBase64) collected.screenshots.push({ time, pngBase64: capture.pngBase64 });
@@ -1619,15 +1637,7 @@ export async function runCheckPipeline(
     });
 
     const lint = buildLintSection(lintResult);
-    let hdrPromotion: CheckReport["hdr"]["autoPromotion"] = null;
-    let hdrInspection: CheckReport["hdr"]["inspection"] = "available";
-    try {
-      hdrPromotion = await (dependencies.inspectHdrAutoPromotion ?? inspectHdrAutoPromotion)(
-        project,
-      );
-    } catch {
-      hdrInspection = "unavailable";
-    }
+    const { hdr, audio } = await inspectProjectMedia(project, dependencies);
     if (shouldBlockRender(true, false, lintResult.totalErrors, lintResult.totalWarnings)) {
       return buildReport(
         options,
@@ -1636,8 +1646,9 @@ export async function runCheckPipeline(
         { kind: "none" },
         [],
         [],
-        hdrPromotion,
-        hdrInspection,
+        hdr.autoPromotion,
+        hdr.inspection,
+        await audio,
       );
     }
 
@@ -1680,14 +1691,21 @@ export async function runCheckPipeline(
         motion,
         specFindings,
         snapshotFiles,
-        hdrPromotion,
-        hdrInspection,
+        hdr.autoPromotion,
+        hdr.inspection,
+        await audio,
       );
       outcome = {
         kind: "report",
-        report: options.snapshots
-          ? await withFindingCrops(dependencies, project, options, report, deadline)
-          : report,
+        report: await withOptionalFindingFrames(
+          dependencies,
+          project,
+          options,
+          options.snapshots
+            ? await withFindingCrops(dependencies, project, options, report, deadline)
+            : report,
+          deadline,
+        ),
       };
     } catch (error) {
       outcome = { kind: "failed", error };
@@ -1768,6 +1786,38 @@ async function withFindingCrops(
     // (a second Chrome launch failing/timing out) without failing the run.
     console.error("   finding crops skipped: " + normalizeErrorMessage(error));
     trackCommandFailure("check-finding-crops", error);
+    return report;
+  }
+}
+
+async function withOptionalFindingFrames(
+  dependencies: CheckDependencies,
+  project: ProjectDir,
+  options: CheckOptions,
+  report: CheckReport,
+  deadline: CheckDeadline,
+): Promise<CheckReport> {
+  if (!options.findingFrames || deadline.signal.aborted) return report;
+  const plan = selectFindingFrames(report);
+  if (plan.requests.length === 0) return report;
+  if (plan.skipped > 0) {
+    console.error(
+      `   finding frames: ${plan.skipped} finding(s) left out past ${MAX_FINDING_FRAME_TIMES} distinct times`,
+    );
+  }
+  const capture = dependencies.captureFindingFrames ?? captureFindingFrames;
+  try {
+    deadline.enter("frames");
+    const requests = findingFrameRequests(report, plan, options.inspect);
+    const captured = await deadline.run(() => capture(project, options, requests, deadline));
+    return withFindingFrameFields(report, plan, captured);
+  } catch (error) {
+    if (error instanceof CheckDeadlineError || error instanceof CheckStoppedError) {
+      const finding = runtimeFailure(error);
+      return { ...report, ok: false, runtime: section([...report.runtime.findings, finding]) };
+    }
+    console.error("   finding frames skipped: " + normalizeErrorMessage(error));
+    trackCommandFailure("check-finding-frames", error);
     return report;
   }
 }
@@ -1910,6 +1960,7 @@ function buildReport(
   snapshotFiles: string[],
   hdrPromotion: CheckReport["hdr"]["autoPromotion"] = null,
   hdrInspection: CheckReport["hdr"]["inspection"] = "available",
+  audioFindings: CheckFinding[] = [],
 ): CheckReport {
   const shaping = options.components?.length
     ? { ...options, maxIssues: Number.MAX_SAFE_INTEGER }
@@ -1921,8 +1972,10 @@ function buildReport(
   const motionSection = section(motionFindings);
   const contrastSection = section(browser.contrastFindings);
   const craftSection = section<CraftFinding>(browser.craft.findings);
+  const audioSection = section(audioFindings);
   const warningCount =
     lint.warningCount +
+    audioSection.warningCount +
     runtime.warningCount +
     layout.warningCount +
     motionSection.warningCount +
@@ -1930,6 +1983,7 @@ function buildReport(
     craftSection.warningCount;
   const errorCount =
     lint.errorCount +
+    audioSection.errorCount +
     runtime.errorCount +
     layout.errorCount +
     motionSection.errorCount +
@@ -1963,6 +2017,7 @@ function buildReport(
       step: browser.craft.step,
       samples: browser.craft.samples,
     },
+    audio: audioSection,
     hdr: { autoPromotion: hdrPromotion, inspection: hdrInspection },
     snapshots: {
       enabled: options.snapshots,
@@ -2008,7 +2063,7 @@ function filterComponentReport(report: CheckReport, options: CheckOptions): Chec
       components: options.components,
       hiddenFindings: 0,
       notes: [
-        "Static lint and unscoped runtime failures remain project-wide.",
+        "Static lint, audio and unscoped runtime failures remain project-wide.",
         ...(options.range
           ? [
               "Whole-timeline motion assertions, frozen-sweep detection and craft warnings are skipped for range checks.",
@@ -2130,24 +2185,6 @@ function runtimeFailure(error: unknown, code = "check_runtime_failure"): CheckFi
   );
 }
 
-function findingAtRoot(
-  code: string,
-  severity: CheckSeverity,
-  message: string,
-  sourceFile: string,
-): CheckFinding {
-  return {
-    code,
-    severity,
-    message,
-    selector: "[data-composition-id]",
-    dataAttributes: {},
-    sourceFile,
-    bbox: ZERO_BBOX,
-    time: 0,
-  };
-}
-
 function failureReport(options: CheckOptions, finding: CheckFinding): CheckReport {
   const lint = { ...section([]), filesScanned: 0 };
   const browser = emptyBrowserResult();
@@ -2229,6 +2266,16 @@ async function writeSnapshot(
   return relative(projectDir, path);
 }
 
+async function captureFindingFrames(
+  project: ProjectDir,
+  options: CheckOptions,
+  requests: CheckFindingFrameRequest[],
+  deadline?: CheckDeadline,
+): Promise<CheckFindingFrames> {
+  const module = await import("./checkBrowser.js");
+  return module.captureFindingFrames(project, options, requests, deadline);
+}
+
 async function captureFindingCrops(
   project: ProjectDir,
   options: CheckOptions,
@@ -2240,6 +2287,48 @@ async function captureFindingCrops(
   return module.captureFindingCrops(project, options, requests, deadline);
 }
 
+/** HDR promotion before the browser starts; audio findings later, overlapping the browser pass. */
+async function inspectProjectMedia(
+  project: ProjectDir,
+  dependencies: CheckDependencies,
+): Promise<{ hdr: CheckReport["hdr"]; audio: Promise<CheckFinding[]> }> {
+  const media = (dependencies.collectMedia ?? collectMedia)(project);
+  let hdr: CheckReport["hdr"];
+  try {
+    const promotion = (dependencies.inspectHdrAutoPromotion ?? inspectHdrAutoPromotion)(
+      project,
+      await media,
+    );
+    hdr = { autoPromotion: await promotion, inspection: "available" };
+  } catch {
+    hdr = { autoPromotion: null, inspection: "unavailable" };
+  }
+  const audio = media
+    .then((found) => (dependencies.inspectAudio ?? inspectAudio)(project, found))
+    .catch((error: unknown) => audioCheckFailure(project, error));
+  return { hdr, audio };
+}
+
+function collectMedia(project: ProjectDir): Promise<ProjectMedia> {
+  return collectProjectMedia(project.dir);
+}
+
+async function inspectAudio(project: ProjectDir, media: ProjectMedia): Promise<CheckFinding[]> {
+  const module = await import("./checkAudio.js");
+  return module.inspectAudio(project.dir, relative(project.dir, project.indexPath), media);
+}
+
+function audioCheckFailure(project: ProjectDir, error: unknown): CheckFinding[] {
+  return [
+    findingAtRoot(
+      "audio_check_unavailable",
+      "info",
+      `Audio was not checked: ${normalizeErrorMessage(error)}`,
+      relative(project.dir, project.indexPath),
+    ),
+  ];
+}
+
 const DEFAULT_DEPENDENCIES: CheckDependencies = {
   lintProject,
   resolveMotionSpec,
@@ -2247,5 +2336,8 @@ const DEFAULT_DEPENDENCIES: CheckDependencies = {
   prelaunchBrowser,
   writeSnapshot,
   captureFindingCrops,
+  captureFindingFrames,
+  collectMedia,
   inspectHdrAutoPromotion,
+  inspectAudio,
 };

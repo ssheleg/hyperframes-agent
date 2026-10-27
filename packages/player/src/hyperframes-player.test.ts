@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from "vitest";
+import { mediaElementTime } from "@hyperframes/core/runtime/media-clock";
 import { formatTime, formatSpeed, SPEED_PRESETS } from "./controls.js";
 
 // Install a stubbed contentDocument getter on the given iframe element. The
@@ -253,7 +254,7 @@ describe("HyperframesPlayer parent-frame media", () => {
     expect(mockAudio.play).toHaveBeenCalled();
 
     player.seek(12.5);
-    expect(mockAudio.currentTime).toBe(12.5);
+    expect(mockAudio.currentTime).toBe(mediaElementTime(12.5));
 
     player.pause();
     expect(mockAudio.pause).toHaveBeenCalled();
@@ -339,7 +340,7 @@ describe("HyperframesPlayer parent-frame media", () => {
 
     player.seek(12.5);
     expect(mockAudio.pause).toHaveBeenCalled();
-    expect(mockAudio.currentTime).toBe(12.5);
+    expect(mockAudio.currentTime).toBe(mediaElementTime(12.5));
   });
 
   it("promotion is idempotent", () => {
@@ -893,7 +894,7 @@ describe("HyperframesPlayer parent-proxy time-mirror coalescing", () => {
     // Second sample with the same drift: the gate trips, the write fires,
     // and the counter resets so the proxy doesn't re-seek every later tick.
     player._mirrorParentMediaTime(5.5);
-    expect(m.el.currentTime).toBe(5.5);
+    expect(m.el.currentTime).toBe(mediaElementTime(5.5));
     expect(m.driftSamples).toBe(0);
   });
 
@@ -914,14 +915,14 @@ describe("HyperframesPlayer parent-proxy time-mirror coalescing", () => {
   it("force: true writes immediately on the first over-threshold sample", () => {
     const m = makeEntry({ currentTime: 5 });
     player._mirrorParentMediaTime(5.5, { force: true });
-    expect(m.el.currentTime).toBe(5.5);
+    expect(m.el.currentTime).toBe(mediaElementTime(5.5));
     expect(m.driftSamples).toBe(0);
   });
 
   it("force: true clears any pre-existing drift counter", () => {
     const m = makeEntry({ currentTime: 5, driftSamples: 1 });
     player._mirrorParentMediaTime(5.5, { force: true });
-    expect(m.el.currentTime).toBe(5.5);
+    expect(m.el.currentTime).toBe(mediaElementTime(5.5));
     expect(m.driftSamples).toBe(0);
   });
 
@@ -961,8 +962,8 @@ describe("HyperframesPlayer parent-proxy time-mirror coalescing", () => {
     const a = makeEntry({ currentTime: 5 });
     const b = makeEntry({ currentTime: 8 });
     player._mirrorParentMediaTime(7, { force: true });
-    expect(a.el.currentTime).toBe(7);
-    expect(b.el.currentTime).toBe(7);
+    expect(a.el.currentTime).toBe(mediaElementTime(7));
+    expect(b.el.currentTime).toBe(mediaElementTime(7));
     expect(a.driftSamples).toBe(0);
     expect(b.driftSamples).toBe(0);
   });
@@ -3145,7 +3146,7 @@ describe("HyperframesPlayer video mode", () => {
     expect(player.paused).toBe(false);
 
     player.seek(2.5);
-    expect(video.currentTime).toBe(2.5);
+    expect(video.currentTime).toBe(mediaElementTime(2.5));
     expect(player.currentTime).toBe(2.5);
     expect(player.paused).toBe(true);
     expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
@@ -3182,7 +3183,7 @@ describe("HyperframesPlayer video mode", () => {
     flushFrame();
 
     expect(ended).toBe(0);
-    expect(video.currentTime).toBe(0);
+    expect(video.currentTime).toBe(mediaElementTime(0));
     expect(playSpy).toHaveBeenCalledTimes(2);
     expect(player.paused).toBe(false);
   });
@@ -3544,6 +3545,42 @@ describe("HyperframesPlayer video mode", () => {
     expect(playButton).not.toBeNull();
     expect(withControls.shadowRoot?.textContent).toContain("0:00 / 0:00");
     expect(withControls.duration).toBe(0);
+  });
+
+  it("shows a playback rate configured before controls are created", () => {
+    player = createPlayer({ type: "video/mp4", src: FILM, "playback-rate": "2", controls: "" });
+
+    const speed = player.shadowRoot?.querySelector(".hfp-speed-btn");
+    expect(speed?.textContent).toBe("2x");
+    expect(speed?.getAttribute("aria-label")).toBe("Playback speed: 2x");
+    expect(player.shadowRoot?.querySelector(".hfp-speed-option.hfp-active")?.textContent).toBe(
+      "2x",
+    );
+  });
+
+  it.each([false, true])("restores current controls state with paused=%s", (paused) => {
+    loadMetadata(videoOf(player), 60);
+    player.playbackRate = 2;
+    player.seek(15);
+    if (!paused) player.play();
+
+    for (let i = 0; i < 2; i++) {
+      player.setAttribute("controls", "");
+
+      const button = player.shadowRoot?.querySelector<HTMLButtonElement>(".hfp-play-btn");
+      expect(button?.getAttribute("aria-label")).toBe(paused ? "Play" : "Pause");
+      expect(player.shadowRoot?.querySelector(".hfp-time")?.textContent).toBe("0:15 / 1:00");
+      expect(player.shadowRoot?.querySelector<HTMLElement>(".hfp-progress")?.style.width).toBe(
+        "25%",
+      );
+      expect(player.shadowRoot?.querySelector(".hfp-speed-btn")?.textContent).toBe("2x");
+
+      player.removeAttribute("controls");
+    }
+
+    player.setAttribute("controls", "");
+    player.shadowRoot?.querySelector<HTMLButtonElement>(".hfp-play-btn")?.click();
+    expect(player.paused).toBe(!paused);
   });
 
   it("stops playing when the video fails", () => {

@@ -496,6 +496,23 @@ describe("media rules", () => {
     },
   );
 
+  it("video_audio_double_source ignores a room tone, the audio that bridges a cut with another stretch of the file", async () => {
+    const found = await codes(
+      wrap(`<video id="v" data-start="0" data-duration="10" data-media-start="2" data-has-audio="true" src="clip.mp4"></video>
+    <audio id="a" data-start="3.2" data-duration="0.06" data-media-start="7" data-timeline-role="room-tone" src="clip.mp4"></audio>`),
+    );
+    expect(found).not.toContain("video_audio_double_source");
+  });
+
+  it("video_audio_double_source still flags a plain audio of the same file beside the room tone", async () => {
+    const found = await codes(
+      wrap(`<video id="v" data-start="0" data-duration="10" data-has-audio="true" src="clip.mp4"></video>
+    <audio id="tone" data-start="3.2" data-duration="0.06" data-media-start="7" data-timeline-role="room-tone" src="clip.mp4"></audio>
+    <audio id="a" data-start="3" data-duration="2" src="clip.mp4"></audio>`),
+    );
+    expect(found).toContain("video_audio_double_source");
+  });
+
   it("video_audio_double_source ignores same-src clips that do not overlap in time", async () => {
     const found = await codes(
       wrap(`<video id="v" data-start="0" data-duration="4" data-has-audio="true" src="clip.mp4"></video>
@@ -1123,6 +1140,42 @@ describe("audio_group_carve_attr", () => {
       </div>
     </body></html>`);
     expect(res.findings.some((f) => f.code === "audio_group_carve_attr")).toBe(false);
+  });
+});
+
+describe("audio_group_holds_elements", () => {
+  const doc = (group: string) => `<!DOCTYPE html><html><body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1920" data-height="1080" data-duration="10">
+      ${group}
+      <video id="clip" src="clip.mp4" data-start="0" data-duration="10" data-has-audio="true"></video>
+      <audio id="ding" src="ding.wav" data-start="1" data-duration="1" data-audio-group="sfx"></audio>
+    </div>
+  </body></html>`;
+  const holds = async (group: string) =>
+    (await lintHyperframeHtml(doc(group))).findings.filter(
+      (f) => f.code === "audio_group_holds_elements",
+    );
+
+  it("warns on a self-closed group, naming the first element it took in", async () => {
+    const [finding, ...rest] = await holds(`<hf-audio-group id="sfx" data-label="SFX" />`);
+    expect(rest).toHaveLength(0);
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.elementId).toBe("sfx");
+    expect(finding?.message).toContain("holds 2 element(s), starting with <video#clip>");
+    expect(finding?.message).toContain("data-audio-group");
+  });
+
+  it("warns on a clip written inside a closed group", async () => {
+    const [finding] = await holds(
+      `<hf-audio-group id="sfx"><img id="logo" src="logo.png"></hf-audio-group>`,
+    );
+    expect(finding?.message).toContain("holds 1 element(s), starting with <img#logo>");
+  });
+
+  it("stays quiet on a group closed right after it opens", async () => {
+    expect(await holds(`<hf-audio-group id="sfx" data-label="SFX"></hf-audio-group>`)).toHaveLength(
+      0,
+    );
   });
 });
 

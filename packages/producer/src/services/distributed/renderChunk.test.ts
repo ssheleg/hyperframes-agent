@@ -19,6 +19,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { effectiveChunkFrames } from "./chunkWeights.js";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -54,6 +55,7 @@ import {
   CHUNK_INDEX_OUT_OF_RANGE,
   distributedCaptureSessionDependencies,
   extractDeferredVideoFramesForChunk,
+  interleavesCapture,
   MISSING_PLAN_ARTIFACT,
   MISSING_RUNTIME_ENV_SNAPSHOT,
   PLAN_HASH_MISMATCH,
@@ -266,6 +268,7 @@ describe("renderChunk()", () => {
         "sessionBootMs",
         "captureStageMs",
         "encodeStageMs",
+        "videoExtractMs",
         "workers",
       ]) {
         expect(typeof perf[key]).toBe("number");
@@ -1103,6 +1106,18 @@ describe("resolvePresetForLockedEncoder", () => {
   });
 });
 
+describe("interleavesCapture", () => {
+  it("is off for a caller that does not ask, so CPU-billed callers get contiguous ranges", () => {
+    expect(interleavesCapture(true, undefined)).toBe(false);
+    expect(interleavesCapture(true, { maxCaptureWorkers: 4 })).toBe(false);
+  });
+
+  it("is on only when the caller asks and the encoder overlaps", () => {
+    expect(interleavesCapture(true, { interleaveCapture: true })).toBe(true);
+    expect(interleavesCapture(false, { interleaveCapture: true })).toBe(false);
+  });
+});
+
 describe("resolveChunkCaptureWorkers", () => {
   it("keeps the machine-wide sizing when the runtime sets no budget", () => {
     expect(resolveChunkCaptureWorkers(121, 3, undefined)).toBe(3);
@@ -1120,6 +1135,12 @@ describe("resolveChunkCaptureWorkers", () => {
   it("never lowers the machine-wide sizing", () => {
     expect(resolveChunkCaptureWorkers(121, 3, 1)).toBe(3);
     expect(resolveChunkCaptureWorkers(30, 2, 5)).toBe(2);
+  });
+
+  it("gives a 28-frame chunk of 3.6x frames three browsers; a light 75-frame chunk is unchanged", () => {
+    expect(resolveChunkCaptureWorkers(28, 1, 3)).toBe(1);
+    expect(resolveChunkCaptureWorkers(effectiveChunkFrames(28, 3.6), 1, 3)).toBe(3);
+    expect(resolveChunkCaptureWorkers(effectiveChunkFrames(75, undefined), 3, 3)).toBe(3);
   });
 });
 

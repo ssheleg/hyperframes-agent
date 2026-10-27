@@ -607,7 +607,7 @@ whether it reused a file, never your intent text or paths — and honors the sam
 opt-outs as [`telemetry`](#telemetry).
 
 See [Voice, sound, and captions](/guides/voice-and-audio) and
-[Color grading](/guides/color-grading) for the workflows around these assets, and
+[Color grading](/guides/media-effects#fix-and-grade-the-color) for the workflows around these assets, and
 [Authentication](/guides/authentication) for HeyGen credentials.
 
 ### `beats`
@@ -948,8 +948,9 @@ ownership.
 `open` opens a project in the HyperFrames desktop app and adds it to Home.
 
 ```bash
-npx hyperframes open            # the project in the current directory
-npx hyperframes open ./my-video
+npx hyperframes .               # the project in the current directory
+npx hyperframes ./my-video      # any folder that isn't a command name
+npx hyperframes open            # the same, naming the command
 npx hyperframes open --json     # for agents
 ```
 
@@ -1011,7 +1012,7 @@ unless you pass `--verbose`, which keeps output clean for agents and CI.
 `--json` adds `errorCount`, `warningCount`, `infoCount`, and a `findings` array.
 
 The linter catches missing attributes, missing adapter libraries (GSAP, Lottie,
-Three.js), and structural problems. [Troubleshooting](/guides/troubleshooting)
+Three.js), and structural problems. [Troubleshooting](/help)
 explains each rule.
 
 ### `check`
@@ -1021,7 +1022,7 @@ did, in one command and one browser session.
 
 ```bash
 npx hyperframes check [dir]
-npx hyperframes check [dir] --json         # {ok, browserSkipped, scope, lint, runtime, layout, motion, contrast, craft, hdr, snapshots}
+npx hyperframes check [dir] --json         # {ok, browserSkipped, scope, lint, runtime, layout, motion, contrast, craft, audio, hdr, snapshots}
 npx hyperframes check [dir] --snapshots
 npx hyperframes check [dir] --at 1.5,4,7.25
 npx hyperframes check [dir] --strict       # warnings fail too
@@ -1033,6 +1034,11 @@ running every audit at every sample: runtime console errors and failed requests,
 layout defects (overflow, clipping, held overlaps, occlusion, coordinate-frame
 drift), `*.motion.json` assertions, WCAG AA contrast, and craft warnings
 (see [Craft warnings](#craft-warnings)).
+
+The `audio` section reads every clip the render mixes, while the browser runs:
+a source with no audio track or that cannot be read as audio (error: render
+stops), a clip that starts past the end of its file, a clip whose played part is
+silent (warnings), and a film with no sound at all (info).
 
 When the browser never ran (lint errors, a linter crash, or a browser launch
 failure), `browserSkipped` is `true` and the `layout`, `motion` and `contrast`
@@ -1067,10 +1073,12 @@ cover every finding from the full check.
 | `--prepare-media`                            | Only make the browser-playable video copies, then exit: no browser, no report. `--json` lists each file as `ready`, `cached` or `failed`; exit 1 if any failed |
 
 A video Chrome cannot decode (HEVC, ProRes) is copied once, and the first check waits
-for it. A source longer than a few minutes is copied in one-minute pieces that are kept,
-so a copy that is stopped continues from its finished pieces on the next run. For a long
-project, run `hyperframes check --prepare-media` first, then the check itself finds every
-copy ready.
+for it. A source longer than 22 seconds is copied in 15-second pieces that are kept, so a
+copy that is stopped continues from its finished pieces on the next run. While it works, the
+check prints each copy's progress to stderr every 10 seconds (stdout stays clean for `--json`),
+and ends a copy only when it makes no progress for 3 minutes (`HYPERFRAMES_PROXY_STALL_MS`).
+For a long project, run `hyperframes check --prepare-media` first, then the check itself finds
+every copy ready.
 
 `--caption-zone` and `--frame-check` refuse a ranged check when none of their
 configured seek samples falls inside `--range`; a requested gate never silently
@@ -1094,6 +1102,19 @@ enters with `data-layout-allow-occlusion`.
 Contrast failures are errors, and each one reports the sampled foreground and
 background colours, the measured ratio against the required one, and a
 compliant colour you could use instead.
+
+An agent harness can turn on `skipContrastInMotion` in the `check-review`
+capability of [`HF_TOOL_CONTEXT`](/developers/harness-tool-context). It leaves
+out a contrast failure measured while a GSAP tween on the text or an ancestor
+is running, or while the text's opacity multiplied up its ancestors
+is below 1. The failure is not reported, and the counts and `ok` leave it out.
+Repeating tweens, tweens inside infinitely repeating timelines, and tweens of
+4s or longer, such as a slow camera drift, do not count as motion. The opacity
+rule also applies at rest, including deliberately translucent text, when a tween
+targets the text or an ancestor. Text no GSAP tween targets is reported as usual.
+Dropped samples do not contribute to persistence: a retained failure can become
+a warning when only one failing sample remains among multiple measured times.
+Off by default.
 
 Severity is persistence-aware: a finding at a single sample demotes to info, a
 finding that persists gates the exit code, and a composition of 3s or more
@@ -1232,7 +1253,7 @@ npx hyperframes snapshot my-project --review --json
 | `--angle`               | Orthogonal 3D camera for depth and occlusion checks: `front`, `iso`, `top`, `side`, or `yaw,pitch` in degrees. Tilts the whole stage, so you get real pixels.        |
 | `--review`              | Capture the frames that show the film over time instead of evenly spaced ones: `review-beats.jpg` (each scene at its start + 0.3 s and at its middle, and each timed `data-beat="name"` element at its start + 0.3 s), `review-seam-NN.jpg` (−0.2 to +0.2 s around every cut) and `review-phone.jpg` (the beat frames 360 px wide). Scenes are the top-level timed clips and sub-composition hosts; `--composition` scopes to one. |
 | `--json`                | Print one envelope: `frames` with path, time and (under `--review`) role and label, the contact sheets, and under `--review` the scenes, beats and seams behind them. Progress goes to stderr. |
-| `--describe`            | Gemini vision analysis of each frame. Runs by default when `GEMINI_API_KEY` is set. Pass a question to override the prompt, or `--describe false` to opt out.        |
+| `--describe`            | Off by default. Sends each frame to Gemini and writes `descriptions.md`. Needs `GEMINI_API_KEY` or `GOOGLE_API_KEY`. A bare `--describe` uses the default prompt; `--describe "<question>"` asks your own. Put the project directory before a bare `--describe`. |
 | `--timeout`             | Ms to wait for the runtime (default 5000)                                                                                                                           |
 | `--browser-gpu`, `--proxy` | Same meaning as on [`check`](#check)                                                                                                                             |
 
@@ -1362,6 +1383,12 @@ npx hyperframes timeline delete '#outro' --start 6 --end 7   # cut one second ou
 | `undo <receipt>`            | Restore the files an edit changed, from its receipt (the JSON or its file)                                                                |
 | `ids`                       | Stamp stable ids on the timeline's clips                                                                                                  |
 
+`duplicate` shifts clips at or after the insertion time on the same track by
+the copied clip's length. Video and audio clips can use their source length
+without `data-duration`, including clips shifted by the insertion.
+For clips with `data-end`, the copy and any shifted clips keep their length by
+moving their end with their start.
+
 A time is seconds (`4.5`), an offset from the clip's start (`+1`, `-0.5`),
 frames (`30f`), `end`, or an anchor on another clip: `after:#intro`,
 `before:#intro`, `start-of:#intro` or `end-of:#intro`. A flag an edit command does not
@@ -1481,7 +1508,7 @@ How it uses the machine, and when it gives up:
 
 | Flag                                                     | Default                                    | Description                                                                                                       |
 | -------------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `--workers, -w`                                          | auto                                       | 1–24 workers. Each is a separate Chrome, roughly 256 MB. Auto weighs cores, memory, frame count, and cost.          |
+| `--workers, -w`                                          | auto                                       | 1–24 workers. Each is a separate Chrome, roughly 256 MB. Auto weighs cores, memory, frame count, and cost. N is a ceiling: a render drawElement can capture still uses one worker. |
 | `--low-memory-mode` / `--no-low-memory-mode`             | auto at 8 GB RAM or less                   | Safe profile: one worker, screenshot capture, no calibration. See the note below.                                   |
 | `--gpu`                                                  | off                                        | Hardware FFmpeg encoding (NVENC, VideoToolbox, AMF, VAAPI, QSV)                                                    |
 | `--browser-gpu` / `--no-browser-gpu`                     | auto locally, off in Docker                | Host GPU for Chrome and WebGL capture, or software rendering. Auto probes WebGL once and falls back.                |
@@ -1805,10 +1832,10 @@ scripts.
 With `--file-issue`, the CLI publishes a minimal repro to a public URL — with
 your consent — and opens a pre-filled `bug` issue draft that you review and
 submit yourself. No token, no backend. See
-[Share feedback](/guides/feedback#report-a-reproducible-bug).
+[Share feedback](/help#report-a-reproducible-bug).
 
 Agents can call this after a render;
-[About feedback data](/guides/feedback#about-feedback-data) covers what the
+[About feedback data](/help#about-feedback-data) covers what the
 surface includes. An app that launches the CLI can attach its signed-in
 person's email with the `HYPERFRAMES_FEEDBACK_EMAIL` environment variable. It
 is never a flag and never read from a project `.env`, and it goes only into
@@ -1846,7 +1873,7 @@ account has no email — is linked to your usage, and your prior anonymous usage
 is stitched to it. Nothing else personal, and only once you choose to sign in.
 
 Turn it all off with `HYPERFRAMES_NO_TELEMETRY=1` or the command above.
-[Feedback collection](/guides/feedback) explains the post-render prompt and the
+[Feedback collection](/help#share-feedback) explains the post-render prompt and the
 Studio feedback bar.
 
 One consequence worth knowing: turning telemetry off also opts the install out
@@ -2234,6 +2261,7 @@ deploy:
 | `--chrome-source` | `sparticuz`                          | `sparticuz` or `chrome-headless-shell`                   |
 | `--video-arch`    | `arm64`                              | `arm64` runs the plan and the chunks on an arm64 container-image function, pushed to an ECR repository named `<stack>-video`; audio and assemble stay on x86. Needs `sparticuz`. `x86_64` runs everything on the x86 function |
 | `--skip-build`    | off                                  | Reuse the existing `handler.zip`                         |
+| `--no-warm`       | warm                                 | Skip the one warm-up call to the video function after deploy, which loads its container image so the first render is not the one that waits for it |
 
 And these drive `render` and `render-batch`:
 

@@ -160,6 +160,39 @@ describe("WebAudioTransport", () => {
       expect(transport.routesElement(mockEl)).toBe(false);
     });
 
+    it("stops what plays from media gone from the page without sending it to the destination", async () => {
+      const { transport, mock, gen } = setupTransport(100);
+      const nodes: Array<{
+        connect: ReturnType<typeof vi.fn>;
+        disconnect: ReturnType<typeof vi.fn>;
+      }> = [];
+      mock.ctx.createMediaElementSource = vi.fn(() => {
+        nodes.push({ connect: vi.fn(), disconnect: vi.fn() });
+        return nodes.at(-1)!;
+      }) as never;
+      const media = () =>
+        ({ ...mockEl, isConnected: true }) as HTMLMediaElement & { isConnected: boolean };
+      const [gone, kept] = [media(), media()];
+      for (const el of [gone, kept])
+        await transport.scheduleMediaElementPlayback(el, 0, 0, 0, 1, gen, 1);
+      for (const node of nodes) {
+        node.connect.mockClear();
+        node.disconnect.mockClear();
+      }
+      gone.isConnected = false;
+      transport.releaseDetached();
+
+      const touched = nodes.map((n) => [
+        n.disconnect.mock.calls.length > 0,
+        n.connect.mock.calls.length > 0,
+      ]);
+      expect(touched).toEqual([
+        [true, false],
+        [false, false],
+      ]);
+      expect([transport.routesElement(gone), transport.routesElement(kept)]).toEqual([false, true]);
+    });
+
     it("creates one MediaElementAudioSourceNode per element and context", async () => {
       const { transport, mock } = setupTransport(100);
 
@@ -1597,6 +1630,8 @@ describe("WebAudioTransport", () => {
       }) as unknown as HTMLMediaElement;
     const failedSrcs = (t: WebAudioTransport) =>
       (t as unknown as { _failedSrcs: Set<string> })._failedSrcs;
+    // Keys are resolved against the document, so one asset has one key however it is written.
+    const key = (src: string) => new URL(src, document.baseURI).href;
 
     it("does NOT blacklist a transient fetch failure — a later play retries and succeeds", async () => {
       const transport = transportWithDecode(async () => ({}) as AudioBuffer);
@@ -1608,7 +1643,7 @@ describe("WebAudioTransport", () => {
 
       const first = await transport.decodeAudioElement(el("tts.wav"));
       expect(first).toBeNull();
-      expect(failedSrcs(transport).has("tts.wav")).toBe(false); // not permanently silenced
+      expect(failedSrcs(transport).has(key("tts.wav"))).toBe(false); // not permanently silenced
 
       const second = await transport.decodeAudioElement(el("tts.wav"));
       expect(second).not.toBeNull(); // self-heals once the asset is available
@@ -1627,12 +1662,185 @@ describe("WebAudioTransport", () => {
 
       const first = await transport.decodeAudioElement(el("corrupt.wav"));
       expect(first).toBeNull();
-      expect(failedSrcs(transport).has("corrupt.wav")).toBe(true); // bad data is permanent
+      expect(failedSrcs(transport).has(key("corrupt.wav"))).toBe(true); // bad data is permanent
 
       const second = await transport.decodeAudioElement(el("corrupt.wav"));
       expect(second).toBeNull();
       expect(fetchMock).toHaveBeenCalledTimes(1); // short-circuited, no re-fetch
       vi.unstubAllGlobals();
     });
+
+    it("fetches and decodes a source once when a play and a seek both ask before it decodes", async () => {
+      const decoded = {} as AudioBuffer;
+      const transport = transportWithDecode(async () => decoded);
+      const fetchMock = vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => new ArrayBuffer(8),
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const both = await Promise.all([
+        transport.decodeAudioElement(el("sfx.wav")),
+        transport.decodeAudioElement(el("sfx.wav")),
+      ]);
+      expect(both).toEqual([decoded, decoded]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      vi.unstubAllGlobals();
+    });
+
+    it("keeps a listed clip's decoded audio while its load is between resources", async () => {
+      // An in-place sub-composition reload resets the root voiceover's resource selection, so
+      // `currentSrc` reads empty and the relative attribute behind it keyed a second cache slot:
+      // the release pass then dropped the buffer of a clip it was handed as live.
+      const transport = transportWithDecode(async () => ({}) as AudioBuffer);
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+      vi.stubGlobal("fetch", fetchMock);
+      const vo = document.createElement("audio");
+      vo.setAttribute("src", "vo.mp3");
+      let currentSrc = new URL("vo.mp3", document.baseURI).href;
+      Object.defineProperty(vo, "currentSrc", { configurable: true, get: () => currentSrc });
+
+      expect(await transport.decodeAudioElement(vo)).not.toBeNull();
+      currentSrc = "";
+      transport.releaseDecodedExcept([vo]);
+      currentSrc = new URL("vo.mp3", document.baseURI).href;
+
+      expect(await transport.decodeAudioElement(vo)).not.toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // the buffer it was told to keep is still there
+      vi.unstubAllGlobals();
+    });
+
+    it("keys a clip whose src cannot be read as a URL without throwing", () => {
+      const transport = transportWithDecode(async () => ({}) as AudioBuffer);
+      const bad = document.createElement("audio");
+      bad.setAttribute("src", "http://localhost:PORT/vo.mp3");
+
+      expect(() => transport.releaseDecodedExcept([bad])).not.toThrow();
+    });
+  });
+});
+
+describe("WebAudioTransport clip fades on the audio clock", () => {
+  type Param = {
+    value: number;
+    setValueAtTime: ReturnType<typeof vi.fn>;
+    linearRampToValueAtTime: ReturnType<typeof vi.fn>;
+    cancelScheduledValues: ReturnType<typeof vi.fn>;
+  };
+  const param = (): Param => ({
+    value: 1,
+    setValueAtTime: vi.fn(),
+    linearRampToValueAtTime: vi.fn(),
+    cancelScheduledValues: vi.fn(),
+  });
+  /** A context whose gains record their automation; the element gain is the first one made. */
+  function setup(currentTime = 100) {
+    const { transport, mock, gen } = setupTransport(currentTime);
+    const gains: {
+      gain: Param;
+      connect: ReturnType<typeof vi.fn>;
+      disconnect: ReturnType<typeof vi.fn>;
+    }[] = [];
+    mock.ctx.createGain = vi.fn(() => {
+      const node = { gain: param(), connect: vi.fn(), disconnect: vi.fn() };
+      gains.push(node);
+      return node;
+    }) as never;
+    const booked = () => gains.find((g) => g.gain.setValueAtTime.mock.calls.length > 0)?.gain;
+    return { transport, mock, gen, gains, booked };
+  }
+  const faded = (fadeIn = "0.02", fadeOut = "0.02") =>
+    ({
+      muted: false,
+      volume: 1,
+      paused: true,
+      addEventListener: () => {},
+      getAttribute: (name: string) =>
+        ({ "data-playback-rate": "1", "data-fade-in": fadeIn, "data-fade-out": fadeOut })[name] ??
+        null,
+    }) as unknown as HTMLMediaElement;
+
+  it("a decoded clip ramps in over its fade-in from its start and out to silence at its end", async () => {
+    const { transport, gen, booked } = setup(100);
+    await transport.schedulePlayback(faded(), mockBuffer, 5, 0, () => 5, 1, gen, 1, 1);
+    const gain = booked();
+    expect(gain?.setValueAtTime.mock.calls).toEqual([
+      [0, 100],
+      [1, expect.closeTo(100.98, 9)],
+    ]);
+    expect(gain?.linearRampToValueAtTime.mock.calls).toEqual([
+      [1, expect.closeTo(100.02, 9)],
+      [0, expect.closeTo(101, 9)],
+    ]);
+  });
+
+  it("a clip started halfway through its fade-in starts at half level", async () => {
+    const { transport, gen, booked } = setup(100);
+    await transport.schedulePlayback(faded(), mockBuffer, 5, 0, () => 5.01, 1, gen, 1, 1);
+    const gain = booked();
+    expect(gain?.setValueAtTime.mock.calls[0]).toEqual([expect.closeTo(0.5, 9), 100]);
+    expect(gain?.linearRampToValueAtTime.mock.calls[0]).toEqual([1, expect.closeTo(100.01, 9)]);
+  });
+
+  it("a captured media element books its fades the same way", async () => {
+    const { transport, gen, booked } = setup(100);
+    await transport.scheduleMediaElementPlayback(faded(), 5, 0, 5, 1, gen, 1, 1);
+    expect(booked()?.linearRampToValueAtTime.mock.calls).toEqual([
+      [1, expect.closeTo(100.02, 9)],
+      [0, expect.closeTo(101, 9)],
+    ]);
+  });
+
+  it("a clip scheduled ahead of its start holds its fade-in's first level until it starts", async () => {
+    const { transport, gen, booked } = setup(100);
+    await transport.schedulePlayback(faded(), mockBuffer, 5, 0, () => 4.9, 1, gen, 1, 1);
+    const gain = booked();
+    expect(gain?.value).toBe(0);
+    expect(gain?.setValueAtTime.mock.calls[0]).toEqual([0, expect.closeTo(100.1, 9)]);
+  });
+
+  it("a fade-out with no clip end books nothing, so the per-tick volume keeps the fade", async () => {
+    const { transport, gen, gains, booked } = setup(100);
+    const el = faded("0.02", "2");
+    await transport.scheduleMediaElementPlayback(el, 5, 0, 5, 1, gen, 1);
+    expect(booked()).toBeUndefined();
+    transport.setElementVolume(el, 0.4, 1, 0.8);
+    expect(gains[0]!.gain.value).toBeCloseTo(0.4, 9);
+  });
+
+  it("a rate change rebooks the fades on the new rate from where the clip is", async () => {
+    const { transport, mock, gen, booked } = setup(100);
+    await transport.scheduleMediaElementPlayback(faded("0.02", "1"), 5, 0, 5, 1, gen, 2, 10);
+    const gain = booked()!;
+    mock.ctx.currentTime = 101;
+    transport.setRate(1);
+    expect(gain.cancelScheduledValues).toHaveBeenCalled();
+    expect(gain.linearRampToValueAtTime.mock.calls.at(-1)).toEqual([
+      0,
+      expect.closeTo(101 + (10 - 2), 9),
+    ]);
+  });
+
+  it("a clip without fades books nothing", async () => {
+    const { transport, gen, booked } = setup(100);
+    await transport.schedulePlayback(faded("", ""), mockBuffer, 5, 0, () => 5, 1, gen, 1, 1);
+    expect(booked()).toBeUndefined();
+  });
+
+  it("the per-tick volume leaves out the fade where it is booked, and keeps it where it is not", async () => {
+    const { transport, gen, gains } = setup(100);
+    const withFades = faded();
+    await transport.schedulePlayback(withFades, mockBuffer, 5, 0, () => 5, 1, gen, 1, 1);
+    const elementGain = gains[0]!.gain;
+    transport.setElementVolume(withFades, 0.4, 1, 0.8);
+    expect(elementGain.value).toBeCloseTo(0.8, 9);
+
+    const second = setup(100);
+    const plain = faded("", "");
+    await second.transport.schedulePlayback(plain, mockBuffer, 5, 0, () => 5, 1, second.gen, 1, 1);
+    second.transport.setElementVolume(plain, 0.4, 1, 0.8);
+    expect(second.gains[0]!.gain.value).toBeCloseTo(0.4, 9);
   });
 });

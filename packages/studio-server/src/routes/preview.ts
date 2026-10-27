@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import { parseHTML } from "linkedom";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { stripSdrPngColourTags } from "@hyperframes/core/compiler/png-colour-tags";
 import { Readable } from "node:stream";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -18,7 +19,13 @@ import {
   STUDIO_PREVIEW_MARK_META,
   STUDIO_PREVIEW_ERRORS,
 } from "@hyperframes/core/studio-preview-mark";
-import { PREVIEW_PROXY_BOX_PARAM, parsePreviewProxyBox } from "@hyperframes/core";
+import {
+  PREVIEW_PROXY_BOX_PARAM,
+  PREVIEW_PROXY_LIGHT_PARAM,
+  PREVIEW_PROXY_PROGRESS_HEADER,
+  PREVIEW_PROXY_RETRY_PARAM,
+  parsePreviewProxyBox,
+} from "@hyperframes/core";
 import {
   GSAP_BASE_URL_META,
   gsapCdnDist,
@@ -60,7 +67,9 @@ import {
 import { isVariablesPayload, VARIABLES_PAYLOAD_ERROR } from "../helpers/variablesPayload.js";
 import { injectPreviewVariables } from "../helpers/previewVariables.js";
 import {
+  proxyCopyProgress,
   resolveProxy,
+  retryProxyCopy,
   waitForProxy,
   ProxyCapacityError,
   ProxyTranscodeError,
@@ -697,7 +706,12 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     const proxyParam = c.req.query("hf-proxy");
     const boxParam = c.req.query(PREVIEW_PROXY_BOX_PARAM);
     const proxyBox = boxParam === undefined ? undefined : parsePreviewProxyBox(boxParam);
-    if (proxyBox === null || (proxyBox && proxyParam === undefined)) {
+    const lightRequested = c.req.query(PREVIEW_PROXY_LIGHT_PARAM) !== undefined;
+    if (
+      proxyBox === null ||
+      (proxyBox && proxyParam === undefined) ||
+      (lightRequested && !proxyBox)
+    ) {
       return c.text("not found", 404);
     }
     let proxyVariant: ProxyVariant | undefined;
@@ -710,7 +724,7 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
         return c.text("not found", 404);
       }
       const facts = await probeAssetCodec(file, undefined, mediaCodecProbeCache);
-      const eligibility = decideMediaProxyEligibility(facts);
+      const eligibility = decideMediaProxyEligibility(facts, lightRequested ? proxyBox : undefined);
       if (!eligibility.eligible) {
         return c.text(`media proxy unavailable: ${eligibility.reason}`, 422);
       }
@@ -743,12 +757,17 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
       try {
         // A cached copy settles before any timer; a transcode never holds one of
         // the browser's few connections to this host. 202 until the copy lands.
+        if (c.req.query(PREVIEW_PROXY_RETRY_PARAM) !== undefined) {
+          retryProxyCopy(project.dir, file, proxyVariant, proxyBox);
+        }
         servedPath = await waitForProxy(resolveProxy(project.dir, file, proxyVariant, proxyBox), 0);
       } catch (err) {
         if (err instanceof ProxyWaitTimeoutError) {
+          const progress = proxyCopyProgress(project.dir, file, proxyVariant, proxyBox);
           return c.text("media proxy is being made", 202, {
-            "Retry-After": String(PROXY_PENDING_RETRY_AFTER_SECONDS),
+            "Retry-After": progress === undefined ? String(PROXY_PENDING_RETRY_AFTER_SECONDS) : "1",
             "Cache-Control": "no-store",
+            ...(progress !== undefined && { [PREVIEW_PROXY_PROGRESS_HEADER]: progress.toFixed(3) }),
           });
         }
         if (err instanceof ProxyCapacityError) {
@@ -771,10 +790,13 @@ export function registerPreviewRoutes(api: Hono, adapter: PreviewApiAdapter): vo
     // file on each one. The full read also blocked the event loop, so every
     // other Studio request (SSE, saves, the voice track) waited behind it.
     const textBuffer = isText ? Buffer.from(readFileSync(file, "utf-8"), "utf-8") : null;
-    const totalSize = textBuffer ? textBuffer.length : statSync(servedPath).size;
+    const heldBuffer =
+      textBuffer ??
+      (contentType === "image/png" ? stripSdrPngColourTags(readFileSync(file)) : null);
+    const totalSize = heldBuffer ? heldBuffer.length : statSync(servedPath).size;
     const bodyFor = (start: number, end: number): BodyInit =>
-      textBuffer
-        ? new Uint8Array(textBuffer.subarray(start, end + 1))
+      heldBuffer
+        ? new Uint8Array(heldBuffer.subarray(start, end + 1))
         : // Node's web stream type and the DOM one do not overlap for tsc on
           // every platform's lib set; the double cast is the documented bridge.
           (Readable.toWeb(
