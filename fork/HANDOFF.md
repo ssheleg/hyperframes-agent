@@ -25,7 +25,7 @@ publish tarball releases that consumers pin.
 - The pinning consumer, Frame Agent, moves its pin in its own repository. On 2026-10-24 it pinned
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
-  `v0.8.198-sshlg.1` is message `d9a91a4f`. The `v0.8.206-sshlg.1` announcement is not posted yet (Next task 1).
+  `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`.
 
 ## Patches
 
@@ -100,9 +100,11 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 
 ## Next task
 
-1. Post the `fork-v0.8.206-sshlg.1` announcement on thread `b4d4f898` (a reply to `d9a91a4f` works): link, sha256,
-   checks and the `v0.8.198..v0.8.206` door audit row below. On 2026-10-27 the session lost the board's `com.*` tools
-   after the release was published, so it was not sent.
+1. Moving to a private repository of the team organisation is being prepared on the project board (thread `3b676949`):
+   nothing moves until the coordinator accepts the audit. The audit (message `fba92970`) found no secrets in our
+   commits; the operator's own address is in one upstream commit, `24965372d` (it cannot be rewritten without breaking
+   upstream merges), and in the two `pr/*-signed` branches (they stay here). A fork of a public repository cannot be
+   private, so the move is a new repository, not a fork. Wait for the coordinator's answer there.
 2. Upstream releases after `v0.8.206`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.206 v<new>`, add its findings to the table above and the release to the release table, and
