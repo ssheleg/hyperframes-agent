@@ -47,6 +47,10 @@ added | grep -E '^[^:]+: .*(env|ENV).*["'"'"'][A-Z][A-Z0-9]*_[A-Z0-9_]+["'"'"']'
 section "Child processes and network calls"
 # `fetch(` must start a word (`.fetch(` counts, `startPrefetch(` does not).
 added | grep -E '(^|[^.[:alnum:]_])(spawn|spawnSync|execFile|execFileSync|execSync|exec)\(|(^|[^[:alnum:]_])fetch\(' | cut -c1-200 || true
+# A detached or unref'd child outlives the command that started it (the warm `check` since v0.8.182 did, unnoticed).
+echo
+echo "Processes that outlive their command (detached or unref):"
+added | grep -E 'detached: *true|\.unref\(\)' | cut -c1-200 || true
 
 section "Packages installed at run time"
 added | grep -E 'npm (i|install)|buildNpmCommand|loadOptionalPackage|OPTIONAL_PACKAGES|installAndLoad' | cut -c1-200 || true
