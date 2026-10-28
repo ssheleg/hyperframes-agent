@@ -5,18 +5,19 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-27)
+## State (2026-10-28)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the `ssheleg`
   organisation on 2026-10-19; GitHub redirects the old address, release downloads included). The sixteen inherited
   workflows are disabled (repository settings).
-- `main` = upstream `v0.8.206` (merge `34ae91a84`) + two patches + `fork/`. `git diff v0.8.206 main -- . ':!fork'` shows
+- `main` = upstream `v0.8.210` (merge `2119b8418`) + two patches + `fork/`. `git diff v0.8.210 main -- . ':!fork'` shows
   exactly what we carry: the speech patch (`packages/cli/src/tts/`) and the Node 26 / macOS patch with its watcher test
   fixes (`packages/cli/src/server/fileWatcher*`, `utils/projectLock.test.ts`, `whisper/sherpa.test.ts`), plus our
   header in `CLAUDE.md`, `AGENTS.md` and `README.md`. `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.206-sshlg.1` (table below); it carries `v0.8.199` to `v0.8.205`, which were not released
-  on their own. Upstream changed none of our patches' files in `v0.8.198..v0.8.206`, so the merge was clean (the
-  `fallow` hook did not run: `git merge` committed it).
+- Latest release `fork-v0.8.210-sshlg.1` (table below); it carries `v0.8.207` to `v0.8.209`, which were not released
+  on their own. Upstream `v0.8.209` changed files of the speech patch (#6507, `tts/synthesize.ts` and its tests) and
+  `utils/projectLock.test.ts` (#6464); Git merged both without a conflict, and the `python -c` fallback still hands the
+  same script the same arguments.
 - **The running-markers sweep is upstream's now.** heygen-com/hyperframes#5790 was approved and merged on 2026-10-24
   (merge `24965372d`, in `v0.8.193`), so the line no longer carries it: `runningCli.ts` and its test are byte-identical
   to the tag. Getting it in took a signed commit (`heygen-com` requires them; ours were authored `Робот <r@e.com>`) and a
@@ -25,7 +26,7 @@ publish tarball releases that consumers pin.
 - The pinning consumer, Frame Agent, moves its pin in its own repository. On 2026-10-24 it pinned
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
-  `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`.
+  `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`.
 
 ## Patches
 
@@ -62,6 +63,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.8.210-sshlg.1` | `2119b8418` | 2026-10-28 | `df14cf52b2d857e17d833dfeffdf6ee620997c2934aa15829e50033c670ca0b7` |
 | `fork-v0.8.206-sshlg.1` | `34ae91a84` | 2026-10-27 | `176dcab03c90dd6b23e9b6097ec62631f1b25998e46d5665edb583e0df83f552` |
 | `fork-v0.8.198-sshlg.1` | `44ad52549` | 2026-10-25 | `6d9a2e895ee6d6fb7f285cfc64fac9f90dc6893f0c61483bfd3a162d2ed7095c` |
 | `fork-v0.8.193-sshlg.1` | `ba2c1fe96` | 2026-10-25 | `ebce0e37f67e4f2558e4bcd19fb9dd693b0e4ef810d9272edfdb8c2e7b1dac4a` |
@@ -97,6 +99,7 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.8.192..v0.8.193` | The engine fetches stored ffprobe facts for remote `http(s)` media (`utils/ffprobe.ts`, 10 s timeout), declared only by the distributed (cloud/Lambda) plan (`producer/src/services/distributed/plan.ts:1214`); `HF_TAIL_PROBE_SLOTS` (default 16).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `v0.8.193..v0.8.198` | `HYPERFRAMES_GSAP_BASE_URL` names an npm mirror (HTTPS, or HTTP on localhost) that renders and Studio preview load GSAP from; Studio preview now uses the CLI's bundled GSAP by default (#6256). The Chrome download moved into a child process (Node running the CLI's `renderSetupWorker.js browser-install`, `utils/cancellableProcess.ts`; same download source). Orphan cleanup kills only browsers carrying HyperFrames' launch marker; `HYPERFRAMES_NO_ORPHAN_CLEANUP=1` turns it off.                                                                                                                                                                                                                                                                                                    |
 | `v0.8.198..v0.8.206` | New CLI: `hyperframes <dir>` opens the project (`open`); `lambda deploy --warm`, `--width`, `--height` (runs `aws`). A killed CLI's children are ended by a Node child it spawns (`utils/childReaper.ts`, #6431). Media grading runs `ffprobe`/`ffmpeg` (`core/src/mediaGradeAnalyzer.ts`, `HYPERFRAMES_ANALYZE_TIMEOUT_MS`); the engine reads `vm_stat` on macOS; Studio history runs `ps`. New `fetch` calls stay local: same-origin composition scripts in the page (`engine/src/services/frameCapture.ts:2104`), the preview server for `check` findings, the proxy in the runtime. `HF_DE_PARALLEL_ROUTER`, `HF_DE_PAR_DEBUG` (render); telemetry recognises OpenClaw by `OPENCLAW_CONFIG_PATH`. Skills: 13 files (runtimes, launch, media-use memory and mixing, remotion-to-hyperframes). |
+| `v0.8.206..v0.8.210` | New flags `capture --local-file <html>` and `--local-root <dir>` (the page reads files under that root), `media-treatment --grading`. `HYPERFRAMES_CAPTURE_PROXY` routes `capture` through an upstream proxy (off by default, #6499). `HYPERFRAMES_HANG_REPORT`, `HYPERFRAMES_NO_PREVIEW_DISCOVERY`; preview records go to `XDG_STATE_HOME` on Linux and `LOCALAPPDATA` on Windows (#6461). Chrome is started by `spawn` with a host ceiling probe (`chromeStartup.ts`, `chromeHostCeiling.ts`, #6547, #6516). No children outlive their command. Skills: 10 files.                                                                                                                                                                                                                              |
 
 ## Next task
 
@@ -105,10 +108,10 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
    commits; the operator's own address is in one upstream commit, `24965372d` (it cannot be rewritten without breaking
    upstream merges), and in the two `pr/*-signed` branches (they stay here). A fork of a public repository cannot be
    private, so the move is a new repository, not a fork. Wait for the coordinator's answer there.
-2. Upstream releases after `v0.8.206`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+2. Upstream releases after `v0.8.210`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.8.206 v<new>`, add its findings to the table above and the release to the release table, and
-   post them to the consumer on the board (thread `b4d4f898`). `v0.8.206` is taken (2026-10-27).
+   `fork/door-audit.sh v0.8.210 v<new>`, add its findings to the table above and the release to the release table, and
+   post them to the consumer on the board (thread `b4d4f898`). `v0.8.210` is taken (2026-10-28).
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
