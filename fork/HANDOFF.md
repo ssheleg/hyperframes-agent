@@ -103,17 +103,13 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 
 ## Next task
 
-1. Moving to the team organisation is being prepared on the project board (thread `3b676949`); nothing moves until
-   the operator decides on this repository. Audits: no secrets in our commits (messages `fba92970`, `eea72292`); the
-   shared audit script finds only the `sshlg` version suffix and the `ssheleg/hyperframes-agent` address in our files
-   (`c01397a1`). The operator's own address is in upstream commit `24965372d` (public, cannot be rewritten without
-   breaking upstream merges) and in the two `pr/*-signed` branches. A fork of a public repository cannot be private.
-   Frame Agent pins tarballs from this repository's public releases, so releases stay public whatever happens to the
-   code; the proposal on the board keeps the line public (an `org-index` entry, or a transfer as a public fork).
-2. Upstream releases after `v0.8.210`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+This repository stays where it is: on 2026-10-28 the operator decided it does not move to the team organisation
+(project board, thread `3b676949`, message `e1350512`).
+
+1. Upstream releases after `v0.8.210`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.210 v<new>`, add its findings to the table above and the release to the release table, and
    post them to the consumer on the board (thread `b4d4f898`). `v0.8.210` is taken (2026-10-28).
-3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
+2. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
