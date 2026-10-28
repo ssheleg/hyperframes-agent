@@ -103,11 +103,13 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 
 ## Next task
 
-1. Moving to a private repository of the team organisation is being prepared on the project board (thread `3b676949`):
-   nothing moves until the coordinator accepts the audit. The audit (message `fba92970`) found no secrets in our
-   commits; the operator's own address is in one upstream commit, `24965372d` (it cannot be rewritten without breaking
-   upstream merges), and in the two `pr/*-signed` branches (they stay here). A fork of a public repository cannot be
-   private, so the move is a new repository, not a fork. Wait for the coordinator's answer there.
+1. Moving to the team organisation is being prepared on the project board (thread `3b676949`); nothing moves until
+   the operator decides on this repository. Audits: no secrets in our commits (messages `fba92970`, `eea72292`); the
+   shared audit script finds only the `sshlg` version suffix and the `ssheleg/hyperframes-agent` address in our files
+   (`c01397a1`). The operator's own address is in upstream commit `24965372d` (public, cannot be rewritten without
+   breaking upstream merges) and in the two `pr/*-signed` branches. A fork of a public repository cannot be private.
+   Frame Agent pins tarballs from this repository's public releases, so releases stay public whatever happens to the
+   code; the proposal on the board keeps the line public (an `org-index` entry, or a transfer as a public fork).
 2. Upstream releases after `v0.8.210`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.210 v<new>`, add its findings to the table above and the release to the release table, and
