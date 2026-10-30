@@ -5,19 +5,23 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-28)
+## State (2026-10-30)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the `ssheleg`
-  organisation on 2026-10-19; GitHub redirects the old address, release downloads included). The sixteen inherited
-  workflows are disabled (repository settings).
-- `main` = upstream `v0.8.210` (merge `2119b8418`) + two patches + `fork/`. `git diff v0.8.210 main -- . ':!fork'` shows
+  organisation on 2026-10-19; GitHub redirects the old address, release downloads included). Every inherited
+  workflow is disabled (repository settings). Four that later upstream releases added had run here unnoticed
+  (`lambda-arm64-image`, `lambda-sam-template`, `player-safari`, and `windows-window-probe` from `v0.8.221`);
+  they were disabled on 2026-10-30 and a running one cancelled. The door audit now lists added workflow files.
+- `main` = upstream `v0.8.221` (merge `4ca03a605`) + two patches + `fork/`. `git diff v0.8.221 main -- . ':!fork'` shows
   exactly what we carry: the speech patch (`packages/cli/src/tts/`) and the Node 26 / macOS patch with its watcher test
   fixes (`packages/cli/src/server/fileWatcher*`, `utils/projectLock.test.ts`, `whisper/sherpa.test.ts`), plus our
   header in `CLAUDE.md`, `AGENTS.md` and `README.md`. `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.8.210-sshlg.1` (table below); it carries `v0.8.207` to `v0.8.209`, which were not released
-  on their own. Upstream `v0.8.209` changed files of the speech patch (#6507, `tts/synthesize.ts` and its tests) and
-  `utils/projectLock.test.ts` (#6464); Git merged both without a conflict, and the `python -c` fallback still hands the
-  same script the same arguments.
+- Latest release `fork-v0.8.221-sshlg.1` (table below); it carries `v0.8.211` to `v0.8.220`, which were not released
+  on their own. Upstream `v0.8.221` (#6769, text-to-speech drops a foreign `PYTHONPATH`) conflicted with the speech
+  patch in all four `packages/cli/src/tts` files. Resolved: upstream's `workingPythonEnv` picks the environment the
+  packages import under and the synthesis runs in it; the patch's `probePythonPackage` takes that environment and
+  still names the import's own error when neither environment imports them (`synthesize.ts`, one new test case for
+  soundfile). The merge was committed with `--no-verify` after the `fallow` check (fork/README.md, step 3).
 - **The running-markers sweep is upstream's now.** heygen-com/hyperframes#5790 was approved and merged on 2026-10-24
   (merge `24965372d`, in `v0.8.193`), so the line no longer carries it: `runningCli.ts` and its test are byte-identical
   to the tag. Getting it in took a signed commit (`heygen-com` requires them; ours were authored `Робот <r@e.com>`) and a
@@ -26,7 +30,7 @@ publish tarball releases that consumers pin.
 - The pinning consumer, Frame Agent, moves its pin in its own repository. On 2026-10-24 it pinned
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
-  `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`.
+  `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`.
 
 ## Patches
 
@@ -63,6 +67,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.8.221-sshlg.1` | `4ca03a605` | 2026-10-30 | `a634e472f0296efdd8a21f8fe1276cece7e47c5cb89026f58948a975a7703a5f` |
 | `fork-v0.8.210-sshlg.1` | `2119b8418` | 2026-10-28 | `df14cf52b2d857e17d833dfeffdf6ee620997c2934aa15829e50033c670ca0b7` |
 | `fork-v0.8.206-sshlg.1` | `34ae91a84` | 2026-10-27 | `176dcab03c90dd6b23e9b6097ec62631f1b25998e46d5665edb583e0df83f552` |
 | `fork-v0.8.198-sshlg.1` | `44ad52549` | 2026-10-25 | `6d9a2e895ee6d6fb7f285cfc64fac9f90dc6893f0c61483bfd3a162d2ed7095c` |
@@ -100,16 +105,17 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.8.193..v0.8.198` | `HYPERFRAMES_GSAP_BASE_URL` names an npm mirror (HTTPS, or HTTP on localhost) that renders and Studio preview load GSAP from; Studio preview now uses the CLI's bundled GSAP by default (#6256). The Chrome download moved into a child process (Node running the CLI's `renderSetupWorker.js browser-install`, `utils/cancellableProcess.ts`; same download source). Orphan cleanup kills only browsers carrying HyperFrames' launch marker; `HYPERFRAMES_NO_ORPHAN_CLEANUP=1` turns it off.                                                                                                                                                                                                                                                                                                    |
 | `v0.8.198..v0.8.206` | New CLI: `hyperframes <dir>` opens the project (`open`); `lambda deploy --warm`, `--width`, `--height` (runs `aws`). A killed CLI's children are ended by a Node child it spawns (`utils/childReaper.ts`, #6431). Media grading runs `ffprobe`/`ffmpeg` (`core/src/mediaGradeAnalyzer.ts`, `HYPERFRAMES_ANALYZE_TIMEOUT_MS`); the engine reads `vm_stat` on macOS; Studio history runs `ps`. New `fetch` calls stay local: same-origin composition scripts in the page (`engine/src/services/frameCapture.ts:2104`), the preview server for `check` findings, the proxy in the runtime. `HF_DE_PARALLEL_ROUTER`, `HF_DE_PAR_DEBUG` (render); telemetry recognises OpenClaw by `OPENCLAW_CONFIG_PATH`. Skills: 13 files (runtimes, launch, media-use memory and mixing, remotion-to-hyperframes). |
 | `v0.8.206..v0.8.210` | New flags `capture --local-file <html>` and `--local-root <dir>` (the page reads files under that root), `media-treatment --grading`. `HYPERFRAMES_CAPTURE_PROXY` routes `capture` through an upstream proxy (off by default, #6499). `HYPERFRAMES_HANG_REPORT`, `HYPERFRAMES_NO_PREVIEW_DISCOVERY`; preview records go to `XDG_STATE_HOME` on Linux and `LOCALAPPDATA` on Windows (#6461). Chrome is started by `spawn` with a host ceiling probe (`chromeStartup.ts`, `chromeHostCeiling.ts`, #6547, #6516). No children outlive their command. Skills: 10 files.                                                                                                                                                                                                                              |
+| `v0.8.210..v0.8.221` | Dedicated OAuth clients (#6687): `HYPERFRAMES_OAUTH_{AUTHORIZE,TOKEN,DEVICE,REVOKE}_URL`, `HYPERFRAMES_OAUTH_CLIENT_ID`, `HYPERFRAMES_ENV`, `HYPERFRAMES_CONFIG_DIR`. Downloads honour `HTTPS_PROXY` through `undici` (`core/src/envProxy.ts`, `NODE_USE_ENV_PROXY`) and refuse hosts that resolve to private addresses (#6571). The background self-update no longer runs when nobody is at the terminal (#6617; `HYPERFRAMES_NO_AUTO_INSTALL=1`, `HYPERFRAMES_AGENT`, `CI`). `hyperframes open` can start the HyperFrames desktop app detached (`utils/desktopApp.ts:75`). `media-use` runs its engine in a Node child; AAC encoding runs `ffmpeg`. New workflow `windows-window-probe.yml` (disabled here). Lambda: `HYPERFRAMES_LAMBDA_RESERVED_CONCURRENCY`, `HYPERFRAMES_STITCH_FUNCTION`. |
 
 ## Next task
 
 This repository stays where it is: on 2026-10-28 the operator decided it does not move to the team organisation
 (project board, thread `3b676949`, message `e1350512`).
 
-1. Upstream releases after `v0.8.210`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
+1. Upstream releases after `v0.8.221`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
    (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.8.210 v<new>`, add its findings to the table above and the release to the release table, and
-   post them to the consumer on the board (thread `b4d4f898`). `v0.8.210` is taken (2026-10-28).
+   `fork/door-audit.sh v0.8.221 v<new>`, add its findings to the table above and the release to the release table, and
+   post them to the consumer on the board (thread `b4d4f898`). `v0.8.221` is taken (2026-10-30). After the push, check no workflow is active (fork/README.md).
 2. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.

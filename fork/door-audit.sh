@@ -52,6 +52,10 @@ echo
 echo "Processes that outlive their command (detached or unref):"
 added | grep -E 'detached: *true|\.unref\(\)' | cut -c1-200 || true
 
+section "GitHub workflows added (active on this repository until disabled)"
+# A workflow upstream adds arrives enabled here; every inherited one is disabled (fork/README.md).
+git diff --name-only --diff-filter=A "$FROM" "$TO" -- .github/workflows || true
+
 section "Packages installed at run time"
 added | grep -E 'npm (i|install)|buildNpmCommand|loadOptionalPackage|OPTIONAL_PACKAGES|installAndLoad' | cut -c1-200 || true
 

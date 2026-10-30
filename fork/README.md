@@ -14,9 +14,11 @@ The CLI and package names stay `hyperframes`, so every skill and composition tha
 | `main`     | our line: an upstream release plus our patches and tooling | commits and merges; never rewritten, never force-pushed                 |
 | `upstream` | a mirror of `heygen-com/hyperframes` `main`                | `git push origin upstream/main:refs/heads/upstream` (fast-forward only) |
 
-No GitHub workflow of this repository runs: the sixteen inherited from upstream (npm publish, catalog
-publish, ClawHub sync, CI, regression and the rest) are disabled in the repository settings, because they
-target HeyGen's infrastructure. The checks of a release run locally in `fork/release.sh`.
+No GitHub workflow of this repository runs: every one inherited from upstream (npm publish, catalog
+publish, ClawHub sync, CI, regression and the rest) is disabled in the repository settings, because they
+target HeyGen's infrastructure. The checks of a release run locally in `fork/release.sh`. A workflow file an
+upstream release adds arrives enabled: after pushing a merge, `gh workflow list --all` must show none active,
+and `gh workflow disable <file>` turns off any that is (the door audit names added workflow files).
 
 ## Versions and tags
 
