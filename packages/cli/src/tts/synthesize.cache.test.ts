@@ -18,11 +18,18 @@ const probe = vi.hoisted(() => ({
   failures: {} as Record<string, string>,
   rejectedOverride: null as string | null,
 }));
-vi.mock("./python.js", () => ({
-  findPython: () => "test-python",
-  probePythonPackage: (_python: string, pkg: string) => probe.failures[pkg] ?? null,
-  describeRejectedPythonOverride: () => probe.rejectedOverride,
-}));
+vi.mock("./python.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./python.js")>();
+  return {
+    ...actual,
+    findPython: () => "test-python",
+    // A probe failure stands for a package that imports under no environment.
+    workingPythonEnv: (...args: Parameters<typeof actual.workingPythonEnv>) =>
+      Object.keys(probe.failures).length > 0 ? null : actual.workingPythonEnv(...args),
+    probePythonPackage: (_python: string, pkg: string) => probe.failures[pkg] ?? null,
+    describeRejectedPythonOverride: () => probe.rejectedOverride,
+  };
+});
 vi.mock("./manager.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./manager.js")>()),
   ensureModel: vi.fn().mockResolvedValue("model.onnx"),
@@ -59,6 +66,28 @@ describe("synthesis script cache", () => {
     fs.chmodSync(cacheDir, 0o755);
     expect(fs.readdirSync(cacheDir).filter((name) => name.startsWith(".hf-create-"))).toEqual([]);
     fs.rmSync(paths.home, { recursive: true, force: true });
+  });
+
+  it("runs the synthesis process in the environment the packages imported under", async () => {
+    vi.mocked(execFileSync).mockImplementation((_cmd, args, options) => {
+      const importing = String(args?.[0]) === "-c";
+      const env = (options as { env?: NodeJS.ProcessEnv }).env;
+      if (importing && env?.PYTHONPATH !== undefined) throw new Error("ModuleNotFoundError");
+      fs.writeFileSync(outputPath, "stub audio");
+      return JSON.stringify({
+        outputPath,
+        sampleRate: 24000,
+        durationSeconds: 1,
+        langApplied: true,
+      });
+    });
+    vi.stubEnv("PYTHONPATH", "/other/python/site-packages");
+    const { synthesize } = await import("./synthesize.js");
+    await synthesize("Hello", outputPath);
+
+    const options = vi.mocked(execFileSync).mock.calls.at(-1)?.[2];
+    expect(options?.env).not.toHaveProperty("PYTHONPATH");
+    vi.unstubAllEnvs();
   });
 
   it("turns off onnxruntime telemetry for the synthesis process", async () => {
@@ -146,5 +175,14 @@ describe("synthesis script cache", () => {
     await expect(failure).rejects.toThrow("test-python");
     await expect(failure).rejects.toThrow("no suitable image found");
     await expect(failure).rejects.toThrow('HYPERFRAMES_PYTHON="/venv/bin/python" was rejected');
+  });
+
+  it("names soundfile's own error when kokoro-onnx imports but soundfile cannot", async () => {
+    probe.failures.soundfile = "OSError: cannot load library 'libsndfile.dylib'";
+    const { synthesize } = await import("./synthesize.js");
+
+    const failure = synthesize("Hello", outputPath);
+    await expect(failure).rejects.toThrow("soundfile package");
+    await expect(failure).rejects.toThrow("cannot load library 'libsndfile.dylib'");
   });
 });

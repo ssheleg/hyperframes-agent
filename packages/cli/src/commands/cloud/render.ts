@@ -1,4 +1,4 @@
-import { failCommand } from "../../utils/commandResult.js";
+import { failCommand, failUsage } from "../../utils/commandResult.js";
 /**
  * `hyperframes cloud render` — orchestrate a cloud-rendered HyperFrames
  * composition end-to-end:
@@ -28,7 +28,7 @@ import { failCommand } from "../../utils/commandResult.js";
  * HeyGen's external API OpenAPI spec; never hand-edit it.
  */
 
-import { defineCommand } from "citty";
+import { defineCommand } from "../../utils/defineCommand.js";
 
 import {
   detectAspectRatioFromHtml,
@@ -384,7 +384,7 @@ function validateIdempotencyKey(key: string | undefined): void {
   if (key === undefined) return;
   if (!IDEMPOTENCY_KEY_RE.test(key)) {
     errorBox("Invalid --idempotency-key", `Got "${key}". Must be 1-255 chars from [A-Za-z0-9_:.-]`);
-    failCommand();
+    failUsage();
   }
 }
 
@@ -394,7 +394,7 @@ export function validateDryRunSource(source: ProjectInputSource, dryRun: boolean
     "Invalid --dry-run input",
     "--dry-run inspects a local project directory and cannot be combined with --asset-id or --url.",
   );
-  failCommand();
+  failUsage();
 }
 
 // ---------------------------------------------------------------------------
@@ -425,7 +425,7 @@ function resolveProjectInput(opts: {
   const count = Number(explicit.dir) + Number(explicit.assetId) + Number(explicit.url);
   if (count > 1) {
     errorBox("Conflicting inputs", "Pass only one of: project dir, --asset-id, --url.");
-    failCommand();
+    failUsage();
   }
   if (explicit.assetId) return { kind: "asset_id", assetId: opts.assetId };
   if (explicit.url) return { kind: "url", url: opts.url };

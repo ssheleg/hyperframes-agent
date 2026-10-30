@@ -1,5 +1,5 @@
-import { detectGpuEncoder } from "@hyperframes/engine";
-import { findFfBinary } from "@hyperframes/parsers/ff-binaries";
+import { getCachedGpuEncoder } from "@hyperframes/engine";
+import { findFfBinary, getSkippedX86Binary } from "@hyperframes/parsers/ff-binaries";
 import { detectLinuxDistro, ffmpegInstallCommand } from "./linuxDeps.js";
 import { runCancellableProcess } from "../utils/cancellableProcess.js";
 
@@ -40,7 +40,7 @@ export async function detectH264EncoderModeForRender(
   ffmpegPath: string,
   gpuRequested: boolean,
   signal: AbortSignal,
-  probeGpu: () => Promise<unknown> = detectGpuEncoder,
+  probeGpu: () => Promise<unknown> = getCachedGpuEncoder,
 ): Promise<H264EncoderMode> {
   const result = await runCancellableProcess(ffmpegPath, ["-hide_banner", "-encoders"], {
     signal,
@@ -96,6 +96,12 @@ export function getFFmpegInstallCommand(): string | undefined {
 }
 
 export function getFFmpegInstallHint(): string {
+  const skipped = getSkippedX86Binary();
+  const base = installHint();
+  return skipped ? `${base} (ignored ${skipped}: x86_64 only, it cannot run on this Mac)` : base;
+}
+
+function installHint(): string {
   const command = getFFmpegInstallCommand();
   // Guarding on `command`, not the platform alone: the function above is the
   // sole owner of platform-to-command, so the day win32 stops returning one

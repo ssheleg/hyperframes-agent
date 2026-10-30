@@ -55,13 +55,16 @@ import {
   resolveAdaptersUsed,
   resolveDeShortBand,
   shouldClampDefaultDrawElement,
+  calibrationCaptureConfig,
   shouldPreferParallelDrawElement,
   shouldPreferSingleWorkerDrawElement,
+  resolveDeSingleMinFrames,
   isCaptureParallelStreamRouterEnabled,
   shouldSegmentCapture,
   SEGMENTED_MIN_SECONDS_AFTER_SOAK,
   resolveParallelCaptureMode,
   shouldStreamParallelCapture,
+  isAppleGpuDiskCapture,
   shouldUseStreamingEncode,
   resolveObservedCaptureMode,
   createCaptureObservabilityUpdater,
@@ -2911,6 +2914,15 @@ describe("shouldPreferSingleWorkerDrawElement (DE priority inversion)", () => {
     expect(shouldPreferSingleWorkerDrawElement({ ...eligible, totalFrames: 900 })).toBe(true);
   });
 
+  it("is off unless HF_DE_SINGLE_MIN_FRAMES sets a floor", () => {
+    expect(resolveDeSingleMinFrames({})).toBe(0);
+    expect(resolveDeSingleMinFrames({ HF_DE_SINGLE_MIN_FRAMES: "" })).toBe(0);
+    expect(resolveDeSingleMinFrames({ HF_DE_SINGLE_MIN_FRAMES: "900" })).toBe(900);
+    expect(
+      shouldPreferSingleWorkerDrawElement({ ...eligible, minFrames: resolveDeSingleMinFrames({}) }),
+    ).toBe(false);
+  });
+
   it("is disabled by minFrames <= 0 (HF_DE_SINGLE_MIN_FRAMES=0 kill switch)", () => {
     expect(shouldPreferSingleWorkerDrawElement({ ...eligible, minFrames: 0 })).toBe(false);
     expect(shouldPreferSingleWorkerDrawElement({ ...eligible, minFrames: -1 })).toBe(false);
@@ -3635,6 +3647,39 @@ describe("shouldStreamParallelCapture (non-DE parallel streaming router)", () =>
 
   it("skips HDR-layered and shader-transition routes", () => {
     expect(shouldStreamParallelCapture({ ...eligible, layeredOrEffectRoute: true })).toBe(false);
+  });
+});
+
+describe("calibrationCaptureConfig", () => {
+  const drawElementCfg = () => ({ ...createConfig(), useDrawElement: true });
+
+  it("measures screenshot capture, the mode parallel workers use", () => {
+    const cfg = drawElementCfg();
+    expect(calibrationCaptureConfig(cfg, {}).useDrawElement).toBe(false);
+    expect(cfg.useDrawElement).toBe(true);
+  });
+
+  it("keeps drawElement when parallel drawElement was opted into", () => {
+    const cfg = drawElementCfg();
+    expect(calibrationCaptureConfig(cfg, { PRODUCER_EXPERIMENTAL_FAST_CAPTURE: "true" })).toBe(cfg);
+    expect(calibrationCaptureConfig(cfg, { HF_DE_PARALLEL_STREAM: "true" })).toBe(cfg);
+  });
+});
+
+describe("isAppleGpuDiskCapture", () => {
+  const disk = {
+    platform: "darwin",
+    browserGpuMode: "hardware",
+    layered: false,
+    parallelStream: false,
+  } as const;
+
+  it("holds only for hardware-GPU Mac renders that write frames to disk", () => {
+    expect(isAppleGpuDiskCapture(disk)).toBe(true);
+    expect(isAppleGpuDiskCapture({ ...disk, layered: true })).toBe(false);
+    expect(isAppleGpuDiskCapture({ ...disk, parallelStream: true })).toBe(false);
+    expect(isAppleGpuDiskCapture({ ...disk, browserGpuMode: "software" })).toBe(false);
+    expect(isAppleGpuDiskCapture({ ...disk, platform: "win32" })).toBe(false);
   });
 });
 

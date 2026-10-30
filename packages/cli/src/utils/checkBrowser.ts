@@ -165,6 +165,8 @@ function startCopyHeartbeat(
 } {
   const startedAt = Date.now();
   const latest = new Map<number, ProxyProgress>();
+  const total = cached.filter((isCached) => !isCached).length;
+  let finished = 0;
   const timer = setInterval(() => {
     for (const [index, { doneSeconds, totalSeconds }] of latest) {
       if (cached[index]) continue;
@@ -172,14 +174,17 @@ function startCopyHeartbeat(
         ? `${Math.min(100, Math.floor((doneSeconds / totalSeconds) * 100))}%`
         : "";
       console.error(
-        `[hyperframes] browser-playable copy of ${sources[index]!.file}: ${done || `${Math.floor(doneSeconds)}s done`} (${elapsedText(Date.now() - startedAt)} so far)`,
+        `[hyperframes] making browser-playable copies: ${finished} of ${total} done. ${sources[index]!.file}: ${done || `${Math.floor(doneSeconds)}s done`} (${elapsedText(Date.now() - startedAt)} so far)`,
       );
     }
   }, COPY_HEARTBEAT_MS);
   timer.unref();
   return {
     progress: (index, progress) => void latest.set(index, progress),
-    settled: (index) => void latest.delete(index),
+    settled: (index) => {
+      latest.delete(index);
+      if (!cached[index]) finished += 1;
+    },
     stop: () => clearInterval(timer),
   };
 }
@@ -964,9 +969,12 @@ export function createPageDriver(
         screenshotFollows ? SCREENSHOT_SEEK_OPTIONS : AUDIT_SEEK_OPTIONS,
       );
     },
-    seekGeometry: async (time) => {
+    seekGeometry: async (time, { draws = false } = {}) => {
       clock.at(time);
-      await seekCompositionTimeline(page, time, DENSE_GEOMETRY_SEEK_OPTIONS);
+      const options = draws
+        ? { ...DENSE_GEOMETRY_SEEK_OPTIONS, skipWebglDraws: false }
+        : DENSE_GEOMETRY_SEEK_OPTIONS;
+      await seekCompositionTimeline(page, time, options);
     },
     collectLayout: (time, tolerance, layout) => collectLayout(page, time, tolerance, layout),
     collectOverlap: (time) => collectOverlap(page, time),
@@ -1998,6 +2006,10 @@ function assignOptionalLayoutFields(issue: LayoutIssue, value: Record<string, un
   if (overflow) issue.overflow = overflow;
   const coveredFraction = numberValue(value, "coveredFraction");
   if (coveredFraction !== null) issue.coveredFraction = coveredFraction;
+  const lifetime = recordField(value, "lifetime");
+  const start = lifetime ? numberValue(lifetime, "start") : null;
+  const end = lifetime ? numberValue(lifetime, "end") : null;
+  if (start !== null && end !== null) issue.lifetime = { start, end };
 }
 
 function recordField(value: unknown, key: string): Record<string, unknown> | null {

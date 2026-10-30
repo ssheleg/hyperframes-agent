@@ -87,6 +87,32 @@
           }
         ]
       }
+    },
+    {
+      "files": ["packages/cli/src/**/*.ts"],
+      "excludeFiles": [
+        "**/*.test.ts",
+        "packages/cli/src/utils/defineCommand.ts",
+        "packages/cli/src/ui/prompts.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "citty",
+                "importNames": ["defineCommand"],
+                "message": "Define commands with defineCommand from packages/cli/src/utils/defineCommand.ts so the shared guards and the agent-mode contract test cover them."
+              },
+              {
+                "name": "@clack/prompts",
+                "message": "Import prompts and spinners from packages/cli/src/ui/prompts.ts: it refuses to prompt when nobody can answer."
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }

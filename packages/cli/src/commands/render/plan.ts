@@ -457,7 +457,7 @@ export function createRenderPlan(args: RenderCommandArgs, now = new Date()): Ren
         )
       : 1;
 
-  const rendersDir = resolve("renders");
+  const rendersDir = join(project.dir, "renders");
   const ext = FORMAT_EXT[format];
   const timestamp = formatRenderOutputTimestamp(now);
   const batchOutputTemplate = args.output
@@ -585,7 +585,7 @@ export function createRenderPlan(args: RenderCommandArgs, now = new Date()): Ren
     keepSegments: args["keep-segments"] ?? false,
     bestEffort: args["best-effort"] ?? true,
     batchJson,
-    effectiveQuiet: quiet || (batchPath != null && batchJson),
+    effectiveQuiet: quiet || batchJson,
     strictAll: args["strict-all"] ?? false,
     strictErrors: (args.strict ?? false) || (args["strict-all"] ?? false),
     crf,

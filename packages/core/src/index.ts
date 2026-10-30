@@ -262,7 +262,21 @@ export {
   type NormalizedHfColorGradingWheels,
   type ResolvedHfColorGrading,
 } from "./colorGrading";
-export { parseCubeLut, CubeLutParseError, type ParseCubeLutOptions } from "./colorLuts";
+export {
+  colorGroupOf,
+  effectiveColorGrading,
+  ensureColorGroupInertStyle,
+  HF_COLOR_GROUP_ATTR,
+  HF_COLOR_GROUP_TAG,
+  resolveColorGroupElement,
+} from "./colorGroups";
+export {
+  parseCubeLut,
+  CubeLutParseError,
+  type CubeLut3D,
+  type ParseCubeLutOptions,
+} from "./colorLuts";
+export { bakeHfColorGradingCube, type BakeHfColorGradingCubeOptions } from "./colorGradingBake";
 export {
   firstFrameColourArgs,
   hdrToSdrToneMapFilter,

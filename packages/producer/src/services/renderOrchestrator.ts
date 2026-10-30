@@ -1171,14 +1171,21 @@ export function resetCaptureAttemptProgress(job: { framesRendered?: number }): v
 }
 
 const FIRST_FRAME_STALL_MS = 300_000;
+const TAIL_STALL_MS = FIRST_FRAME_STALL_MS;
 
-/** The no-progress rule for capture stages that have no watchdog of their own: disk, HDR, chunk. */
-export function frameStallRule(job: { framesRendered?: number }): StageStallRule {
+/** The no-progress rule for capture stages that have no watchdog of their own: disk, HDR, chunk. Once
+ * `totalFrames` have landed the frame count can no longer change, so the stage is judged on the tail budget. */
+export function frameStallRule(
+  job: { framesRendered?: number },
+  totalFrames: number,
+): StageStallRule {
   const noProgressMs = resolveCaptureStallTimeoutMs();
   return {
     progress: () => job.framesRendered ?? 0,
     noProgressMs,
     firstProgressMs: Math.max(FIRST_FRAME_STALL_MS, noProgressMs),
+    complete: () => (job.framesRendered ?? 0) >= totalFrames,
+    tailMs: Math.max(TAIL_STALL_MS, noProgressMs),
   };
 }
 
@@ -2213,15 +2220,22 @@ export function resolveDeShortBand(args: {
   return args.bandOpen ? "applied" : "skipped_elements";
 }
 
+/** Single-worker drawElement inversion floor; off (0) by default: parallel screenshot capture was
+ * ~25% faster wherever it fired. HF_DE_SINGLE_MIN_FRAMES=<n> turns it back on. */
+export function resolveDeSingleMinFrames(env: NodeJS.ProcessEnv): number {
+  const raw = env.HF_DE_SINGLE_MIN_FRAMES;
+  const value = raw === undefined || raw.trim() === "" ? 0 : Number(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
 /**
  * DE priority inversion predicate: should a multi-worker render drop to
  * single-worker verified drawElement streaming?
  *
- * Benchmarked 2026-07-08: above ~900 frames DE-single beats screenshot-parallel
- * at every worker count (2,380f: 66s vs 109–127s at W2–W5); below it DE's fixed
- * init cost (verify + dedup arming) loses by a small margin. Only fires for the
- * exact benchmarked configuration: default-on DE, mp4, streaming-eligible,
- * no compile gate, no forced screenshot.
+ * Opt-in (see resolveDeSingleMinFrames): re-measured on hardware-GL Macs, one
+ * drawElement worker was ~25% slower than 4 screenshot workers at 1,271 and 9,000
+ * frames. Only fires for default-on DE, mp4, streaming-eligible, no compile gate,
+ * no forced screenshot.
  */
 export function shouldPreferSingleWorkerDrawElement(args: {
   workerCount: number;
@@ -2790,6 +2804,21 @@ export function shouldSegmentCapture(args: {
   return args.durationSeconds >= resolveSegmentedMinSeconds(args.env);
 }
 
+/** Worker sizing's Apple-GPU budget fits only frames written to disk by screenshot workers. */
+export function isAppleGpuDiskCapture(args: {
+  platform: NodeJS.Platform;
+  browserGpuMode: "software" | "hardware";
+  layered: boolean;
+  parallelStream: boolean;
+}): boolean {
+  return (
+    args.platform === "darwin" &&
+    args.browserGpuMode === "hardware" &&
+    !args.layered &&
+    !args.parallelStream
+  );
+}
+
 export function shouldStreamParallelCapture(args: {
   /** Router switch for this render — see isCaptureParallelStreamRouterEnabled. */
   routerEnabled: boolean;
@@ -2840,6 +2869,24 @@ export function shouldClampDefaultDrawElement(args: {
     (!args.useStreamingEncode || args.workerCount > 1) &&
     !args.deParallelStreamVerified
   );
+}
+
+/**
+ * Calibration sizes a parallel render, and parallel workers capture by screenshot
+ * unless drawElement was opted into: measure that mode, without a drawElement init.
+ */
+export function calibrationCaptureConfig(
+  cfg: EngineConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): EngineConfig {
+  const parallelKeepsDrawElement = !shouldClampDefaultDrawElement({
+    useDrawElement: cfg.useDrawElement,
+    fastCaptureExplicitOptIn: env.PRODUCER_EXPERIMENTAL_FAST_CAPTURE === "true",
+    useStreamingEncode: true,
+    workerCount: 2,
+    deParallelStreamVerified: env.HF_DE_PARALLEL_STREAM === "true",
+  });
+  return parallelKeepsDrawElement ? cfg : { ...cfg, useDrawElement: false };
 }
 
 export function resolveCaptureForceScreenshotForPageSideCompositing(args: {
@@ -2991,6 +3038,8 @@ async function executeRenderPipeline(input: {
   let captureCompositionHeight: number | undefined;
   let captureTotalFrames: number | undefined;
   const perfStages: Record<string, number> = {};
+  // The audio mix runs while capture sets up; a failure in between still waits for it.
+  let pendingAudio: Promise<unknown> | undefined;
   const hdrDiagnostics: HdrDiagnostics = {
     videoExtractionFailures: 0,
     imageDecodeFailures: 0,
@@ -3380,6 +3429,14 @@ async function executeRenderPipeline(input: {
     }
     observability.checkpoint("browser_probe", "duration resolved", {
       durationSeconds: probeResult.duration,
+      lengthFrom: probeResult.lengthSource?.from ?? null,
+      ...(probeResult.lengthSource?.from === "media"
+        ? {
+            lengthTag: probeResult.lengthSource.tag,
+            lengthTrimmed: probeResult.lengthSource.trimmed,
+            lengthSrcHash: probeResult.lengthSource.srcHash,
+          }
+        : {}),
       totalFrames,
       compositionHash,
       beginFrameStalled: probeResult.beginFrameStalled,
@@ -3491,7 +3548,7 @@ async function executeRenderPipeline(input: {
       code: "process_audio",
     });
 
-    const audioResult = await observeRenderStage(
+    const audioStage = observeRenderStage(
       observability,
       "audio_process",
       { audioCount: composition.audios.length },
@@ -3511,40 +3568,7 @@ async function executeRenderPipeline(input: {
           log,
         }),
     );
-    const { audioOutputPath, hasAudio } = audioResult;
-    perfStages.audioProcessMs = audioResult.audioProcessMs;
-    recordLimiterAttenuation(job, audioResult.audioLoweredDb);
-    if (audioResult.audioError) {
-      const audioFailures = audioResult.audioFailures ?? [];
-      const failureOwner =
-        audioFailures.length === 0
-          ? undefined
-          : audioFailures.some((failure) => failure.owner === "system")
-            ? "system"
-            : "user";
-      const retryable =
-        audioFailures.length === 0
-          ? undefined
-          : audioFailures.every((failure) => failure.retryable);
-      applyRenderWarningPolicy(
-        job,
-        [
-          {
-            code: "audio_processing_failed",
-            message: `Audio mix failed; output would be video-only: ${audioResult.audioError}`,
-            details: {
-              mediaType: "audio",
-              audioFailures: audioFailureDiagnostics(audioFailures),
-              failureReasons: [...new Set(audioFailures.map((failure) => failure.reason))],
-              failureStages: [...new Set(audioFailures.map((failure) => failure.stage))],
-              failureOwner,
-              retryable,
-            },
-          },
-        ],
-        log,
-      );
-    }
+    pendingAudio = audioStage.catch(() => undefined);
 
     // ── Stage 4: Frame capture ──────────────────────────────────────────
     const stage4Start = Date.now();
@@ -3659,6 +3683,15 @@ async function executeRenderPipeline(input: {
       // sample frame indices from this so they land inside the drained range.
       compositionDurationSeconds: job.duration,
       deFrameFallback: true,
+      // A line per scanned chunk, so a long effect scan reads as preparing, not as a stall.
+      onEffectScanProgress: (scanned, total) =>
+        updateJobStatus(
+          job,
+          "rendering",
+          `Checking effects, ${scanned} of ${total} frames`,
+          25,
+          onProgress,
+        ),
       requiresWebGpu: compositionRequiresWebGpu(compiled.html),
       // Live route for Chrome memory (spec §5 Phase −1). The aggregate route
       // through CapturePerfSummary only exists on success; a mid-capture
@@ -3707,14 +3740,7 @@ async function executeRenderPipeline(input: {
     // because when every multi-worker resolution would be inverted to 1 anyway,
     // the calibration stage (a throwaway Chrome launch + timeline-spread sample
     // captures, seconds of wall clock) buys nothing and is skipped.
-    // Threshold override: HF_DE_SINGLE_MIN_FRAMES (0 disables the inversion;
-    // a set-but-empty var falls back to the default, it is NOT the kill switch).
-    const deSingleMinFramesRaw = process.env.HF_DE_SINGLE_MIN_FRAMES;
-    const deSingleMinFramesNum =
-      deSingleMinFramesRaw === undefined || deSingleMinFramesRaw.trim() === ""
-        ? 900
-        : Number(deSingleMinFramesRaw);
-    const deSingleMinFrames = Number.isFinite(deSingleMinFramesNum) ? deSingleMinFramesNum : 900;
+    const deSingleMinFrames = resolveDeSingleMinFrames(process.env);
     // Short-comp band: 31% of fleet renders (24h, 0.7.78+) are DE-eligible
     // comps clamped to parallel screenshot purely because they sit under this
     // floor. A controlled sweep (fixed synthetic content, {250,400,600,900}f,
@@ -3728,8 +3754,8 @@ async function executeRenderPipeline(input: {
     // +5% for DE at 0 nodes, -4% at 7k, -41% at 20k, -80% at 40k — crossover
     // near ~3.9k. Since motion only ever helps DE, a node ceiling calibrated
     // at the LOWEST-motion case is safe for every motion level, so the short
-    // band opens only below `deShortBandMaxElements`. Above it the original
-    // 900 floor stands, unchanged.
+    // band opens only below `deShortBandMaxElements`. Above it the
+    // HF_DE_SINGLE_MIN_FRAMES floor stands (off by default).
     const deShortBandMinFrames = envInt("HF_DE_SHORT_MIN_FRAMES", 250);
     const deShortBandMaxElements = envInt("HF_DE_SHORT_MAX_ELEMENTS", 2500);
     // `source` is load-bearing, not diagnostic: the probe is CONDITIONAL
@@ -4011,7 +4037,7 @@ async function executeRenderPipeline(input: {
         }),
         () =>
           runCaptureCalibration({
-            cfg,
+            cfg: calibrationCaptureConfig(cfg),
             fileServer: activeFileServer,
             workDir,
             log,
@@ -4050,10 +4076,28 @@ async function executeRenderPipeline(input: {
 
     // Low-memory safe-mode's single-worker pin lives inside
     // resolveRenderWorkerCount so its "why workers=N" logging stays coherent.
+    const appleGpuDiskCapture = isAppleGpuDiskCapture({
+      platform: process.platform,
+      browserGpuMode: resolvedBrowserGpuMode,
+      layered: shouldUseLayeredComposite({
+        hasHdrContent,
+        hasShaderTransitions: compiled.hasShaderTransitions && !isGif,
+        isPngSequence,
+      }),
+      parallelStream: isCaptureParallelStreamRouterEnabled(
+        process.env,
+        resolveParallelCaptureMode({
+          platform: process.platform,
+          headlessShellPath: resolveHeadlessShellPath(cfg),
+          forceScreenshot: captureForceScreenshot,
+          deviceScaleFactor: captureOptions.deviceScaleFactor,
+        }),
+      ),
+    });
     workerCount = resolveRenderWorkerCount(
       totalFrames,
       job.config.workers,
-      cfg,
+      { ...cfg, appleGpuDiskCapture },
       compiled,
       log,
       captureCalibration?.estimate,
@@ -4566,6 +4610,42 @@ async function executeRenderPipeline(input: {
     const effectiveQuality = job.config.crf ?? preset.quality;
     const effectiveBitrate = job.config.crf != null ? undefined : job.config.videoBitrate;
 
+    const audioResult = await audioStage;
+    const { audioOutputPath, hasAudio } = audioResult;
+    perfStages.audioProcessMs = audioResult.audioProcessMs;
+    recordLimiterAttenuation(job, audioResult.audioLoweredDb);
+    if (audioResult.audioError) {
+      const audioFailures = audioResult.audioFailures ?? [];
+      const failureOwner =
+        audioFailures.length === 0
+          ? undefined
+          : audioFailures.some((failure) => failure.owner === "system")
+            ? "system"
+            : "user";
+      const retryable =
+        audioFailures.length === 0
+          ? undefined
+          : audioFailures.every((failure) => failure.retryable);
+      applyRenderWarningPolicy(
+        job,
+        [
+          {
+            code: "audio_processing_failed",
+            message: `Audio mix failed; output would be video-only: ${audioResult.audioError}`,
+            details: {
+              mediaType: "audio",
+              audioFailures: audioFailureDiagnostics(audioFailures),
+              failureReasons: [...new Set(audioFailures.map((failure) => failure.reason))],
+              failureStages: [...new Set(audioFailures.map((failure) => failure.stage))],
+              failureOwner,
+              retryable,
+            },
+          },
+        ],
+        log,
+      );
+    }
+
     resetCaptureAttemptProgress(job);
 
     // ── Z-ordered multi-layer compositing ─────────────────────────────────
@@ -4624,7 +4704,7 @@ async function executeRenderPipeline(input: {
             onProgress,
           });
         },
-        { stall: frameStallRule(job) },
+        { stall: frameStallRule(job, totalFrames) },
       );
       lastBrowserConsole = hdrRes.lastBrowserConsole;
       layeredCaptureWarnings.push(...hdrRes.warnings);
@@ -5191,7 +5271,7 @@ async function executeRenderPipeline(input: {
                 interleaveFrames: overlap !== null,
                 openAttempt,
               }),
-            { stall: frameStallRule(job) },
+            { stall: frameStallRule(job, totalFrames) },
           );
         let captureRes;
         try {
@@ -5470,6 +5550,7 @@ async function executeRenderPipeline(input: {
     updateJobStatus(job, "complete", "Render complete", 100, onProgress);
     await eventPublisher.flush();
   } catch (caught) {
+    await pendingAudio;
     const error = tooSlowError ?? caught;
     if (!tooSlowError && (error instanceof RenderCancelledError || executionSignal?.aborted)) {
       job.error = error instanceof Error ? error.message : "render_cancelled";

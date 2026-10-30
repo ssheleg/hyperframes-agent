@@ -10,7 +10,12 @@ import {
   inferLangFromVoiceId,
   type SupportedLang,
 } from "./manager.js";
-import { describeRejectedPythonOverride, findPython, probePythonPackage } from "./python.js";
+import {
+  describeRejectedPythonOverride,
+  findPython,
+  probePythonPackage,
+  workingPythonEnv,
+} from "./python.js";
 import { writeNewFileSync } from "../utils/writeNewFile.js";
 
 // ---------------------------------------------------------------------------
@@ -206,21 +211,23 @@ export async function synthesize(
     );
   }
 
-  const kokoroFailure = probePythonPackage(python, "kokoro_onnx");
-  if (kokoroFailure) {
-    throw missingPackageError(
-      python,
-      "The kokoro-onnx package is not installed or cannot load. Run: pip install kokoro-onnx soundfile (or point HYPERFRAMES_PYTHON at a venv python that has them)",
-      kokoroFailure,
-    );
-  }
-
-  const soundfileFailure = probePythonPackage(python, "soundfile");
-  if (soundfileFailure) {
+  const pythonEnv = workingPythonEnv(python, ["kokoro_onnx", "soundfile"], {
+    ORT_DISABLE_TELEMETRY: "1",
+  });
+  if (!pythonEnv) {
+    const kokoroFailure = probePythonPackage(python, "kokoro_onnx");
+    if (kokoroFailure) {
+      throw missingPackageError(
+        python,
+        "The kokoro-onnx package is not installed or cannot load. Run: pip install kokoro-onnx soundfile (or point HYPERFRAMES_PYTHON at a venv python that has them)",
+        kokoroFailure,
+      );
+    }
     throw missingPackageError(
       python,
       "The soundfile package is not installed or cannot load. Run: pip install soundfile",
-      soundfileFailure,
+      probePythonPackage(python, "soundfile") ??
+        "kokoro_onnx and soundfile import one at a time but not together",
     );
   }
 
@@ -248,7 +255,7 @@ export async function synthesize(
         encoding: "utf-8",
         timeout: 300_000,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, ORT_DISABLE_TELEMETRY: "1" },
+        env: pythonEnv,
       },
     );
 

@@ -104,7 +104,17 @@ export async function explainChromeLaunchFailure(
   args: readonly string[] | undefined,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  if (!executablePath || !(error instanceof Error)) return error;
+  if (!(error instanceof Error)) return error;
+  const { code, errno, syscall } = error as NodeJS.ErrnoException;
+  if (code === "UNKNOWN" && syscall === "spawn")
+    return new Error(
+      `Windows refused to start the browser${executablePath ? ` at ${executablePath}` : ""} (error ${errno ?? "unknown"}, spawn UNKNOWN). ` +
+        "Windows Application Control or security software may be blocking it, or the computer may be out of memory. " +
+        "Close other apps and retry. If a policy blocks the file, allow that path or set HYPERFRAMES_BROWSER_PATH to a Chrome or Edge your policy allows; " +
+        "if the file is damaged, run `hyperframes browser ensure --force` to download it again.",
+      { cause: error },
+    );
+  if (!executablePath) return error;
   const diagnosis = await diagnoseChromeStartup(executablePath, args ?? [], { signal });
   return new Error(`${error.message}\n${diagnosis}`, { cause: error });
 }

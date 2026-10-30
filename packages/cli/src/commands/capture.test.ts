@@ -12,7 +12,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { CliRuntimeError, registerRootExitRequester } from "../utils/commandResult.js";
+import {
+  CliRuntimeError,
+  CliUsageError,
+  registerRootExitRequester,
+} from "../utils/commandResult.js";
 import { CAPTURE_PHASE_SCHEMA } from "../capture/types.js";
 
 const { captureWebsiteMock } = vi.hoisted(() => ({
@@ -165,7 +169,7 @@ describe("capture command — vision control", () => {
             json: true,
           },
         } as never),
-      ).rejects.toBeInstanceOf(CliRuntimeError);
+      ).rejects.toBeInstanceOf(CliUsageError);
 
       expect(captureWebsiteMock).not.toHaveBeenCalled();
     },
@@ -185,7 +189,7 @@ describe("capture command — vision control", () => {
             json: true,
           },
         } as never),
-      ).rejects.toBeInstanceOf(CliRuntimeError);
+      ).rejects.toBeInstanceOf(CliUsageError);
       expect(error).toHaveBeenCalledWith("--max-screenshots must be a positive integer.");
       expect(captureWebsiteMock).not.toHaveBeenCalled();
     },
@@ -228,7 +232,7 @@ describe("capture command — vision control", () => {
       captureCommand.run!({
         args: { ...target, output: "/tmp/hf-local-refused", json: true },
       } as never),
-    ).rejects.toThrow(CliRuntimeError);
+    ).rejects.toThrow("url" in target ? CliUsageError : CliRuntimeError);
     expect(error.mock.calls.flat().join("\n")).toContain(message);
     expect(captureWebsiteMock).not.toHaveBeenCalled();
   });
@@ -382,7 +386,10 @@ describe("capture command — vision control", () => {
       const payload = log.mock.calls.at(-1)?.[0];
       expect(typeof payload).toBe("string");
       if (typeof payload !== "string") throw new Error("Expected JSON failure payload");
-      expect(JSON.parse(payload)).toMatchObject({ ok: false, error: "required extraction failed" });
+      expect(JSON.parse(payload)).toMatchObject({
+        ok: false,
+        error: expect.objectContaining({ message: "required extraction failed" }),
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

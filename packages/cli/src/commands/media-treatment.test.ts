@@ -15,7 +15,7 @@ import {
   mediaTreatmentCommand,
   resolveMediaTreatmentSource,
 } from "./media-treatment.js";
-import { CliRuntimeError } from "../utils/commandResult.js";
+import { CliRuntimeError, CliUsageError } from "../utils/commandResult.js";
 import {
   COLOR_GRADING_TOP_LEVEL_KEYS,
   validateColorGradingContract,
@@ -165,10 +165,27 @@ describe("applyMediaTreatmentToHtml", () => {
     );
   });
 
+  it("resolves every name the overview prints for an area to that area", () => {
+    const correction = getMediaTreatmentCapabilityDetail("correction");
+    expect(correction).toMatchObject({ id: "correction" });
+    expect(getMediaTreatmentCapabilityDetail("Adjust")).toEqual(correction);
+    expect(getMediaTreatmentCapabilityDetail("adjust")).toEqual(correction);
+    expect(getMediaTreatmentCapabilityDetail("Color Grading")).toMatchObject({ id: "grading" });
+    expect(() => getMediaTreatmentCapabilityDetail("adjustments")).toThrow(
+      /Unknown media-treatment capability/,
+    );
+  });
+
+  it("takes the payload key an agent copies from --grading as the area name", () => {
+    expect(getMediaTreatmentCapabilityDetail("preset")).toEqual(
+      getMediaTreatmentCapabilityDetail("presets"),
+    );
+  });
+
   it("lists the area ids the lookup accepts when a capability is unknown", () => {
     let message = "";
     try {
-      getMediaTreatmentCapabilityDetail("adjust");
+      getMediaTreatmentCapabilityDetail("adjustments");
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
@@ -812,7 +829,7 @@ describe("applyMediaTreatmentToHtml", () => {
         runCommand(mediaTreatmentCommand, {
           rawArgs: ["--project", project, "--selector", "#hero", "--grading", grading],
         }),
-      ).rejects.toThrow(CliRuntimeError);
+      ).rejects.toThrow(CliUsageError);
       expect(error).toHaveBeenLastCalledWith(expect.stringContaining("--grading requires --apply"));
       expect(readFileSync(file, "utf8")).toBe(VIDEO);
 

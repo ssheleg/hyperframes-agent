@@ -1,6 +1,6 @@
 {
   "name": "@hyperframes/core",
-  "version": "0.8.210",
+  "version": "0.8.221",
   "description": "",
   "repository": {
     "type": "git",
@@ -85,6 +85,12 @@
       "node": "./dist/removeTree.js",
       "import": "./src/removeTree.ts",
       "types": "./src/removeTree.ts"
+    },
+    "./env-proxy": {
+      "bun": "./src/envProxy.ts",
+      "node": "./dist/envProxy.js",
+      "import": "./src/envProxy.ts",
+      "types": "./src/envProxy.ts"
     },
     "./rename-retry": {
       "bun": "./src/renameWithRetry.ts",
@@ -659,6 +665,10 @@
       "./remove-tree": {
         "import": "./dist/removeTree.js",
         "types": "./dist/removeTree.d.ts"
+      },
+      "./env-proxy": {
+        "import": "./dist/envProxy.js",
+        "types": "./dist/envProxy.d.ts"
       },
       "./rename-retry": {
         "import": "./dist/renameWithRetry.js",

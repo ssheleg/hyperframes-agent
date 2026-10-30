@@ -321,8 +321,16 @@ async function hiddenTarget(page, selector = "#target") {
   return false;
 }
 
+// Studio's own word that the preview is about to change: a reload asked for, loading, or an undo or redo in flight.
+const previewChanging = (page) =>
+  Promise.resolve()
+    .then(() => page.evaluate(() => document.documentElement.hasAttribute("data-preview-changing")))
+    .catch(() => false);
+
 // Keyframed cases only: waiting out the swap lands a later undo in the preview's burst of requests.
-export const swapPending = (ctx) => Boolean(ctx.keys) && hiddenTarget(ctx.page, ctx.selector);
+export const swapPending = async (ctx) =>
+  Boolean(ctx.keys) &&
+  ((await previewChanging(ctx.page)) || (await hiddenTarget(ctx.page, ctx.selector)));
 
 // fallow-ignore-next-line complexity
 const netMoved = (start, now) =>
@@ -978,11 +986,28 @@ export async function serveFixtureAssetsLocally(page) {
 }
 
 /**
+ * Takes evidence screenshots into `evidence.shots` only when `shots` is on (the gate's confirmation re-runs); an
+ * error screen is always kept. Studio fills the viewport; capturing beyond it makes Chrome resize the page.
+ */
+export function shooter(page, evidence, shots) {
+  evidence.shots = {};
+  return async (name) => {
+    if (!shots && name !== "error") return;
+    evidence.shots[name] = await page.screenshot({
+      type: "jpeg",
+      quality: 70,
+      captureBeyondViewport: false,
+      optimizeForSpeed: true,
+    });
+  };
+}
+
+/**
  * Studio open on the case in a fresh browser context, snapping off, at the case's zoom, target selected;
  * `drive` measures the rest. A failure keeps a screenshot, and the context always closes.
  */
 // fallow-ignore-next-line complexity
-export async function inStudio({ browser, spec, dir, files, url, evidence }, drive) {
+export async function inStudio({ browser, spec, dir, files, url, evidence, shots = true }, drive) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
   await serveFixtureAssetsLocally(page);
@@ -1002,9 +1027,7 @@ export async function inStudio({ browser, spec, dir, files, url, evidence }, dri
     (m) =>
       m.text().startsWith("[hf-reload]") && traceBench("reload", { line: m.text().slice(0, 400) }),
   );
-  evidence.shots = {};
-  const shoot = async (name) =>
-    (evidence.shots[name] = await page.screenshot({ type: "jpeg", quality: 70 }));
+  const shoot = shooter(page, evidence, shots);
   try {
     await page.setViewport(VIEWPORT);
     if (process.env.HF_WRITE_TRACE)

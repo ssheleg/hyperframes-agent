@@ -55,7 +55,7 @@ export type { EncoderOptions, EncodeResult, MuxResult } from "./chunkEncoder.typ
 export const ENCODER_PRESETS = {
   draft: { preset: "ultrafast", quality: 28, codec: "h264" as const },
   standard: { preset: "medium", quality: 18, codec: "h264" as const },
-  high: { preset: "slow", quality: 15, codec: "h264" as const },
+  high: { preset: "fast", quality: 15, codec: "h264" as const },
 };
 
 export interface EncoderPreset {
@@ -186,7 +186,7 @@ export function getEncoderPreset(
 }
 
 // Re-export GPU utilities so existing consumers that import from chunkEncoder still work.
-export { detectGpuEncoder, type GpuEncoder } from "../utils/gpuEncoder.js";
+export { detectGpuEncoder, getCachedGpuEncoder, type GpuEncoder } from "../utils/gpuEncoder.js";
 
 /** The `lockGopForChunkConcat` / `gopSize` pair, shared by every encoder entry point. */
 export interface LockedGopOptions {

@@ -18,8 +18,22 @@ const snapshotState = vi.hoisted(() => ({
   closeServer: vi.fn(async () => undefined),
   ffmpegTimesOut: false,
   ffmpegFails: false,
+  ffmpegKilled: false,
   noFfmpeg: false,
 }));
+
+const spawned = vi.hoisted(() => ({ files: [] as string[] }));
+
+vi.mock("../utils/cancellableProcess.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../utils/cancellableProcess.js")>();
+  return {
+    ...actual,
+    runCancellableProcess: (...args: Parameters<typeof actual.runCancellableProcess>) => {
+      spawned.files.push(String(args[0]));
+      return actual.runCancellableProcess(...args);
+    },
+  };
+});
 
 vi.mock("../browser/ffmpeg.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../browser/ffmpeg.js")>();
@@ -39,13 +53,15 @@ vi.mock("../capture/captureCompositionFrame.js", async (importOriginal) => {
     runFfmpegOnce: (...args: Parameters<typeof actual.runFfmpegOnce>) =>
       snapshotState.ffmpegTimesOut
         ? Promise.resolve({ code: null, timedOut: true, stderr: "" })
-        : snapshotState.ffmpegFails
-          ? Promise.resolve({
-              code: 1,
-              timedOut: false,
-              stderr: "\nError while decoding stream #0:0\n",
-            })
-          : actual.runFfmpegOnce(...args),
+        : snapshotState.ffmpegKilled
+          ? Promise.resolve({ code: 255, timedOut: false, stderr: "" })
+          : snapshotState.ffmpegFails
+            ? Promise.resolve({
+                code: 1,
+                timedOut: false,
+                stderr: "\nError while decoding stream #0:0\n",
+              })
+            : actual.runFfmpegOnce(...args),
   };
 });
 
@@ -58,8 +74,10 @@ vi.mock("../utils/staticProjectServer.js", () => ({
 
 import snapshotCommand, {
   extractVideoFrameToBuffer,
+  decodeFramesInOnePass,
   extractVideoFrameOrWarn,
   probeContainingSourceFrameSeek,
+  createSourceProbeCache,
   containingSourceFrameIndex,
   computeSnapshotTimes,
   formatSnapshotTimestamp,
@@ -72,6 +90,7 @@ import snapshotCommand, {
   resolveSnapshotVideoRateSpec,
   tailFrameTime,
 } from "./snapshot.js";
+import type { PlannedFrame } from "./snapshotFrameBank.js";
 
 describe("formatSnapshotTimestamp", () => {
   it.each([
@@ -657,6 +676,136 @@ describe("extractVideoFrameToBuffer", () => {
     },
   );
 
+  it.skipIf(noProbe)(
+    "decodes several times of one video in one pass, frame for frame as each decodes alone",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "hf-snapshot-pass-"));
+      try {
+        const clip = join(dir, "one-keyframe.mp4");
+        // A single keyframe at 0, as a long screen recording has: every frame decodes from the start.
+        execFileSync(ffmpeg!, [
+          ...[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=d=12:r=25:s=320x180",
+          ],
+          ...["-c:v", "libx264", "-g", "10000", "-keyint_min", "10000", "-sc_threshold", "0"],
+          ...["-pix_fmt", "yuv420p", clip],
+        ]);
+        const times = [6.2, 8.97, 11.5];
+        const frames: PlannedFrame[] = [];
+        for (const time of times) {
+          const plan = await probeContainingSourceFrameSeek(clip, time, false);
+          expect(plan?.decodesFrom, "decodes from the only keyframe").toBe(0);
+          frames.push({
+            time,
+            displayedPixels: 160,
+            holdLastFrame: false,
+            seek: plan!.seek!,
+            select: plan!.select!,
+            decodesFrom: plan!.decodesFrom!,
+          });
+        }
+        const together = await decodeFramesInOnePass(clip, frames);
+        for (const [i, time] of times.entries()) {
+          const alone = await extractVideoFrameToBuffer(clip, time, false, false, 160);
+          expect(samePixels(together[i]!, alone!), `the frame at ${time}s`).toBe(true);
+        }
+        expect(new Set(together.map((png) => png.toString("base64"))).size).toBe(times.length);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(noProbe)(
+    "probes a clip once for all the times asked of it, and plans each time as it would alone",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "hf-snapshot-probe-cache-"));
+      try {
+        const clip = join(dir, "clip.mp4");
+        execFileSync(ffmpeg!, [
+          ...["-hide_banner", "-loglevel", "error", "-f", "lavfi"],
+          ...["-i", "testsrc2=d=20:r=25:s=320x180", "-c:v", "libx264", "-g", "50"],
+          ...["-pix_fmt", "yuv420p", clip],
+        ]);
+        const times = Array.from({ length: 40 }, (_, i) => 0.4 + i * 0.47);
+        spawned.files.length = 0;
+        const alone = [];
+        for (const time of times)
+          alone.push(await probeContainingSourceFrameSeek(clip, time, false));
+        const spawnedAlone = spawned.files.length;
+
+        spawned.files.length = 0;
+        const cache = createSourceProbeCache();
+        const horizon = times.at(-1)!;
+        const cached = await Promise.all(
+          times.map((time) =>
+            probeContainingSourceFrameSeek(clip, time, false, { cache, horizon }),
+          ),
+        );
+        expect(cached).toEqual(alone);
+        const probes = spawned.files.filter((file) => file === ffprobe).length;
+        const landings = spawned.files.length - probes;
+        // One stream read and one packet read; a seek landing per keyframe (a keyframe every 2 s), not per time.
+        expect(probes).toBe(2);
+        expect(landings).toBeLessThanOrEqual(2 * Math.ceil(20 / 2));
+        expect(spawned.files.length * 3, "far fewer processes than a probe per time").toBeLessThan(
+          spawnedAlone,
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(noProbe)(
+    "gives two times inside one source frame the same frame, without decoding on",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "hf-snapshot-pass-same-"));
+      try {
+        const clip = join(dir, "one-keyframe.mp4");
+        execFileSync(ffmpeg!, [
+          ...[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=d=60:r=25:s=320x180",
+          ],
+          ...["-c:v", "libx264", "-g", "10000", "-keyint_min", "10000", "-sc_threshold", "0"],
+          ...["-pix_fmt", "yuv420p", clip],
+        ]);
+        const frames: PlannedFrame[] = [];
+        for (const time of [8.97, 8.98]) {
+          const plan = await probeContainingSourceFrameSeek(clip, time, false);
+          frames.push({
+            time,
+            displayedPixels: 160,
+            holdLastFrame: false,
+            seek: plan!.seek!,
+            select: plan!.select!,
+            decodesFrom: plan!.decodesFrom!,
+          });
+        }
+        const startedAt = Date.now();
+        const [first, second] = await decodeFramesInOnePass(clip, frames);
+        expect(first!.equals(second!)).toBe(true);
+        expect(Date.now() - startedAt, "stops at the frame, not the end of the file").toBeLessThan(
+          4_000,
+        );
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   const oneSecondClip = (dir: string) => {
     const clip = join(dir, "clip.mp4");
     execFileSync(ffmpeg!, [
@@ -665,6 +814,24 @@ describe("extractVideoFrameToBuffer", () => {
     ]);
     return clip;
   };
+
+  it.skipIf(noProbe)(
+    "says FFmpeg was stopped, not that a frame is bad, when it exits 255 with no output",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "hf-snapshot-killed-"));
+      snapshotState.ffmpegKilled = true;
+      try {
+        const warnings: string[] = [];
+        expect(await extractVideoFrameOrWarn(warnings, oneSecondClip(dir), 0.5)).toBeNull();
+        expect(warnings).toEqual([
+          expect.stringContaining("FFmpeg was stopped before it finished"),
+        ]);
+      } finally {
+        snapshotState.ffmpegKilled = false;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.skipIf(noProbe)(
     "records the clip, time and FFmpeg's reason when the extract fails",

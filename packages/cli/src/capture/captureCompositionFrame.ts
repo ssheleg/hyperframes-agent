@@ -336,8 +336,11 @@ export async function openSettledCompositionPage(
     options.onBrowserReady?.();
     const page = await chromeBrowser.newPage();
     await installPageFunctionGuard(page);
-    const { installMediaRenderIdBridge } = await import("@hyperframes/engine");
+    const { installMediaRenderIdBridge, forcePreservedDrawingBuffer } =
+      await import("@hyperframes/engine");
     await installMediaRenderIdBridge(page);
+    await page.evaluateOnNewDocument(forcePreservedDrawingBuffer);
+    await page.evaluateOnNewDocument("window.__HF_REPLAY_SKIPPED_FRAMES = true");
     await page.setViewport(viewport);
     if (answer) await answerPageInProcess(page, url, answer);
     await options.beforeNavigate?.(page);

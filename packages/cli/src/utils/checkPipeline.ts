@@ -4,6 +4,7 @@ import {
   CheckDeadline,
   CheckDeadlineError,
   CheckStoppedError,
+  idleWindow,
   type CheckPhase,
 } from "./checkDeadline.js";
 import {
@@ -758,7 +759,7 @@ async function collectMotionOverlapSamples(
     const craftTimes = buildCraftSampleTimes(grid.duration).filter((time) => time < grid.duration);
     for (const [index, time] of craftTimes.entries()) {
       progress(`craft frame at ${time}s`);
-      await driver.seekGeometry(time);
+      await driver.seekGeometry(time, { draws: true });
       collected.craftFrames.push(...(await collectCraftFrame(driver, time)));
       progress();
       report("craft", index + 1, craftTimes.length);
@@ -1534,6 +1535,7 @@ export async function runAuditGrid(
   );
   const seekLoopMs = Date.now() - seekLoopStart;
 
+  report("analyze", 0, 3);
   let motionIssues = plan.preflightIssues;
   if (motion.kind === "valid" && plan.assertions.length > 0 && collected.motionFrames.length > 0) {
     const canvas = await driver.getCanvas();
@@ -1544,6 +1546,7 @@ export async function runAuditGrid(
     }
     motionIssues = [...motionIssues, ...(await driver.anchorMotionIssues(evaluated))];
   }
+  report("analyze", 1, 3);
   const userPicked = new Set(grid.userPickedSamples);
   const noTimeline = await driver.hasNoTimelineDeclaration();
   const sweepSamples = collected.layoutStateSignatures.filter(
@@ -1566,6 +1569,7 @@ export async function runAuditGrid(
   );
   const offPivotFindings = detectOffPivotRotation(collected.indicatorFrames);
   const contrast = buildContrastResults(collected.contrastEntries);
+  report("analyze", 2, 3);
   const craft = craftEnabled(driver, options)
     ? await auditCraft(
         {
@@ -1579,7 +1583,7 @@ export async function runAuditGrid(
             noTimeline || sweepFindings.length > 0 || wholeCompositionKeepsMoving(plan.assertions),
         },
         async (time) => {
-          await driver.seekGeometry(time);
+          await driver.seekGeometry(time, { draws: true });
           if (!driver.collectCraftFrame) throw new Error("craft sampling unavailable");
           return driver.collectCraftFrame(time);
         },
@@ -1688,7 +1692,7 @@ export async function runCheckPipeline(
           ]
         : [];
 
-    const deadline = new CheckDeadline();
+    const deadline = new CheckDeadline(idleWindow(options.timeout));
     const forgetStop = onStopSignal(deadline.stop);
     let outcome: { kind: "report"; report: CheckReport } | { kind: "failed"; error: unknown };
     try {
@@ -2120,7 +2124,7 @@ function shapeLayoutSection(
   browser: CheckBrowserResult,
   options: CheckOptions,
 ): CheckReport["layout"] {
-  const shaped = shapeLayoutFindings(issues, options, browser.layoutSamples.length);
+  const shaped = shapeLayoutFindings(issues, options, browser.layoutSamples);
   return {
     ...section(shaped.findings),
     duration: browser.duration,
@@ -2136,11 +2140,11 @@ function shapeLayoutSection(
 function shapeLayoutFindings(
   issues: AnchoredLayoutIssue[],
   options: CheckOptions,
-  totalSampleCount?: number,
+  sampleTimes?: readonly number[],
 ): { findings: AnchoredLayoutIssue[]; totalIssueCount: number; truncated: boolean } {
   const deduped = dedupeLayoutIssues(issues);
   const all = options.collapseStatic
-    ? collapseStaticLayoutIssues(deduped, totalSampleCount)
+    ? collapseStaticLayoutIssues(deduped, sampleTimes?.length, sampleTimes)
     : deduped;
   const anchored = all.map(ensureAnchoredLayoutIssue);
   let grouped = anchored;

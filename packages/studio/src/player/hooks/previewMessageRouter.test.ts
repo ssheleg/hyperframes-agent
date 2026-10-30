@@ -95,6 +95,10 @@ describe("preview quality messages", () => {
       choppy: true,
       fps: 18,
       worstFrameMs: 90,
+      skippedShare: 0.1,
+      waitingShare: 0.4,
+      gapP50Ms: 17,
+      gapP95Ms: 66,
       mode: "play",
     };
     routeMessage({ source: "hf-preview", type: "preview-health", health });
@@ -122,6 +126,46 @@ describe("preview quality messages", () => {
       facts: { ...facts, sceneCount: "2" },
     });
     expect(usePlayerStore.getState().previewFacts).toBeNull();
+  });
+
+  it("keeps each failed media load the preview reports, and ignores other diagnostics", () => {
+    const details = {
+      asset: "assets/x.mp3",
+      elementId: "music",
+      kind: "audio",
+      stage: "decode",
+      code: null,
+      bytes: 8,
+      extension: "mp3",
+    };
+    routeMessage({
+      source: "hf-preview",
+      type: "diagnostic",
+      code: "runtime_media_load_failed",
+      details,
+    });
+    expect(usePlayerStore.getState().mediaLoadFailure).toEqual({
+      elementId: "music",
+      kind: "audio",
+      stage: "decode",
+      code: null,
+      bytes: 8,
+      extension: "mp3",
+    });
+    const kept = usePlayerStore.getState().mediaLoadFailure;
+    routeMessage({
+      source: "hf-preview",
+      type: "diagnostic",
+      code: "runtime_web_audio_bypass",
+      details,
+    });
+    routeMessage({
+      source: "hf-preview",
+      type: "diagnostic",
+      code: "runtime_media_load_failed",
+      details: { ...details, stage: "?" },
+    });
+    expect(usePlayerStore.getState().mediaLoadFailure).toBe(kept);
   });
 
   it("sends the chosen quality to a preview that has just loaded", () => {

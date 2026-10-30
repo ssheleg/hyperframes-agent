@@ -115,6 +115,7 @@ export {
 } from "./services/pageNavigationTimeoutErrorHint.js";
 
 // ── Frame capture pipeline ──────────────────────────────────────────────────────
+export { forcePreservedDrawingBuffer } from "./services/drawElementService.js";
 export {
   createCaptureSession,
   initializeSession,
@@ -132,6 +133,8 @@ export {
   writeCapturedFrame,
   discardWarmupCapture,
   getCompositionDuration,
+  getCompositionLengthSource,
+  type CompositionLengthSource,
   getCapturePerfSummary,
   percentileOf,
   prepareCaptureSessionForReuse,
@@ -189,6 +192,7 @@ export {
   applyFaststart,
   packageHls,
   detectGpuEncoder,
+  getCachedGpuEncoder,
   ENCODER_PRESETS,
   getEncoderPreset,
   PRORES_PROFILES,
@@ -228,6 +232,8 @@ export {
   resolveFrameFormat,
   resolveVideoExtractionDuration,
   resolvePlayableVideoDuration,
+  videoStartOnMediaTimeline,
+  ffmpegSeekSeconds,
   extractionFrameCountForDuration,
   resolveProjectRelativeSrc,
   getFrameAtTime,
@@ -310,6 +316,7 @@ export {
   type WorkerResult,
   type WorkerSizing,
   type WorkerSizingBound,
+  type WorkerSizingConfig,
   type LandedFrame,
   type ParallelProgress,
   type ParallelWorkerPhaseDiagnostic,
@@ -336,6 +343,12 @@ export {
   SwiftShaderAssertionError,
   BROWSER_GPU_NOT_SOFTWARE,
 } from "./utils/assertSwiftShader.js";
+
+export {
+  isBrowserSafePort,
+  listenOnBrowserSafePort,
+  settleOnBrowserSafePort,
+} from "./utils/browserSafePort.js";
 
 export { readWebGlVendorInfoFromCanvas } from "./utils/readWebGlVendorInfoFromCanvas.js";
 
@@ -366,6 +379,7 @@ export {
 } from "./utils/notMediaPayload.js";
 
 export {
+  _setDownloadFetchForTests,
   assertPublicHttpsUrl,
   isBlockedNetworkHost,
   downloadToTemp,
