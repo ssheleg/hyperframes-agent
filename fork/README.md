@@ -17,8 +17,13 @@ The CLI and package names stay `hyperframes`, so every skill and composition tha
 No GitHub workflow of this repository runs: every one inherited from upstream (npm publish, catalog
 publish, ClawHub sync, CI, regression and the rest) is disabled in the repository settings, because they
 target HeyGen's infrastructure. The checks of a release run locally in `fork/release.sh`. A workflow file an
-upstream release adds arrives enabled: after pushing a merge, `gh workflow list --all` must show none active,
-and `gh workflow disable <file>` turns off any that is (the door audit names added workflow files).
+upstream release adds arrives enabled and starts on the push of the merge: `fork/workflows-guard.sh` disables every
+active workflow and cancels its runs, and `fork/release.sh --publish` runs it right after its push (the door audit
+also names added workflow files). `fork/workflows-guard.sh --check` only reports, exiting 1 when one is active.
+
+`fork/status.sh` reads both lines at once: the base of `main`, upstream releases not merged yet, the latest
+release of the line and of the copy, the copy's base and any active workflow, and names the next step of this file
+(exit 10 when one is due, 0 when nothing is).
 
 ## The team copy
 
@@ -104,9 +109,9 @@ prints the line's version, and that a start removes the marker of a dead pid.
    not that list: a patch upstream took under another commit (a squash merge) stays in the log but no longer
    changes anything.
 5. `fork/release.sh 1` builds on the new base (the base is the newest `v*.*.*` tag merged into `HEAD`), then `--publish`. Its
-   watcher tests run on the real file system and fail while `fseventsd` is busy: if they fail, or
-   `ps -Ao pcpu,comm | grep fseventsd` reads 60% or more, wait for it to fall before running again
-   ([`HANDOFF.md`](HANDOFF.md), "Watcher tests under load").
+   watcher tests run on the real file system and fail while `fseventsd` is busy, so before them it waits, checking
+   every 30 s, until `fseventsd`'s CPU is under 60% (`FSEVENTSD_MAX_CPU`), and gives up after 30 minutes
+   (`FSEVENTSD_WAIT_SECONDS`) ([`HANDOFF.md`](HANDOFF.md), "Watcher tests under load").
 6. `fork/door-audit.sh v<old> v<new>` lists what a consumer that confines the engine must read before it moves its pin:
    new CLI commands and flags, environment variables read in shipped code, new child processes and `fetch` calls, packages
    installed at run time, and changed skills with the commands their new lines name. It reports a diff between two

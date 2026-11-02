@@ -41,7 +41,9 @@ fork/release.sh 1            # install, build, test the patches, pack, smoke-ins
 fork/release.sh 1 --publish  # also tags, pushes and creates the GitHub Release, then downloads it back and checks sha256
 ```
 
-`--skip-deps` reuses the built workspace packages. The release needs `bun`, `node`, `npm` and an authenticated `gh`.
+After its push the release runs `fork/workflows-guard.sh`, which disables any active workflow of this repository
+(the export carries no workflow files, so it finds none unless one is added here). `--skip-deps` reuses the built
+workspace packages. The release needs `bun`, `node`, `npm` and an authenticated `gh`.
 
 ## Installing
 

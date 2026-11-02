@@ -60,6 +60,17 @@ publish tarball releases that consumers pin.
   suppression at `batchRender.ts:445`, all verbatim in the tag). fork/README.md, "Taking an upstream release", says what
   to check before committing past it.
 
+## Tooling (2026-11-02)
+
+- `fork/status.sh` reads both lines at once and names the next step (exit 10 when one is due). Its first run found
+  upstream `v0.9.0` to `v0.9.5` not merged.
+- `fork/workflows-guard.sh` disables active workflows and cancels their runs; `fork/release.sh --publish` runs it after
+  its push. It names the repository from `origin`, not `gh repo view`, which in this fork answers
+  `heygen-com/hyperframes`, and refuses any `heygen-com` repository. Checked by enabling `fast-video-validation.yml`
+  here and running it: disabled, `--check` then exits 0.
+- `fork/release.sh` waits for `fseventsd` under 60% CPU before the watcher tests instead of failing; checked at 165%
+  (it waited, then went on once it fell) and with a limit of 0 and no wait (it fails with the reading).
+
 ## Releases
 
 Every release is a GitHub Release of this repository with the tarball and its `.sha256` (read back from the assets
@@ -119,11 +130,11 @@ sha256 `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5`); shar
 `appvillis-com/org-index` (`not_verified`); announced in thread `7913a557` (`9a842399`, `ea6dab16`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.8.231`: run `git fetch upstream --tags`, read the new tags'
-   commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+1. Upstream releases after `v0.8.231` (`v0.9.0` to `v0.9.5` on 2026-11-02, a minor version: read their notes for
+   breaking changes first): `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.231 v<new>`, add its findings to the table above and the release to the release table, and
-   post them to the consumer on the board (thread `b4d4f898`). After the push, check no workflow is active
-   (fork/README.md). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
+   post them to the consumer on the board (thread `b4d4f898`). The release disables any workflow the merge added
+   (`fork/workflows-guard.sh`). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
    shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
    `7913a557` (fork/README.md, "The team copy").
 2. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).

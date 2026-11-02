@@ -86,9 +86,24 @@ VERSION="$VERSION" node -e '
 bun run --filter @hyperframes/cli build
 grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not carry $VERSION" >&2; exit 1; }
 
+# The watcher tests run on the real file system, and FSEvents delivers nothing for 15 s while fseventsd is busy
+# (fork/HANDOFF.md, "Watcher tests under load"). Its own CPU is the signal, not the load average: wait for it.
+wait_for_fseventsd() {
+  [ "$(uname -s)" = Darwin ] || return 0
+  local limit="${FSEVENTSD_MAX_CPU:-60}" deadline=$((SECONDS + ${FSEVENTSD_WAIT_SECONDS:-1800})) cpu
+  while :; do
+    cpu="$(ps -Ao pcpu=,comm= | awk '$2 ~ /fseventsd$/ { s += $1 } END { printf "%d", s }')"
+    [ "$cpu" -lt "$limit" ] && return 0
+    [ "$SECONDS" -lt "$deadline" ] || { echo "fseventsd still at ${cpu}% CPU (limit ${limit}%); the watcher tests would fail" >&2; return 1; }
+    log "fseventsd at ${cpu}% CPU, waiting for it to fall under ${limit}%"
+    sleep 30
+  done
+}
+
 log "tests of the fork's patches"
 PATCHED_TESTS="${LINE_TESTS:-$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')}"
 if [ -n "$PATCHED_TESTS" ]; then
+  case "$PATCHED_TESTS" in *fileWatcher*) wait_for_fseventsd ;; esac
   # shellcheck disable=SC2086
   (cd packages/cli && npx vitest run ${PATCHED_TESTS//packages\/cli\//})
 fi
@@ -140,6 +155,8 @@ if git rev-parse -q --verify refs/remotes/origin/main >/dev/null; then
 fi
 git tag -a "$TAG" -m "hyperframes $VERSION: upstream $BASE plus the fork's patches" "$COMMIT"
 git push -q origin "HEAD:refs/heads/main" "refs/tags/$TAG"
+# A workflow file the merged release added is enabled and already starting on this push.
+fork/workflows-guard.sh "$REPO"
 tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
 {
   echo "The \`hyperframes\` CLI \`$VERSION\`: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."
