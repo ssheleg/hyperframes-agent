@@ -118,14 +118,14 @@ PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | no
 log "smoke: install the tarball into an empty project and run it"
 tmpdir smoke SMOKE
 (cd "$SMOKE" && npm init -y >/dev/null && PUPPETEER_SKIP_DOWNLOAD=1 npm install --silent --no-audit --no-fund "$OUT/$TARBALL" >/dev/null)
-mkdir -p "$SMOKE/home/.hyperframes/running"
+mkdir -p "$SMOKE/userhome/.hyperframes/running"
 DEAD=99999999
-: > "$SMOKE/home/.hyperframes/running/$DEAD"
-GOT="$(cd "$SMOKE" && HOME="$SMOKE/home" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --version)"
+: > "$SMOKE/userhome/.hyperframes/running/$DEAD"
+GOT="$(cd "$SMOKE" && HOME="$SMOKE/userhome" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --version)"
 case "$GOT" in *"$VERSION"*) ;; *) echo "smoke: --version printed '$GOT', expected $VERSION" >&2; exit 1 ;; esac
 # --version exits before the CLI registers itself; --help goes through the start that sweeps markers.
-(cd "$SMOKE" && HOME="$SMOKE/home" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --help >/dev/null)
-[ ! -e "$SMOKE/home/.hyperframes/running/$DEAD" ] || { echo "smoke: the marker of dead pid $DEAD survived a start" >&2; exit 1; }
+(cd "$SMOKE" && HOME="$SMOKE/userhome" HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_NO_TELEMETRY=1 ./node_modules/.bin/hyperframes --help >/dev/null)
+[ ! -e "$SMOKE/userhome/.hyperframes/running/$DEAD" ] || { echo "smoke: the marker of dead pid $DEAD survived a start" >&2; exit 1; }
 FORK_FIELD="$(node -p 'JSON.stringify(require(process.argv[1]).hyperframesFork)' "$SMOKE/node_modules/hyperframes/package.json")"
 case "$FORK_FIELD" in *"$COMMIT"*) ;; *) echo "smoke: the installed package.json lacks hyperframesFork.commit" >&2; exit 1 ;; esac
 log "smoke passed: --version '$GOT', dead marker swept, hyperframesFork $FORK_FIELD"

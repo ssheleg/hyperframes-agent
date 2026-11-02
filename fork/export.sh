@@ -37,11 +37,13 @@ STAGE="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-export.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 git archive HEAD | tar -x -C "$STAGE"
 
-# What the copy does not carry: LFS files (pointers without their objects), upstream's workflows, this line's notes.
-git lfs ls-files -n | while IFS= read -r f; do rm -f "$STAGE/$f"; done
+# What the copy does not carry: every file an LFS rule covers (pointers without their objects, and regression
+# fixtures upstream keeps as plain blobs under the same rules), upstream's workflows, this line's notes.
+git ls-files | git check-attr --stdin filter | awk -F': filter: ' '$2 == "lfs" { print $1 }' \
+  | while IFS= read -r f; do rm -f "$STAGE/$f"; done
 rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh"
-# Nor LFS rules: upstream keeps 53 compiled.html under them as plain blobs, and `git add` in the copy would turn them
-# into pointers whose objects then go to the organisation's LFS store.
+# Nor LFS rules: with them, `git add` in the copy would turn a file into a pointer whose object goes to the
+# organisation's LFS store.
 find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +
 find "$STAGE" -name '.gitattributes.bak' -type f -delete
 

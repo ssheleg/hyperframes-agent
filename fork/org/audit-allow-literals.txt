@@ -1,0 +1,18 @@
+# Public placeholder home paths in upstream's own tests (verbatim in the base tag, none is a person's machine).
+# The shared org-transfer-audit takes each as --allow-literal when it audits the copy (fork/HANDOFF.md).
+/Users/Alice/
+/Users/a/
+/Users/alex/
+/Users/alice/
+/Users/dev/
+/Users/ivan/
+/Users/kim/
+/Users/miguel/
+/Users/someone/
+/Users/tanaka/
+/Users/x/
+/home/10.0.0.1/
+/home/bob/
+/home/someone/
+/home/tester/
+/home/u/
