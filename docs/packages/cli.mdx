@@ -28,11 +28,12 @@ npm install -g hyperframes
 | Bring in source material | [`capture`](#capture), [`media-use`](#media-use), [`transcribe`](#transcribe), [`tts`](#tts), [`remove-background`](#remove-background), [`media-treatment`](#media-treatment), [`beats`](#beats), [`audio`](#audio), [`normalize-audio`](#normalize-audio), [`models`](#models) |
 | Look at it, or share it  | [`preview`](#preview), [`present`](#present-and-play), [`play`](#present-and-play), [`publish`](#publish), [`open`](#open-and-catch-up), [`catch-up`](#open-and-catch-up)                                                        |
 | Find problems            | [`lint`](#lint), [`check`](#check), [`snapshot`](#snapshot), [`keyframes`](#keyframes), [`compare`](#compare-and-grade-compare), [`grade-compare`](#compare-and-grade-compare)                                                   |
+| Rebuild a video          | [`measure`](#measure), [`diff`](#diff)                                                                                                                                                                                            |
 | Edit from the terminal   | [`timeline`](#timeline), [`history`](#history)                                                                                                                                                                                   |
 | Make a file              | [`render`](#render), [`benchmark`](#benchmark)                                                                                                                                                                                   |
 | Render somewhere else    | [`cloud`](#hyperframes-cloud), [`lambda`](#hyperframes-lambda), [`cloudrun`](#hyperframes-cloudrun)                                                                                                                              |
 | Fix your setup           | [`doctor`](#doctor), [`browser`](#browser), [`upgrade`](#upgrade), [`docs`](#docs), [`info`](#info-and-compositions), [`compositions`](#info-and-compositions), [`clean`](#clean)                                                                   |
-| Connect other tools      | [`auth`](#hyperframes-auth), [`skills`](#skills), [`usage`](#usage), [`figma`](#figma-and-events), [`events`](#figma-and-events), [`telemetry`](#telemetry), [`feedback`](#feedback)                                                                            |
+| Connect other tools      | [`auth`](#hyperframes-auth), [`billing`](#billing), [`skills`](#skills), [`usage`](#usage), [`figma`](#figma-and-events), [`events`](#figma-and-events), [`telemetry`](#telemetry), [`feedback`](#feedback)                                                                            |
 
 `validate`, `inspect`, and `layout` still work but are
 [deprecated](#deprecated-validate-inspect-and-layout). Use `check` instead.
@@ -716,10 +717,11 @@ them.
 ```bash
 npx hyperframes beats [dir]
 npx hyperframes beats [dir] --json   # { ok, file, count, bpm }
+npx hyperframes beats <file> --json  # { ok, file, count, bpm, beatTimes }
 ```
 
-`beats` takes the project folder, not a media file. For the beats of one audio
-or video file, run `npx hyperframes audio <file> --only beats --json`.
+Given an audio or video file instead of a folder, `beats` analyses that file
+with the same tracker and prints the result; it writes nothing.
 
 `beats` finds the music track — an `<audio>` element with
 `data-timeline-role="music"`, or an id like `music`, `bgm`, or `soundtrack` —
@@ -1503,6 +1505,59 @@ session, and it is where new work should go. Their flags are unchanged — run
 `npx hyperframes inspect --help` if you are maintaining automation that still
 calls them.
 
+## Rebuild an existing video
+
+These commands serve the `reverse-any-video` skill: measure a video, have HeyGen
+draft its timeline, then score your rebuild against it.
+
+### `measure`
+
+Measures a video file and prints JSON. Each measurement is a subcommand; run
+`npx hyperframes measure <subcommand> --help` for its flags.
+
+```bash
+npx hyperframes measure probe ref.mp4
+npx hyperframes measure cuts ref.mp4
+npx hyperframes measure frames ref.mp4 --events
+npx hyperframes measure face ref.mp4 --start 1 --end 2.5
+```
+
+| Subcommand   | What it reports                                                                         |
+| ------------ | --------------------------------------------------------------------------------------- |
+| `probe`      | Displayed size, frame rate, duration, sound, and what to fix before rebuilding          |
+| `cuts`       | Hard cuts from the frame-to-frame difference, and the shots between them                |
+| `events`     | Cuts, flashes, appears, disappears and holds; `--map` adds the sound's hits             |
+| `frames`     | Frames as pictures: chosen moments, an overview sheet, a range, or strips around events |
+| `extract`    | A still or a clip cut from the video, cropped to a region, as project media             |
+| `curve`      | Each move of one element: start, duration, overshoot and the closest GSAP ease          |
+| `energy`     | How much two clips move, and whether at the same moments                                |
+| `look`       | Brightness, contrast, saturation and warmth, alone or against another video             |
+| `face`       | The face's size and position over a window                                              |
+| `sync`       | The lag between mouth motion and the voice                                              |
+
+### `diff`
+
+Scores a render, or a project folder without rendering it, against the original
+video frame by frame: SSIM, the worst moments, missed and extra cuts, duration
+and the sound's offset. It exits non-zero when the scores fall under the bar.
+
+```bash
+npx hyperframes diff original.mp4 renders/final.mp4
+npx hyperframes diff original.mp4 . --at 0.5,2.4,3.1
+npx hyperframes diff original.mp4 renders/final.mp4 --segments segments.md --sbs
+```
+
+| Flag                                      | Description                                                          |
+| ----------------------------------------- | -------------------------------------------------------------------- |
+| `--at`                                    | Compare only these seconds                                           |
+| `--range`                                 | Compare every frame of `start,end` seconds                           |
+| `--segments`                              | A verdict per `## S01 · a–b s` segment of a file                     |
+| `--drawn`                                 | Score one drawn element's box `x,y,w,h[,a-b]` by itself (repeatable) |
+| `--min-mean` / `--min-p05` / `--min-cell` | The SSIM bars to pass                                                |
+| `--sbs`                                   | Also write an original-beside-yours video                            |
+| `--out`                                   | Folder for the sheet and log (default `.hyperframes/diff/<yours>`)   |
+| `--json`                                  | Print one JSON result                                                |
+
 ## Edit from the command line
 
 ### `timeline`
@@ -1673,6 +1728,7 @@ Quality and file size:
 | `--crf`                | from `--quality`| Override MP4/WebM encoder CRF, 0–51. Lower is better quality. Not with `--video-bitrate`; rejected for MOV. |
 | `--video-bitrate`      | from `--quality`| Target MP4/WebM bitrate, e.g. `10M` or `5000k`. Not with `--crf`; rejected for MOV.                       |
 | `--keyframe-interval`  | encoder default | MP4 only. A keyframe at least every N seconds, e.g. `2`, so a player can seek or switch rendition at that spacing. |
+| `--start`, `--end`    | whole film      | Render only the seconds between them, as an MP4 that starts at 0 with that span's audio. MP4 at 24, 25, 30 or 60 fps, SDR only. |
 | `--max-bitrate`        | uncapped        | MP4 only. Peak video bitrate cap, e.g. `8M`, held alongside the `--crf` or `--quality` target rather than replacing it. |
 | `--buffer-size`        | 2 × `--max-bitrate` | MP4 only. Buffer the cap is measured over, e.g. `16M`. Needs `--max-bitrate`. |
 | `--vp9-cpu-used`       | encoder default | libvpx-vp9 speed/quality trade-off for WebM, -8 to 8. Env: `PRODUCER_VP9_CPU_USED`.                       |
@@ -1863,6 +1919,9 @@ compares time and file size. `--runs` sets runs per configuration (1–20,
 default 3); `--json` prints the results as JSON.
 
 ## Keep the environment healthy
+
+HyperFrames keeps what it downloads and builds (the headless browser, models, optional packages, fonts and project
+history) under `~/.cache/hyperframes`. Set `HYPERFRAMES_CACHE_DIR` to an absolute path to keep it somewhere else.
 
 ### `doctor`
 
@@ -2176,6 +2235,24 @@ goes only to that provider's own usage endpoint. The command sends no telemetry
 and skips the update check. The numbers are a snapshot: they do not reserve
 allowance or estimate what the next video will cost.
 
+### `billing`
+
+Opens the HyperFrames plans or credits page in the browser, then waits until the
+account shows the change, so an agent's run carries on by itself. The page is on
+the web app at hyperframes.studio. `HYPERFRAMES_PLANS_URL` and
+`HYPERFRAMES_CREDITS_URL` point it at another page.
+
+```bash
+npx hyperframes billing subscribe
+npx hyperframes billing top-up --needed 180
+```
+
+| Flag        | Description                                                                |
+| ----------- | -------------------------------------------------------------------------- |
+| `--needed`  | Credits the waiting step needs; `top-up` waits until the balance covers it |
+| `--tool`    | The step that is waiting, shown on the page                                |
+| `--timeout` | Seconds to wait (default 600)                                              |
+
 ### `figma` and `events`
 
 `npx hyperframes figma` imports through the Figma REST API, with three
@@ -2207,6 +2284,11 @@ Opens a browser for OAuth:
 ```bash
 hyperframes auth login
 ```
+
+The command waits up to 60 minutes for you to finish in the browser, including
+choosing a plan and checking out. Press Ctrl+C to cancel. If it times out, run
+it again. On SSH or headless machines, where the browser can't reach this
+machine, use `hyperframes auth login --device`.
 
 Pass `--api-key` when you want a long-lived HeyGen API key instead. The key is
 verified against `GET /v3/users/me` before the command reports success, so a
@@ -2259,7 +2341,7 @@ hyperframes auth logout --yes            # no prompt
 | `HEYGEN_ACCESS_TOKEN` | OAuth token from a host app; never refreshed.    |
 | `HEYGEN_API_URL`      | API base URL (default `https://api.heygen.com`). |
 | `HYPERFRAMES_CONFIG_DIR` | Credentials root (default `~/.hyperframes`). |
-| `HYPERFRAMES_ENV` | `prod` (default) or `dev`; selects matching OAuth/API hosts and a separate dev credential directory. |
+| `HYPERFRAMES_ENV` | `prod` (default) or `dev`; `dev` uses a separate credential directory. Hosts and the OAuth client id come from `HEYGEN_API_URL` and `HYPERFRAMES_OAUTH_*`. |
 | `HYPERFRAMES_OAUTH_CLIENT_ID` | Override the selected public OAuth client. |
 
 For the keys other capabilities use — ElevenLabs and Gemini for voice and music

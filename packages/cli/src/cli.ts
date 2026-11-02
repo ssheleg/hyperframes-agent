@@ -97,6 +97,7 @@ import {
   CliUsageError,
   USAGE_EXIT_CODE,
   consumeCommandResult,
+  endProcess,
   outputWritten,
   registerRootExitCodeSanitizer,
   registerRootExitRequester,
@@ -175,6 +176,9 @@ const commandLoaders = {
     import("./commands/media-treatment.js").then((m) => m.mediaTreatmentCommand),
   "grade-compare": () => import("./commands/grade-compare.js").then((m) => m.default),
   compare: () => import("./commands/compare.js").then((m) => m.default),
+  diff: () => import("./commands/diff.js").then((m) => m.default),
+  measure: () => import("./commands/measure.js").then((m) => m.default),
+  billing: () => import("./commands/billing.js").then((m) => m.default),
   capture: () => import("./commands/capture.js").then((m) => m.default),
   lambda: () => import("./commands/lambda.js").then((m) => m.default),
   cloudrun: () => import("./commands/cloudrun.js").then((m) => m.default),
@@ -370,7 +374,13 @@ registerRootExitRequester((exitCode) => {
     presented: true,
   }).finally(async () => {
     await outputWritten();
-    process.exit(exitCode);
+    endProcess(exitCode, {
+      exit: (code) => process.exit(code),
+      setExitCode: (code) => {
+        process.exitCode = code;
+      },
+      later: setTimeout,
+    });
   });
 });
 

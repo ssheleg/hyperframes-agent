@@ -20,8 +20,7 @@ export const HEYGEN_BASE = "https://api.heygen.com/v3";
 // in the clear, so it needs $HEYGEN_ALLOW_HTTP=1, the heygen CLI's own rule.
 export function heygenBase() {
   const host = process.env.HEYGEN_API_BASE?.trim().replace(/\/+$/, "");
-  if (!host)
-    return process.env.HYPERFRAMES_ENV === "dev" ? "https://api.dev.heygen.com/v3" : HEYGEN_BASE;
+  if (!host) return HEYGEN_BASE;
   if (host.startsWith("http://") && process.env.HEYGEN_ALLOW_HTTP !== "1")
     throw new Error(
       `HEYGEN_API_BASE (${host}) uses HTTP, which sends the key in plaintext. Set HEYGEN_ALLOW_HTTP=1 to allow it.`,
@@ -138,14 +137,9 @@ function resolveCredential() {
   }
   const oauth = cred.oauth;
   if (oauth?.access_token) {
-    const expectedClient =
-      process.env.HYPERFRAMES_OAUTH_CLIENT_ID ||
-      (process.env.HYPERFRAMES_ENV === "dev"
-        ? "9QoaiwCZov9O0cAkC4OZbR4p"
-        : "Zg3LF4FCLoeJoGs2YqMtZ17g");
+    const expectedClient = process.env.HYPERFRAMES_OAUTH_CLIENT_ID || "Zg3LF4FCLoeJoGs2YqMtZ17g";
     const expectedTokenEndpoint =
-      process.env.HYPERFRAMES_OAUTH_TOKEN_URL ||
-      `https://api2.${process.env.HYPERFRAMES_ENV === "dev" ? "dev." : ""}heygen.com/v1/oauth/token`;
+      process.env.HYPERFRAMES_OAUTH_TOKEN_URL || "https://api2.heygen.com/v1/oauth/token";
     if (
       !expectedClient ||
       oauth.client_id !== expectedClient ||
@@ -214,8 +208,33 @@ export async function heygenJSON(path, { method = "GET", headers = {}, body } = 
   return text ? JSON.parse(text) : {};
 }
 
-// HeyGen's own words for a failed call: its {"error":{"message"}}, else the raw body, else the error's message.
+function errorCode(body) {
+  try {
+    const parsed = JSON.parse(body);
+    return parsed?.error?.code ?? parsed?.code ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// One line the agent relays as written when the HyperFrames plan can't pay: no plan, out of credits, or a
+// sign-in the plan doesn't cover yet. Null for every other failure.
+export function billingRefusal(e) {
+  const code = e?.body ? errorCode(e.body) : null;
+  if (code === "hf_subscription_required")
+    return "This needs a HyperFrames plan. Run `npx hyperframes billing subscribe`: it opens the page and waits.";
+  if (code === "hf_usage_exhausted")
+    return "Out of HyperFrames credits. Run `npx hyperframes billing top-up`: it opens the page and waits.";
+  if (code === "api_key_required")
+    return "This HeyGen feature isn't available with this sign-in yet. Nothing was charged. Use a HeyGen API key, or wait for HyperFrames billing in the CLI.";
+  return null;
+}
+
+// HeyGen's own words for a failed call: a billing refusal line first, then its {"error":{"message"}}, else the
+// raw body, else the error's message.
 export function heygenMessage(e) {
+  const refusal = billingRefusal(e);
+  if (refusal) return refusal;
   if (!e?.body) return e?.message ? String(e.message) : String(e);
   try {
     return JSON.parse(e.body).error?.message ?? e.body;

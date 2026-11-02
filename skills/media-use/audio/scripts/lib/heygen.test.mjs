@@ -5,11 +5,13 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  billingRefusal,
   heygenAuthHeaders,
   heygenAuthMethod,
   heygenBase,
   heygenCredential,
   heygenJSON,
+  heygenMessage,
   loadEnvFromDir,
 } from "./heygen.mjs";
 
@@ -87,24 +89,26 @@ test("heygenAuthHeaders tags OAuth requests as CLI traffic and with the media-us
   });
 });
 
-test("development audio uses the development client and isolated store", () => {
+test("development audio uses its isolated store and the client and token host from the environment", () => {
   withCleanHeygenEnv(() => {
     const dir = mkdtempSync(join(tmpdir(), "hf-dev-cred-"));
     try {
       process.env.HYPERFRAMES_CONFIG_DIR = dir;
       process.env.HYPERFRAMES_ENV = "dev";
+      process.env.HYPERFRAMES_OAUTH_CLIENT_ID = "fake-client";
+      process.env.HYPERFRAMES_OAUTH_TOKEN_URL = "https://auth.example.test/token";
       mkdirSync(join(dir, "dev"));
       writeFileSync(
         join(dir, "dev", "credentials"),
         JSON.stringify({
           oauth: {
             access_token: "dev-at",
-            client_id: "9QoaiwCZov9O0cAkC4OZbR4p",
-            token_endpoint: "https://api2.dev.heygen.com/v1/oauth/token",
+            client_id: "fake-client",
+            token_endpoint: "https://auth.example.test/token",
           },
         }),
       );
-      assert.equal(heygenBase(), "https://api.dev.heygen.com/v3");
+      assert.equal(heygenBase(), "https://api.heygen.com/v3");
       assert.equal(heygenAuthHeaders().Authorization, "Bearer dev-at");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -347,4 +351,35 @@ test("a base that isn't HeyGen's gets no stored or host OAuth credential, only a
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+test("a refused HyperFrames-plan call becomes one line with the billing command", () => {
+  const refused = (code) => ({
+    status: 402,
+    body: JSON.stringify({ error: { code, message: "raw" } }),
+  });
+  assert.equal(
+    heygenMessage(refused("hf_subscription_required")),
+    "This needs a HyperFrames plan. Run `npx hyperframes billing subscribe`: it opens the page and waits.",
+  );
+  assert.equal(
+    heygenMessage(refused("hf_usage_exhausted")),
+    "Out of HyperFrames credits. Run `npx hyperframes billing top-up`: it opens the page and waits.",
+  );
+  assert.match(
+    heygenMessage({ status: 403, body: JSON.stringify({ error: { code: "api_key_required" } }) }),
+    /Nothing was charged/,
+  );
+  // Every other failure keeps HeyGen's own words.
+  assert.equal(
+    billingRefusal({
+      status: 400,
+      body: JSON.stringify({ error: { code: "invalid_parameter", message: "bad voice" } }),
+    }),
+    null,
+  );
+  assert.equal(
+    heygenMessage({ status: 400, body: JSON.stringify({ error: { message: "bad voice" } }) }),
+    "bad voice",
+  );
 });

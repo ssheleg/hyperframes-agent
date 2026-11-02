@@ -1,5 +1,6 @@
-import { failCommand, failUsage } from "../../utils/commandResult.js";
-import { envFlagEnabled, isAttendedTerminal } from "../../utils/attendedTerminal.js";
+import { failCommand, failUsage, requestCliExit } from "../../utils/commandResult.js";
+import { envFlagEnabled, isAttendedTerminal, isCI } from "../../utils/attendedTerminal.js";
+import { isAgentDriven } from "../../telemetry/agent_runtime.js";
 /**
  * `hyperframes auth login` — sign in to HeyGen.
  *
@@ -114,8 +115,12 @@ function isRemoteOrHeadless(): boolean {
     process.env["BROWSER"] === "none" ||
     process.env["HF_NO_BROWSER"] === "1" ||
     remoteEnvironment ||
-    process.stdout.isTTY !== true,
+    (process.stdout.isTTY !== true && !agentShellOnThisMachine()),
   );
+}
+
+function agentShellOnThisMachine(): boolean {
+  return !isCI() && isAgentDriven();
 }
 
 function assertAttendedDeviceFlow(): void {
@@ -216,6 +221,12 @@ async function runOAuthLogin(): Promise<void> {
   const { trackAuthLoginStarted, trackAuthLoginFailed } = await import("../../telemetry/index.js");
   trackAuthLoginStarted("oauth");
 
+  const recordCancel = (): void => {
+    trackAuthLoginFailed("oauth", "aborted");
+    requestCliExit(130);
+  };
+  process.once("SIGINT", recordCancel);
+
   let tokens;
   try {
     ({ tokens } = await startAuthorizationCodeFlow());
@@ -225,9 +236,15 @@ async function runOAuthLogin(): Promise<void> {
     // the user never completes the browser step (closed the tab / walked away).
     // That is the dominant non-error dropout, so split it from real failures
     // (IdP misconfig, network) instead of lumping everything as flow_error.
-    trackAuthLoginFailed("oauth", /timed out/i.test(message) ? "flow_timeout" : "flow_error");
+    const timedOut = /timed out/i.test(message);
+    trackAuthLoginFailed("oauth", timedOut ? "flow_timeout" : "flow_error");
     console.error(c.error(`Sign-in failed: ${message}`));
+    if (timedOut) {
+      console.error("Run `hyperframes auth login` again.");
+    }
     failCommand();
+  } finally {
+    process.off("SIGINT", recordCancel);
   }
 
   await reportIdentity(issuedCredential(tokens));

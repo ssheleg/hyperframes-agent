@@ -442,6 +442,10 @@ export function trackRenderComplete(
     captureAvgMs?: number;
     /** Warmup-robust per-frame capture median (basis for speedup estimates). */
     captureP50Ms?: number;
+    captureSeekAvgMs?: number;
+    captureBeforeCaptureAvgMs?: number;
+    captureScreenshotAvgMs?: number;
+    encoderWaitAvgMs?: number;
     /** <video> element count (speedup segmentation: injection comps read lower). */
     videoCount?: number;
     capturePeakMs?: number;
@@ -617,6 +621,10 @@ export function trackRenderComplete(
       speed_ratio: props.speedRatio,
       capture_avg_ms: props.captureAvgMs,
       capture_p50_ms: props.captureP50Ms,
+      capture_seek_avg_ms: props.captureSeekAvgMs,
+      capture_before_capture_avg_ms: props.captureBeforeCaptureAvgMs,
+      capture_screenshot_avg_ms: props.captureScreenshotAvgMs,
+      encoder_wait_avg_ms: props.encoderWaitAvgMs,
       video_count: props.videoCount,
       capture_peak_ms: props.capturePeakMs,
       peak_memory_mb: props.peakMemoryMb,
@@ -851,7 +859,7 @@ export type AuthLoginFailureReason =
   | "flow_timeout" // OAuth callback wait elapsed (user closed the tab / walked away)
   | "rejected" // backend rejected the supplied API key (401)
   | "invalid_input" // key was empty, header-unsafe, or too short
-  | "aborted"; // prompt cancelled, or no key arrived on stdin before timeout
+  | "aborted"; // prompt or browser wait cancelled, or no key arrived on stdin before timeout
 
 export function trackAuthLoginStarted(method: AuthLoginMethod, distinctId?: string): void {
   trackEvent("auth_login_started", { method }, distinctId);
