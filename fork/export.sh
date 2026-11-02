@@ -40,6 +40,10 @@ git archive HEAD | tar -x -C "$STAGE"
 # What the copy does not carry: LFS files (pointers without their objects), upstream's workflows, this line's notes.
 git lfs ls-files -n | while IFS= read -r f; do rm -f "$STAGE/$f"; done
 rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh"
+# Nor LFS rules: upstream keeps 53 compiled.html under them as plain blobs, and `git add` in the copy would turn them
+# into pointers whose objects then go to the organisation's LFS store.
+find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +
+find "$STAGE" -name '.gitattributes.bak' -type f -delete
 
 PATCHES="$(git log --reverse --no-merges --format='- %s' "$BASE..HEAD" -- packages)"
 TESTS="$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts' | tr '\n' ' ' | sed 's/ $//')"

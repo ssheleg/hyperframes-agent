@@ -14,6 +14,7 @@ The export leaves out:
 - `.github/workflows` (they target HeyGen's infrastructure);
 - files kept in Git LFS upstream: the `packages/producer/tests` regression fixtures and two demo assets of the
   `changelog-video` skill. The producer regression suite therefore cannot run here; the CLI does not use them.
+  `.gitattributes` carries no LFS rules here, so nothing in this repository goes to an LFS store.
 
 A change made here directly is replaced by the next export. Take a fix to the line's maintainers on the project board.
 
