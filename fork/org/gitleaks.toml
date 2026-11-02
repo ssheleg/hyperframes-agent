@@ -1,0 +1,27 @@
+# gitleaks configuration of the team copy (exported as .gitleaks.toml): the default rules, with the public findings
+# of upstream HyperFrames (heygen-com/hyperframes) at the base tag let through. None is a secret of this team:
+# identifiers of the code-* catalog blocks, cache keys, the public PostHog project key the CLI and Studio send their
+# telemetry to, and test fixtures (a throwaway key, a JWT-shaped string, a fake access token).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Upstream HyperFrames' own public findings"
+paths = [
+  '''^docs/catalog/blocks/code-[a-z0-9-]+\.mdx$''',
+  '''^registry/blocks/code-[a-z0-9-]+/code-[a-z0-9-]+\.html$''',
+  '''^scripts/catalog-script-inlining\.ts$''',
+  '''^docs/download-attribution\.js$''',
+  '''^docs/docs\.json$''',
+  '''^packages/cli/src/auth/scrub\.test\.ts$''',
+  '''^packages/cli/src/capture/fixtures/capture-fixture-key\.pem$''',
+  '''^packages/cli/src/commands/usage\.test\.ts$''',
+  '''^packages/cli/src/media-use/lib/telemetry\.mjs$''',
+  '''^packages/cli/src/telemetry/posthogKey\.ts$''',
+  '''^packages/engine/src/utils/notMediaPayload\.test\.ts$''',
+  '''^packages/player/tests/perf/scenarios/04-scrub\.ts$''',
+  '''^packages/studio/src/telemetry/client\.ts$''',
+  '''^packages/studio/src/telemetry/policy\.ts$''',
+  '''^packages/studio/src/utils/studioTelemetry\.ts$''',
+  '''^skills/media-use/scripts/lib/telemetry\.mjs$''',
+]

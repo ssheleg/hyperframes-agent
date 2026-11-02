@@ -54,6 +54,7 @@ for f in CLAUDE.md AGENTS.md; do
 done
 { cat fork/org/readme-header.md; git show "$BASE:README.md"; } > "$STAGE/README.md"
 cp fork/org/NOTICE "$STAGE/NOTICE"
+cp fork/org/gitleaks.toml "$STAGE/.gitleaks.toml"
 cp fork/org/README.md "$STAGE/fork/README.md"
 BASE="$BASE" TODAY="$TODAY" PATCHES="$PATCHES" node -e '
   const fs = require("fs");
