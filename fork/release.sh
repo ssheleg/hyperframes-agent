@@ -132,7 +132,10 @@ PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | no
 
 log "smoke: install the tarball into an empty project and run it"
 tmpdir smoke SMOKE
-(cd "$SMOKE" && npm init -y >/dev/null && PUPPETEER_SKIP_DOWNLOAD=1 npm install --silent --no-audit --no-fund "$OUT/$TARBALL" >/dev/null)
+# Quiet on success, its own output on failure: a silent `npm install` that exits 1 says nothing about why.
+if ! (cd "$SMOKE" && npm init -y >/dev/null && PUPPETEER_SKIP_DOWNLOAD=1 npm install --no-audit --no-fund --loglevel=warn "$OUT/$TARBALL") > "$SMOKE/npm-install.log" 2>&1; then
+  tail -n 40 "$SMOKE/npm-install.log" >&2; echo "smoke: npm install of the tarball failed" >&2; exit 1
+fi
 mkdir -p "$SMOKE/userhome/.hyperframes/running"
 DEAD=99999999
 : > "$SMOKE/userhome/.hyperframes/running/$DEAD"
