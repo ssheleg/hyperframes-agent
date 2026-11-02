@@ -1,0 +1,7 @@
+HyperFrames Agent (team copy)
+
+This product includes HyperFrames, Copyright HeyGen, Inc. and its contributors,
+https://github.com/heygen-com/hyperframes, licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It is HyperFrames at one upstream release with modifications. The modified files and the base release are listed
+in fork/line.env and fork/README.md. Files under fork/ and this NOTICE are additions of the HyperFrames Agent line.

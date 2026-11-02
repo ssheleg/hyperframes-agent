@@ -29,6 +29,11 @@ done
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+# An exported copy of the line (fork/export.sh) carries no upstream history: its fork/line.env names the base,
+# the test files of the patches and the patches themselves, which this repository finds in Git.
+LINE_BASE=""; LINE_TESTS=""; LINE_PATCHES=""
+# shellcheck source=/dev/null
+[ ! -f fork/line.env ] || . fork/line.env
 REPO="${FORK_REPO:-ssheleg/hyperframes-agent}"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [ "$BRANCH" = "main" ] || { echo "release from main, not $BRANCH" >&2; exit 1; }
@@ -36,7 +41,7 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 # The newest upstream release merged into HEAD. Not `git describe`: through merges it picks the tag fewest
 # commits away, which after `merge v0.8.209` was v0.8.206.
-BASE="$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk '!/-/' | head -n1)"
+BASE="${LINE_BASE:-$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk '!/-/' | head -n1)}"
 [ -n "$BASE" ] || { echo "no upstream release tag is merged into HEAD" >&2; exit 1; }
 COMMIT="$(git rev-parse HEAD)"
 VERSION="${BASE#v}+sshlg.${N}"
@@ -82,7 +87,7 @@ bun run --filter @hyperframes/cli build
 grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not carry $VERSION" >&2; exit 1; }
 
 log "tests of the fork's patches"
-PATCHED_TESTS=$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')
+PATCHED_TESTS="${LINE_TESTS:-$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')}"
 if [ -n "$PATCHED_TESTS" ]; then
   # shellcheck disable=SC2086
   (cd packages/cli && npx vitest run ${PATCHED_TESTS//packages\/cli\//})
@@ -140,7 +145,9 @@ tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
   echo "The \`hyperframes\` CLI \`$VERSION\`: upstream [$BASE](https://github.com/heygen-com/hyperframes/releases/tag/$BASE) plus the patches below. Not published to npm."
   echo
   echo "Patches on top of $BASE:"
-  git log --reverse --no-merges --format='- %s (%h)' "$BASE..$COMMIT" -- . ':!fork'
+  if [ -n "$LINE_PATCHES" ]; then printf '%s\n' "$LINE_PATCHES"; else
+    git log --reverse --no-merges --format='- %s (%h)' "$BASE..$COMMIT" -- . ':!fork'
+  fi
   echo
   echo "Install: \`npm install https://github.com/$REPO/releases/download/$TAG/$TARBALL\`"
   echo
@@ -150,6 +157,7 @@ gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" --repo "$REPO" -
 
 log "verify the published asset"
 tmpdir check CHECK
-curl -fsSL -o "$CHECK/$TARBALL" "https://github.com/$REPO/releases/download/$TAG/$TARBALL"
+# Through gh, not an anonymous download: an exported copy's repository is private.
+gh release download "$TAG" --repo "$REPO" --pattern "$TARBALL" --dir "$CHECK"
 (cd "$CHECK" && echo "$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")  $TARBALL" | shasum -a 256 -c -)
 log "released $TAG: https://github.com/$REPO/releases/tag/$TAG"
