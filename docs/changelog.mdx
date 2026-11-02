@@ -9,6 +9,138 @@ Recent HyperFrames releases, including user-facing features, fixes, and migratio
 {/* New release entries are prepended by `bun run changelog:draft <version> --write`. */}
 
 <Update
+  label="HyperFrames v0.9.5"
+  description="Released - 2026-11-02"
+  tags={["Release", "Producer", "CLI"]}
+>
+Renders no longer release a scene's WebGL context early. A render stops when every composition script fails. Catalog says when the registry could not be read, and the producer reports browser-computed backgrounds.
+
+## Features
+
+- **Producer:** Report browser-computed reference backgrounds ([346f0e49fa](https://github.com/heygen-com/hyperframes/commit/346f0e49fa7618526ddcb6c8590bddaa21c5e509), [#7007](https://github.com/heygen-com/hyperframes/pull/7007)).
+
+## Fixes
+
+- **Producer:** A render stops when a capture session sees every composition script fail ([070780c695](https://github.com/heygen-com/hyperframes/commit/070780c695ad8b6ef04a7298c94782d964ec8d94), [#7009](https://github.com/heygen-com/hyperframes/pull/7009)).
+
+## Catalog
+
+- **CLI:** Catalog says the registry could not be read instead of listing nothing ([5a07ea2e5f](https://github.com/heygen-com/hyperframes/commit/5a07ea2e5faacbe74143f1fa1f465d6d05ff5589), [#7015](https://github.com/heygen-com/hyperframes/pull/7015)).
+
+## Other Changes
+
+- Stop releasing a WebGL context when its clip's window has ended ([6fd96ddd04](https://github.com/heygen-com/hyperframes/commit/6fd96ddd041964caa7459aa195259a9b5deea4c4), [#7020](https://github.com/heygen-com/hyperframes/pull/7020)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.4...v0.9.5).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.4"
+  description="Released - 2026-11-02"
+  tags={["Release", "CLI", "Core", "Studio"]}
+>
+Snapshot now fails when a video frame on screen cannot be read, instead of finishing with black or stale videos. iPhone Safari keeps one connection per file. Undo clears a leftover transform in the preview.
+
+## Fixes
+
+- **CLI:** Snapshot fails when an on-screen video frame cannot be read ([b23b51f4f0](https://github.com/heygen-com/hyperframes/commit/b23b51f4f0b02cbe2caa8e71d2a35b4cb2f8995d), [#7011](https://github.com/heygen-com/hyperframes/pull/7011)).
+- **Core:** iPhone Safari keeps one connection per file for the take on screen and the next ([036e41fa09](https://github.com/heygen-com/hyperframes/commit/036e41fa09e6670f155fa3f2c361b58b8ed77e02), [#7012](https://github.com/heygen-com/hyperframes/pull/7012)).
+- **Studio:** An undo that drops the keyframes clears the transform the old preview still shows ([cd5984261a](https://github.com/heygen-com/hyperframes/commit/cd5984261a6cae06e91e7e796b9360a33d80ee1b), [#7005](https://github.com/heygen-com/hyperframes/pull/7005)).
+- **CLI:** Exit-time telemetry stays silent when the temp folder cannot be written ([8891449401](https://github.com/heygen-com/hyperframes/commit/88914494011f3a8062a832d42e924392e15dc0c0), [#6925](https://github.com/heygen-com/hyperframes/pull/6925)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.3...v0.9.4).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.3"
+  description="Released - 2026-11-02"
+  tags={["Release", "Studio Server", "CLI", "Studio"]}
+>
+Stamping a project's ids no longer holds up the Studio host, and long media clips no longer leave it unanswered. A preview reload writes the composition as it is now. Measure and diff say why they failed.
+
+## Features
+
+- **Studio Server:** Stamp a project hf-ids without holding the event loop ([d17b958318](https://github.com/heygen-com/hyperframes/commit/d17b958318b3616ede33dec84d7a1c3eb8bc4b5a), [#7004](https://github.com/heygen-com/hyperframes/pull/7004)).
+
+## Fixes
+
+- **Studio Server:** Long media clips no longer leave the host unanswered ([c54f84859d](https://github.com/heygen-com/hyperframes/commit/c54f84859d8ce2b1d13e351e4c9f8b1cdfcb06cc), [#7002](https://github.com/heygen-com/hyperframes/pull/7002)).
+- **CLI:** Measure and diff report why they failed, and reverse reports its runs ([618c486734](https://github.com/heygen-com/hyperframes/commit/618c486734b3cbb697bd432bace7e9642e48b6be), [#6997](https://github.com/heygen-com/hyperframes/pull/6997)).
+- **Studio:** A preview reload writes the composition as it is now, not as it was when it asked ([a46412ee07](https://github.com/heygen-com/hyperframes/commit/a46412ee07fee0d91b29d62d92363dcad8cbbcd9), [#6998](https://github.com/heygen-com/hyperframes/pull/6998)).
+- **Core:** Keep media prefetch queue ordered ([aaa5b63f55](https://github.com/heygen-com/hyperframes/commit/aaa5b63f558adc8069ac56244c2d6da377923c89), [#6996](https://github.com/heygen-com/hyperframes/pull/6996)).
+- **Lint:** A helper script's timeline nested by the page is not reported as unregistered ([43f8b1a3fc](https://github.com/heygen-com/hyperframes/commit/43f8b1a3fcfe14e7e128c31a3f91d275fe123105), [#6999](https://github.com/heygen-com/hyperframes/pull/6999)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.2...v0.9.3).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.2"
+  description="Released - 2026-11-02"
+  tags={["Release", "Engine", "Studio", "Core"]}
+>
+A scene that has ended now gives up its WebGL context, so the next scene is not slowed. A heavy clip's lighter copy can be made ahead of time. Apps that host Studio can ask which action holds a key combination.
+
+## Features
+
+- **Studio:** Hosts can ask which action holds a key combination ([5fca435623](https://github.com/heygen-com/hyperframes/commit/5fca435623a5005def2c3d0e5a1c4195e8084a4c), [#6979](https://github.com/heygen-com/hyperframes/pull/6979)).
+- **Core:** A heavy clip's lighter copy can be made ahead of time ([e5b10f8bc2](https://github.com/heygen-com/hyperframes/commit/e5b10f8bc2316aa2b9bf27b67f27658fb0b1dc94), [#6982](https://github.com/heygen-com/hyperframes/pull/6982)).
+
+## Fixes
+
+- **Engine:** A scene that has ended gives up its WebGL context so the next scene is not slowed ([26d6e3eef1](https://github.com/heygen-com/hyperframes/commit/26d6e3eef17d3f9b3d2764c7504a38e1bec0af97), [#6984](https://github.com/heygen-com/hyperframes/pull/6984)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.1...v0.9.2).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.1"
+  description="Released - 2026-11-02"
+  tags={["Release", "Changelog", "AWS Lambda"]}
+>
+A Lambda render started straight on the state machine without a `PlanProtocol` now runs as Plan v2 instead of failing at its first step. The SDK and CLI always send `"v2"`, so they were not affected.
+
+## Fixes
+
+- **AWS Lambda:** A state machine input with no `PlanProtocol` defaults to Plan v2 instead of failing with `States.Runtime` ([758759673](https://github.com/heygen-com/hyperframes/commit/758759673bdd12ef007fc7315ecca1c721875f5a), [#6985](https://github.com/heygen-com/hyperframes/pull/6985)).
+
+## Docs & Examples
+
+- **Changelog:** Complete the v0.9.0 notes ([a17af79ab](https://github.com/heygen-com/hyperframes/commit/a17af79ab0cec11b97c1a682b2a7aa0ff35093c9), [#6986](https://github.com/heygen-com/hyperframes/pull/6986)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.0...v0.9.1).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.0"
+  description="Released - 2026-11-02"
+  tags={["Release", "Producer", "AWS Lambda", "Gcp Cloud Run", "Core", "CLI"]}
+>
+Distributed rendering on AWS Lambda and Google Cloud Run now runs only on Plan v2. This is a breaking release: the Plan v1 transport, the `planProtocol` option and the Plan v1 event and result types are removed. A preview video that runs short of data now holds instead of looping snippets.
+
+## Upgrading from 0.8
+
+- **Upgrade the SDK and the deployment together.** Redeploy your Lambda stack or Cloud Run service from 0.9.0 when you move your app to the 0.9.0 SDK.
+- **Drop `planProtocol`** from `renderToLambda` and `renderToCloudRun` calls. Leaving it out, or passing `"v2"`, works as before. Passing `"v1"` now throws.
+- **Old Plan v1 events are rejected.** A handler or service on 0.9.0 answers a v1 payload with `PLAN_PROTOCOL_UNSUPPORTED` before doing any render work.
+- **Removed producer exports:** `plan`, `createPlanV2FromV1`, `publishPlanV2FromV1`, `readPlanProtocol`, `readPlanProtocolV1`, `PLAN_PROTOCOL_V1`, `CURRENT_PLAN_PROTOCOL`, `PLAN_SCHEMA_VERSION`, `PLAN_HASH_SCHEMA`, `PLAN_ARTIFACT_LAYOUT`, `DISTRIBUTED_RENDER_CAPABILITIES` and `getDistributedRenderCapabilities`, plus their types. Use `planV2`, `planV2WithPublisher` or `publishPlanV2FromExecutionPlan` instead.
+- **`PLAN_TOO_LARGE` and `PlanTooLargeError` are removed** from `@hyperframes/producer/distributed`. The plan-size cap only applied to Plan v1, and Plan v2 never raises it, so drop any checks for that error.
+- **Removed adapter types:** `LambdaPlanProtocol`, `PlanV1LambdaResult`, `CloudRunPlanProtocol`, `PlanV1ResultBody`, and `PlanV1Event`, `RenderChunkV1Event` and `AssembleV1Event` from both adapter packages.
+
+## Breaking Changes
+
+- **Producer, AWS Lambda, Cloud Run:** Remove the Plan v1 distributed transport ([7f48a6894](https://github.com/heygen-com/hyperframes/commit/7f48a6894c42426ae9bc8a913879d4cd0fb72166), [#6970](https://github.com/heygen-com/hyperframes/pull/6970)).
+
+## Fixes
+
+- **Core:** A preview video short of data holds the film instead of looping snippets ([8519f2836](https://github.com/heygen-com/hyperframes/commit/8519f2836358499f36d3ba79ca3c16bc1318a97f), [#6974](https://github.com/heygen-com/hyperframes/pull/6974)).
+- **CLI:** Diff warns when yours runs at another frame rate ([99223d993](https://github.com/heygen-com/hyperframes/commit/99223d993cf5ddf78f27ab87fc9b7009d79407a3), [#6976](https://github.com/heygen-com/hyperframes/pull/6976)).
+- **Core:** A smaller preview copy nobody wants any more no longer swaps in ([6bbda219b](https://github.com/heygen-com/hyperframes/commit/6bbda219bb25ab771c1b86df7b7e34c8eb0b9124), [#6973](https://github.com/heygen-com/hyperframes/pull/6973)).
+- **CLI:** Diff stops counting a fast move as an extra cut ([b1316e61d](https://github.com/heygen-com/hyperframes/commit/b1316e61d170d29067735150ebb5ab291e0f4171), [#6978](https://github.com/heygen-com/hyperframes/pull/6978)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.8.231...v0.9.0).
+</Update>
+
+<Update
   label="HyperFrames v0.8.231"
   description="Released - 2026-11-02"
   tags={["Release", "Studio", "CLI", "Lint"]}
