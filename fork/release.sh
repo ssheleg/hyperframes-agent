@@ -56,9 +56,15 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || [ -n "$(git ls-remot
 fi
 log "base $BASE, commit ${COMMIT:0:12}, CLI version $VERSION, tag $TAG"
 
-TMPS=()
+TMPS=(); PKG_SAVED=""
+# The version stamp goes back from a saved copy, not `git checkout`: a checkout that met a busy index failed silently
+# on 2026-11-02, and the stamp reached a commit (7385d1f55, reverted in the next one).
 cleanup() {
-  git checkout -q -- packages/cli/package.json 2>/dev/null || true
+  if [ -n "$PKG_SAVED" ]; then
+    cp "$PKG_SAVED" packages/cli/package.json
+    git diff --quiet -- packages/cli/package.json \
+      || echo "packages/cli/package.json still differs from HEAD: restore it before committing" >&2
+  fi
   [ ${#TMPS[@]} -eq 0 ] || rm -rf "${TMPS[@]}"
 }
 trap cleanup EXIT
@@ -76,6 +82,7 @@ fi
 
 log "build the CLI as $VERSION"
 # tsup bakes package.json's version into dist as __CLI_VERSION__; the stamp is reverted on exit.
+tmpdir pkg PKG_DIR; cp packages/cli/package.json "$PKG_DIR/package.json"; PKG_SAVED="$PKG_DIR/package.json"
 VERSION="$VERSION" node -e '
   const fs = require("fs");
   const p = "packages/cli/package.json";

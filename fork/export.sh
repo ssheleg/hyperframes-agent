@@ -72,8 +72,9 @@ rm -f "$STAGE/fork/release.sh.bak"
   printf 'LINE_PATCHES=%q\n' "$PATCHES"
 } > "$STAGE/fork/line.env"
 
-# This line's own name must not travel.
-if grep -rIl -e 'ssheleg' -e 'sshlg' "$STAGE/fork" "$STAGE/NOTICE" "$STAGE/CLAUDE.md" "$STAGE/AGENTS.md" "$STAGE/README.md"; then
+# This line's own name must not travel, anywhere in the tree: a release's version stamp (`+sshlg.<n>` in
+# packages/cli/package.json) once reached a commit of the line and would have gone with it.
+if grep -rIl -e 'ssheleg' -e 'sshlg' "$STAGE"; then
   echo "the files above still name this line" >&2; exit 1
 fi
 
