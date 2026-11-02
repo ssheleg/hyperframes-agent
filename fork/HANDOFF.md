@@ -71,6 +71,11 @@ publish tarball releases that consumers pin.
   its push. It names the repository from `origin`, not `gh repo view`, which in this fork answers
   `heygen-com/hyperframes`, and refuses any `heygen-com` repository. Checked by enabling `fast-video-validation.yml`
   here and running it: disabled, `--check` then exits 0.
+- `fork/release.sh` restores its version stamp of `packages/cli/package.json` from a saved copy. Its `git checkout`
+  on exit failed silently after a failed run, my `commit -a` carried `0.9.5+sshlg.1` into `7385d1f55` (the commit the
+  tag `fork-v0.9.5-sshlg.1` names; the asset is right, the stamp is the release's own version), and the shared audit
+  of the copy caught it. Reverted in `a9a49aaf9`; checked by a run that fails after the stamp (tree clean).
+  `fork/export.sh` now checks the whole tree for the line's name. The smoke install prints npm's output on failure.
 - `fork/release.sh` waits for `fseventsd` under 60% CPU before the watcher tests instead of failing; checked at 165%
   (it waited, then went on once it fell) and with a limit of 0 and no wait (it fails with the reading).
 
@@ -131,8 +136,11 @@ This repository stays where it is (operator, 2026-10-28, thread `3b676949`, mess
 the team has a private copy, `appvillis-com/hyperframes-agent` (operator, 2026-10-30, thread `7913a557`, message
 `0b1fd1e3`): one commit per export of this line, no upstream history. Releases: `fork-v0.8.221-appvillis.1` (`93c768b`,
 sha256 `e5cb424361e7c245a60b5f77dc92acf9129502411eba894e5d8ab8ac779dee2b`) and `fork-v0.8.231-appvillis.1` (`746b7fb`,
-sha256 `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5`); shared audit `ready` on both; catalogued in
-`appvillis-com/org-index` (`not_verified`); announced in thread `7913a557` (`9a842399`, `ea6dab16`). Its
+sha256 `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5`) and `fork-v0.9.5-appvillis.1` (`c8d1035`,
+sha256 `811dc2b06a27587887e7d168106ac06098b1712f0961032fdf44f3e01c53c479`); shared audit `ready` on each; catalogued in
+`appvillis-com/org-index` (`not_verified`); announced in thread `7913a557` (`9a842399`, `ea6dab16`, `6e9642a9`). Frame Agent's copy
+(`appvillis-com/frame-agent` `8d1b42e`) keeps the copy's tarball in its own `engine/` folder, because an anonymous
+download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
 1. Upstream releases after `v0.9.5`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
