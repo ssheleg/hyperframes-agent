@@ -20,6 +20,21 @@ target HeyGen's infrastructure. The checks of a release run locally in `fork/rel
 upstream release adds arrives enabled: after pushing a merge, `gh workflow list --all` must show none active,
 and `gh workflow disable <file>` turns off any that is (the door audit names added workflow files).
 
+## The team copy
+
+`appvillis-com/hyperframes-agent` is a private copy of this line for the team (operator, 2026-10-30, project board
+thread `7913a557`); this repository stays where it is. The copy is not a fork (a fork of a public repository cannot be
+private) and carries no upstream history (upstream commit `24965372d` names a person's address). After each release
+of this line:
+
+1. `fork/export.sh <copy-checkout> --push` writes the line's tree into the copy as one commit on its `main`: no
+   workflows, no file an LFS rule covers, no maintenance notes of this line; `fork/org/` supplies the copy's README,
+   HANDOFF, NOTICE, `.gitleaks.toml` and the headers of `CLAUDE.md`, `AGENTS.md` and `README.md`.
+2. Audit it with the shared org-transfer-audit, passing each line of `fork/org/audit-allow-literals.txt` (upstream's
+   placeholder home paths) as `--allow-literal`; it must read `ready`.
+3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-appvillis.<n>` (it reads the base and
+   the patch tests from the copy's `fork/line.env`).
+
 ## Versions and tags
 
 | Item        | Form                                                     | Example                           |

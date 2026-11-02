@@ -5,7 +5,7 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## State (2026-10-30)
+## State (2026-11-02)
 
 - Repository `ssheleg/hyperframes-agent` (renamed from `sshlg/heygen-hyperframes-vr` and moved to the `ssheleg`
   organisation on 2026-10-19; GitHub redirects the old address, release downloads included). Every inherited
@@ -109,13 +109,20 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 
 ## Next task
 
-This repository stays where it is: on 2026-10-28 the operator decided it does not move to the team organisation
-(project board, thread `3b676949`, message `e1350512`).
+This repository stays where it is (operator, 2026-10-28, thread `3b676949`, message `e1350512`). Since 2026-11-02
+the team has a private copy, `appvillis-com/hyperframes-agent` (operator, 2026-10-30, thread `7913a557`, message
+`0b1fd1e3`): one commit per export of this line, no upstream history; first commit `93c768b`, release
+`fork-v0.8.221-appvillis.1` (sha256 `e5cb424361e7c245a60b5f77dc92acf9129502411eba894e5d8ab8ac779dee2b`), shared audit
+`ready`, catalogued in `appvillis-com/org-index` (`10467ee`, `not_verified`), answered on the board (`9a842399`). Its
+checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.8.221`: run `git fetch upstream --tags`, read the new tags' commits and take the latest
-   (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+1. Upstream releases after `v0.8.221` (`v0.8.231` is out): run `git fetch upstream --tags`, read the new tags'
+   commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
    `fork/door-audit.sh v0.8.221 v<new>`, add its findings to the table above and the release to the release table, and
-   post them to the consumer on the board (thread `b4d4f898`). `v0.8.221` is taken (2026-10-30). After the push, check no workflow is active (fork/README.md).
+   post them to the consumer on the board (thread `b4d4f898`). After the push, check no workflow is active
+   (fork/README.md). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
+   shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
+   `7913a557` (fork/README.md, "The team copy").
 2. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
