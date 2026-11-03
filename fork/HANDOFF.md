@@ -12,11 +12,13 @@ publish tarball releases that consumers pin.
   workflow is disabled (repository settings). Four that later upstream releases added had run here unnoticed
   (`lambda-arm64-image`, `lambda-sam-template`, `player-safari`, and `windows-window-probe` from `v0.8.221`);
   they were disabled on 2026-10-30 and a running one cancelled. The door audit now lists added workflow files.
-- `main` = upstream `v0.9.8` (merge `6d560e1a9`) + two patches + `fork/`. `git diff v0.9.8 main -- . ':!fork'` shows
+- `main` = upstream `v0.9.9` (merge `7c3effd87`) + two patches + `fork/`. `git diff v0.9.9 main -- . ':!fork'` shows
   exactly what we carry: the speech patch (`packages/cli/src/tts/`) and the Node 26 / macOS patch with its watcher test
   fixes (`packages/cli/src/server/fileWatcher*`, `utils/projectLock.test.ts`, `whisper/sherpa.test.ts`), plus our
   header in `CLAUDE.md`, `AGENTS.md` and `README.md`. `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.9.8-sshlg.1` (table below), a clean merge of `v0.9.6` to `v0.9.8`; its first publish run
+- Latest release `fork-v0.9.9-sshlg.1` (table below), a clean merge; its first publish run stopped before the tests
+  because `fseventsd` stayed above 60% CPU for the whole 30-minute wait, and the second, with
+  `FSEVENTSD_WAIT_SECONDS=7200`, went through. `fork-v0.9.8-sshlg.1` was a clean merge of `v0.9.6` to `v0.9.8`; its first publish run
   failed one upstream test (`whisper/sherpa.test.ts`, "cancels an in-flight probe": a child Node must start within
   300 ms) at load average 257, and passed on the same commit at 143. Before it, `fork-v0.9.5-sshlg.1` carried `v0.9.0` to `v0.9.4`. The merge was clean. `v0.9.0`
   breaks only distributed rendering: Lambda and Cloud Run run Plan v2 alone, so a stack deployed from 0.8 is
@@ -35,7 +37,7 @@ publish tarball releases that consumers pin.
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
   `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`, `v0.8.231-sshlg.1` is message `d80105a7`, `v0.9.5-sshlg.1` is message
-  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`.
+  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`.
 
 ## Patches
 
@@ -88,6 +90,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.9-sshlg.1`   | `7c3effd87` | 2026-11-03 | `193cc9c6204ad4078f50fa0e31d8e6eba40457832dacfdd7bc554057687b9049` |
 | `fork-v0.9.8-sshlg.1`   | `6d560e1a9` | 2026-11-03 | `bf2db790b1462f81cfef67af128e37358fb58689bfca91c9f1d0c2cfe45062a1` |
 | `fork-v0.9.5-sshlg.1`   | `7385d1f55` | 2026-11-02 | `219ca565c3dffaba015014fa8eebafbd06e9745713e5502bf38a1c998027a42b` |
 | `fork-v0.8.231-sshlg.1` | `48bfa23ae` | 2026-11-02 | `2b9cbfca19d565c0503a68d5b5bbca4c9ec539026f400f4a971c2262a41fcd91` |
@@ -133,6 +136,7 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.8.221..v0.8.231` | New commands `billing` (HeyGen plan and credits: `HYPERFRAMES_PLANS_URL`, `HYPERFRAMES_CREDITS_URL`), `diff`, `measure` (`curve`, `cuts`, `energy`, `events`, `extract`, `face`, `frames`, `ink`, `look`, `probe`, `sync`; they run `ffmpeg`) and `media-use generate` (paid HeyGen generation, `--max-credits`). `HYPERFRAMES_CACHE_DIR` moves every CLI cache, the speech script's included (#6716). The exit-time telemetry sender is a detached Node child (`telemetry/transport.ts:182`, there since upstream `v0.7.77`; `HYPERFRAMES_NO_TELEMETRY=1` turns telemetry off); optional `npm` installs now run in the cache folder. New workflow `player-safari-audio.yml` (disabled here). New skill `reverse-any-video`; `remotion-to-hyperframes` lost its `frame_strip.sh` and `render_diff.sh`.                                                         |
 | `v0.8.231..v0.9.5`   | `v0.9.0` removes the Plan v1 distributed transport (Lambda, Cloud Run): a stack deployed from 0.8 is redeployed from 0.9. New flag `media-use generate --voice`, which lists voices from HeyGen's cloud (`heygen/v3.ts:273`, signed in only). No new commands, environment variables, outliving children, workflows or run-time installs. Skills: 7 files (`reverse-any-video` among them).                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `v0.9.5..v0.9.8`     | New command `reverse start` notes a reverse run with HeyGen (`heygen/reverse.ts`, `HYPERFRAMES_CLIENT` names the caller). `audio --read` describes audio through the HeyGen account when signed in, sending the audio as base64 to HeyGen's description service (`audio/read/describe.ts:144`) instead of needing a Gemini key. A `hyperframes auth login` session now outranks `HEYGEN_API_KEY` and `HYPERFRAMES_API_KEY`; `HEYGEN_API_BASE` marks a host's gateway (`auth/resolver.ts:114`). `auth login --device` works without a terminal (refused in CI). New flags `billing --feature`, `--session`, `reverse start --dir`; `cloud render` drops `--page-motion-blur`. `HF_INPAGE_ENCODE` (off by default, `engine/src/config.ts:310`). No outliving children, workflows or run-time installs. Skills: 9 files (`media-use` audio, `reverse-any-video`). |
+| `v0.9.8..v0.9.9`     | New command `templates pull` (HyperFrames Pro style templates): signed in, it downloads an archive from HeyGen and unpacks it with `tar`, refusing absolute paths and `..` (`commands/templates.ts`). `media-use` finds assets: `--type`, `--intent`, `--entity`, `--provider`, `--from <file or URL>`, `--candidates`, `--reuse`, `--adopt`; `media-use generate --avatar`, `--prompt`, `--video`; `diff --offset`. Skills install from the CLI's own release tag and there is no auto-update across 0.x minors (#7013). No new environment variables, outliving children, workflows or run-time installs. Skills: new `style-sampling`.                                                                                                                                                                                                                      |
 
 ## Next task
 
@@ -148,8 +152,8 @@ sha256 `da47f19130b9eab72073ec18edef43fd6074464feeb473341ea4bf8d18328e31`); shar
 download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.9.8`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.9.8 v<new>`, add its findings to the table above and the release to the release table, and
+1. Upstream releases after `v0.9.9`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+   `fork/door-audit.sh v0.9.9 v<new>`, add its findings to the table above and the release to the release table, and
    post them to the consumer on the board (thread `b4d4f898`). The release disables any workflow the merge added
    (`fork/workflows-guard.sh`). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
    shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
