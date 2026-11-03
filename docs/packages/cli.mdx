@@ -33,7 +33,7 @@ npm install -g hyperframes
 | Make a file              | [`render`](#render), [`benchmark`](#benchmark)                                                                                                                                                                                   |
 | Render somewhere else    | [`cloud`](#hyperframes-cloud), [`lambda`](#hyperframes-lambda), [`cloudrun`](#hyperframes-cloudrun)                                                                                                                              |
 | Fix your setup           | [`doctor`](#doctor), [`browser`](#browser), [`upgrade`](#upgrade), [`docs`](#docs), [`info`](#info-and-compositions), [`compositions`](#info-and-compositions), [`clean`](#clean)                                                                   |
-| Connect other tools      | [`auth`](#hyperframes-auth), [`billing`](#billing), [`skills`](#skills), [`usage`](#usage), [`figma`](#figma-and-events), [`events`](#figma-and-events), [`telemetry`](#telemetry), [`feedback`](#feedback)                                                                            |
+| Connect other tools      | [`auth`](#hyperframes-auth), [`billing`](#billing), [`templates`](#templates), [`skills`](#skills), [`usage`](#usage), [`figma`](#figma-and-events), [`events`](#figma-and-events), [`telemetry`](#telemetry), [`feedback`](#feedback)                                                                            |
 
 `validate`, `inspect`, and `layout` still work but are
 [deprecated](#deprecated-validate-inspect-and-layout). Use `check` instead.
@@ -107,10 +107,12 @@ their final line, on stderr.
 `2` means the command line itself is wrong: an unknown command or flag, or a
 missing or invalid value.
 
-**Version notices.** An owned install (npm, bun, pnpm, brew) updates itself
+**Version notices.** An owned install (npm, bun, pnpm) updates itself
 quietly in the background and prints one line on the next run:
-`hyperframes auto-updated to v0.1.5`. It never crosses a major version. Anywhere
-it cannot install — `npx`, an unknown installer — you get a notice instead:
+`hyperframes auto-updated to v0.1.5`. It never crosses a major version (before
+1.0, a minor version: 0.8 to 0.9 is a notice, not an install). Anywhere
+it cannot install — Homebrew (run `brew upgrade hyperframes` yourself), `npx`, an
+unknown installer — you get a notice instead:
 
 ```
   Update available: 0.1.4 → 0.1.5
@@ -1574,12 +1576,22 @@ npx hyperframes diff original.mp4 renders/final.mp4 --segments segments.md --sbs
 | ----------------------------------------- | -------------------------------------------------------------------- |
 | `--at`                                    | Compare only these seconds                                           |
 | `--range`                                 | Compare every frame of `start,end` seconds                           |
+| `--offset`                                | Compare the original at t with yours at t + offset seconds           |
 | `--segments`                              | A verdict per `## S01 · a–b s` segment of a file                     |
 | `--drawn`                                 | Score one drawn element's box `x,y,w,h[,a-b]` by itself (repeatable) |
 | `--min-mean` / `--min-p05` / `--min-cell` | The SSIM bars to pass                                                |
 | `--sbs`                                   | Also write an original-beside-yours video                            |
 | `--out`                                   | Folder for the sheet and log (default `.hyperframes/diff/<yours>`)   |
 | `--json`                                  | Print one JSON result                                                |
+
+`--offset` takes seconds, negative when yours runs ahead of the original. Every
+per-frame score, cut and missing-content span is then read from yours at
+t + offset, and a project folder is captured at those times. The comparison keeps
+to the stretch where both sides have frames: `window` reports it and `warnings`
+says when frames were left out. `frames.tsv` keeps the original's time in `t`;
+yours' time is t + offset. The sound keeps its own offset measurement, the
+duration is reported as not measured, and the JSON result echoes `offset`. An
+offset that leaves no overlap is refused with a fix.
 
 ## Edit from the command line
 
@@ -2183,7 +2195,9 @@ Set `HYPERFRAMES_SKIP_SKILLS=1` when something else manages the skills (CI, test
 or an install pinned to one commit). `skills update` and bare `skills` then exit 0
 with a one-line notice and leave the installed skills unchanged.
 
-The CLI installs from the current HyperFrames GitHub source and links the global
+The CLI installs the skills from the HyperFrames release tag that matches its own
+version (`v<version>`), and `check` compares against that same tag, so the skills
+match the CLI that runs them; a development build uses `main`. It links the global
 bundles into whichever compatible agents it finds. After scaffolding, `init`
 installs the core set if it is missing. It never refreshes or removes a skill you already have; run `skills update` for that.
 
@@ -2277,6 +2291,20 @@ npx hyperframes billing top-up --needed 180
 | `--session` | The run to credit the purchase to, with `--feature` |
 | `--tool`    | The step that is waiting, shown on the page                                |
 | `--timeout` | Seconds to wait (default 600)                                              |
+
+### `templates`
+
+Pulls a style template into the project's `templates/<slug>/`, for a HyperFrames
+Pro account: `collage-explainer`, `finance-explainer`, `animated-science-explainer`,
+`3d-brand-explainer` or `3d-true-crime`. A pull costs no credits, and a template already there is left alone.
+
+```bash
+npx hyperframes templates pull collage-explainer
+```
+
+| Flag    | Description                                     |
+| ------- | ----------------------------------------------- |
+| `--dir` | Project folder (default: the current folder)    |
 
 ### `figma` and `events`
 
