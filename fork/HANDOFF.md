@@ -149,8 +149,9 @@ sha256 `e5cb424361e7c245a60b5f77dc92acf9129502411eba894e5d8ab8ac779dee2b`) and `
 sha256 `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5`) and `fork-v0.9.5-appvillis.1` (`c8d1035`,
 sha256 `811dc2b06a27587887e7d168106ac06098b1712f0961032fdf44f3e01c53c479`) and `fork-v0.9.8-appvillis.1` (`05f3b03`,
 sha256 `da47f19130b9eab72073ec18edef43fd6074464feeb473341ea4bf8d18328e31`) and `fork-v0.9.9-appvillis.1` (`f672c37`,
-sha256 `55474e5d92354c8ed30949c30a84957f885e64a363ad3eca77cca81a34afdac2`); shared audit `ready` on each; catalogued in
-`appvillis-com/org-index` (`not_verified`); announced in thread `7913a557` (`9a842399`, `ea6dab16`, `6e9642a9`, `8e4adb91`, `59b98775`). Frame Agent's copy
+sha256 `55474e5d92354c8ed30949c30a84957f885e64a363ad3eca77cca81a34afdac2`) and `fork-v0.9.10-appvillis.1` (`fed951e`,
+sha256 `1d5a009adbd7bc2ff1b5045d0b09c274d5efbebedd4118b9e15c9400f54638de`); shared audit `ready` on each; catalogued in
+`appvillis-com/org-index` (`not_verified`); announced in thread `7913a557` (`9a842399`, `ea6dab16`, `6e9642a9`, `8e4adb91`, `59b98775`, `a00b8d3a`). Frame Agent's copy
 (`appvillis-com/frame-agent` `8d1b42e`) keeps the copy's tarball in its own `engine/` folder, because an anonymous
 download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
