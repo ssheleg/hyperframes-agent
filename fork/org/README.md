@@ -1,6 +1,6 @@
-# HyperFrames Agent: the team copy
+# Appvillis HyperFrames Agent: the team copy
 
-This repository is the team's copy of the HyperFrames Agent line, a line of the HyperFrames engine
+This repository, Appvillis HyperFrames Agent, is the team's copy of the HyperFrames Agent line, a line of the HyperFrames engine
 (`heygen-com/hyperframes`, Apache-2.0, see [`../NOTICE`](../NOTICE)) that takes upstream releases and carries a few
 patches. It exists so that team agents can install the engine from the organisation.
 
@@ -54,6 +54,6 @@ The repository is private, so an anonymous download is refused. Download with an
 the file:
 
 ```sh
-gh release download fork-v<base>-appvillis.<n> --repo appvillis-com/hyperframes-agent --pattern 'hyperframes-*.tgz'
+gh release download fork-v<base>-appvillis.<n> --repo appvillis-com/appvillis-hyperframes-agent --pattern 'hyperframes-*.tgz'
 npm install ./hyperframes-<base>-appvillis.<n>.tgz
 ```

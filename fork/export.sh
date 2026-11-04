@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Writes this line's current tree into a checkout of the team's copy, appvillis-com/hyperframes-agent, as one commit
+# Writes this line's current tree into a checkout of the team's copy, appvillis-com/appvillis-hyperframes-agent, as one commit
 # on top of the copy's main (fork/org/README.md says what the copy is and what an export leaves out).
 #
 #   fork/export.sh <copy-checkout>          write and commit; push nothing
@@ -10,7 +10,7 @@
 # README.md, which go on top of upstream's own text at the base tag.
 set -euo pipefail
 
-COPY_REPO="appvillis-com/hyperframes-agent"
+COPY_REPO="appvillis-com/appvillis-hyperframes-agent"
 usage() { echo "usage: fork/export.sh <copy-checkout> [--push]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 DEST="$(cd "$1" && pwd)"; shift

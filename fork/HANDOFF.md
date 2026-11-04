@@ -154,7 +154,7 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 ## Next task
 
 This repository stays where it is (operator, 2026-10-28, thread `3b676949`, message `e1350512`). Since 2026-11-02
-the team has a private copy, `appvillis-com/hyperframes-agent` (operator, 2026-10-30, thread `7913a557`, message
+the team has a private copy, `appvillis-com/appvillis-hyperframes-agent` (operator, 2026-10-30, thread `7913a557`, message
 `0b1fd1e3`): one commit per export of this line, no upstream history. Releases: `fork-v0.8.221-appvillis.1` (`93c768b`,
 sha256 `e5cb424361e7c245a60b5f77dc92acf9129502411eba894e5d8ab8ac779dee2b`) and `fork-v0.8.231-appvillis.1` (`746b7fb`,
 sha256 `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5`) and `fork-v0.9.5-appvillis.1` (`c8d1035`,

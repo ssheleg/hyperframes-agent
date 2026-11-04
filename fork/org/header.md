@@ -1,6 +1,6 @@
-# HyperFrames Agent (this repository)
+# Appvillis HyperFrames Agent (this repository)
 
-This is `appvillis-com/hyperframes-agent`, the team's copy of the HyperFrames Agent line: the HyperFrames engine
+This is `appvillis-com/appvillis-hyperframes-agent`, the team's copy of the HyperFrames Agent line: the HyperFrames engine
 (`heygen-com/hyperframes`, Apache-2.0) at one upstream release plus a few patches. Read
 [`fork/README.md`](fork/README.md) before any change to versions or releases, and [`fork/HANDOFF.md`](fork/HANDOFF.md)
 for the current state.

@@ -10,7 +10,7 @@
 set -euo pipefail
 
 LINE_REPO="ssheleg/hyperframes-agent"
-COPY_REPO="appvillis-com/hyperframes-agent"
+COPY_REPO="appvillis-com/appvillis-hyperframes-agent"
 FETCH=1
 case "${1:-}" in --offline) FETCH=0 ;; "") ;; *) echo "usage: fork/status.sh [--offline]" >&2; exit 2 ;; esac
 cd "$(git rev-parse --show-toplevel)"

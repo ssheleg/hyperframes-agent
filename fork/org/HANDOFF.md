@@ -1,4 +1,4 @@
-# HANDOFF: HyperFrames Agent, team copy
+# HANDOFF: Appvillis HyperFrames Agent, the team copy
 
 ## State (@DATE@)
 

@@ -27,7 +27,7 @@ release of the line and of the copy, the copy's base and any active workflow, an
 
 ## The team copy
 
-`appvillis-com/hyperframes-agent` is a private copy of this line for the team (operator, 2026-10-30, project board
+`appvillis-com/appvillis-hyperframes-agent` (Appvillis HyperFrames Agent; named `hyperframes-agent` until 2026-11-04, when the operator asked every agent going to Appvillis to carry the prefix, board thread `0f7e45aa`) is a private copy of this line for the team (operator, 2026-10-30, project board
 thread `7913a557`); this repository stays where it is. The copy is not a fork (a fork of a public repository cannot be
 private) and carries no upstream history (upstream commit `24965372d` names a person's address). After each release
 of this line:
