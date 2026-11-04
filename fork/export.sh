@@ -27,6 +27,21 @@ case "$(git -C "$DEST" remote get-url origin 2>/dev/null)" in
 esac
 [ -z "$(git -C "$DEST" status --porcelain --untracked-files=no)" ] || { echo "the copy has uncommitted changes" >&2; exit 1; }
 
+# A change made in the copy itself (a commit by anyone but the export's author, or an open pull request) would be
+# replaced by this export without a trace. It goes back to the line first (copy strategy S3, board thread b91254c4).
+EXPORT_EMAIL="r@e.com"
+git -C "$DEST" fetch -q origin main
+git -C "$DEST" merge-base --is-ancestor origin/main HEAD \
+  || { echo "the copy's main is behind origin/main: update the checkout first" >&2; exit 1; }
+FOREIGN="$(git -C "$DEST" log --format='%h %ae %s' HEAD | awk -v e="$EXPORT_EMAIL" '$2 != e' | head -n 20)"
+if [ -n "$FOREIGN" ]; then
+  printf 'the copy has commits that are not exports; take them into the line first:\n%s\n' "$FOREIGN" >&2; exit 1
+fi
+OPEN_PRS="$(gh pr list --repo "$COPY_REPO" --state open --json number,title --jq '.[] | "#\(.number) \(.title)"')"
+if [ -n "$OPEN_PRS" ]; then
+  printf 'the copy has open pull requests; settle them in the line first:\n%s\n' "$OPEN_PRS" >&2; exit 1
+fi
+
 BASE="$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk '!/-/' | head -n1)"
 [ -n "$BASE" ] || { echo "no upstream release tag is merged into HEAD" >&2; exit 1; }
 TODAY="$(date -u +%Y-%m-%d)"
@@ -84,7 +99,8 @@ cp -R "$STAGE/." "$DEST/"
 git -C "$DEST" add -A
 if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this tree"; exit 0; fi
 GIT_AUTHOR_NAME="Робот" GIT_AUTHOR_EMAIL="r@e.com" GIT_COMMITTER_NAME="Робот" GIT_COMMITTER_EMAIL="r@e.com" \
-  git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)"
+  git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)" \
+    -m "Source-Revision: line@$(git rev-parse --short=12 HEAD)"
 log "committed $(git -C "$DEST" rev-parse --short HEAD) in the copy"
 if [ "$PUSH" = 1 ]; then
   git -C "$DEST" push -q origin HEAD:refs/heads/main

@@ -32,7 +32,9 @@ thread `7913a557`); this repository stays where it is. The copy is not a fork (a
 private) and carries no upstream history (upstream commit `24965372d` names a person's address). After each release
 of this line:
 
-1. `fork/export.sh <copy-checkout> --push` writes the line's tree into the copy as one commit on its `main`: no
+1. `fork/export.sh <copy-checkout> --push` writes the line's tree into the copy as one commit on its `main`, with a
+   `Source-Revision: line@<sha12>` line naming the line commit it was built from. It refuses while the copy has a commit
+   by anyone but the export's author or an open pull request (a team change goes back to the line first). No
    workflows, no file an LFS rule covers, no maintenance notes of this line; `fork/org/` supplies the copy's README,
    HANDOFF, NOTICE, `.gitleaks.toml` and the headers of `CLAUDE.md`, `AGENTS.md` and `README.md`.
 2. Audit it with the shared org-transfer-audit, passing each line of `fork/org/audit-allow-literals.txt` (upstream's
