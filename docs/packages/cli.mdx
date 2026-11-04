@@ -1211,7 +1211,7 @@ cover every finding from the full check.
 | `--max-issues`                               | Findings to print or return after static collapse (default 80)                                                              |
 | `--collapse-static` / `--no-collapse-static` | Fold a repeated static finding into one row (default: on)                                                                    |
 | `--tolerance`                                | Allowed overflow in px before reporting (default 2)                                                                         |
-| `--timeout`                                  | Render-ready budget in ms; also raises page navigation above its 10s floor (default 3000)                                   |
+| `--timeout`                                  | Render-ready budget in ms; also raises page navigation above its 10s floor (default 45000, as snapshot and render)                                   |
 | `--no-contrast`                              | Skip the WCAG pass while iterating                                                                                         |
 | `--strict`                                   | Exit non-zero on warnings too (default: errors only)                                                                        |
 | `--caption-zone "<x0=..;y0=..;x1=..;y1=..>"` | Opt-in band gate. Flags a text element's DOM box that overlaps the fractional band. Optional `severity` and `seek`.         |
@@ -1522,9 +1522,10 @@ with the render. It then prints the video's [`measure probe`](#measure) JSON,
 with a `reverse` field: whether you are signed in, the plan (`free`, `pro`, or
 `null` when unknown), the session, and on Free the `upgrade_url` and the
 `subscribe_command` ([`billing subscribe`](#billing) with the feature and session) that credit a
-purchase to this run. It stops the run only when HeyGen blocks it for a Free
-account: it then exits non-zero with that command. Signed out, offline, or
-on a server without the route, it skips the session and still probes.
+purchase to this run (both `null` when HeyGen says no plan can be bought right now). It stops the
+run only when HeyGen blocks it for a Free account: it then exits non-zero with that command, or,
+without one, says a plan can't be purchased right now. Signed out, offline, or on a server without
+the route, it skips the session and still probes.
 
 ```bash
 npx hyperframes reverse start ref.mp4 --dir my-rebuild
@@ -2274,19 +2275,20 @@ allowance or estimate what the next video will cost.
 
 ### `billing`
 
-Opens the HyperFrames plans or credits page in the browser, then waits until the
+Opens the HyperFrames plans page (`subscribe`) or the page to buy add-on credits, which are
+used separately from your plan's monthly credits (`add-credits`), in the browser, then waits until the
 account shows the change, so an agent's run carries on by itself. The page is on
 the web app at hyperframes.studio. `HYPERFRAMES_PLANS_URL` and
 `HYPERFRAMES_CREDITS_URL` point it at another page.
 
 ```bash
 npx hyperframes billing subscribe
-npx hyperframes billing top-up --needed 180
+npx hyperframes billing add-credits --needed 180
 ```
 
 | Flag        | Description                                                                |
 | ----------- | -------------------------------------------------------------------------- |
-| `--needed`  | Credits the waiting step needs; `top-up` waits until the balance covers it |
+| `--needed`  | Credits the waiting step needs; `add-credits` waits until the balance covers it |
 | `--feature` | The feature that sent the person here, so a purchase is credited to it |
 | `--session` | The run to credit the purchase to, with `--feature` |
 | `--tool`    | The step that is waiting, shown on the page                                |
