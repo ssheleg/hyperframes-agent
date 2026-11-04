@@ -39,7 +39,9 @@ publish tarball releases that consumers pin.
   CodeQL fix in its test; on the operator's word the PR's head was force-updated with a lease. The other two fixes wait
   as signed branches for the operator's send instruction: [`upstream-prs.md`](upstream-prs.md).
 - The pinning consumer, Frame Agent, moves its pin in its own repository. On 2026-10-24 it pinned
-  `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
+  `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`); on 2026-11-04 it runs
+  `fork-v0.9.13-sshlg.1` on both of its instances (`main` `ce9ca68`, a live order delivered, its message `3b2bf938`), and
+  its team copy runs `fork-v0.9.13-appvillis.1` on Linux (Ubuntu 24.04), so the line's patches build there. Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
   `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`, `v0.8.231-sshlg.1` is message `d80105a7`, `v0.9.5-sshlg.1` is message
   `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`.
