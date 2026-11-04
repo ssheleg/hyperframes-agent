@@ -33,9 +33,17 @@ EXPORT_EMAIL="r@e.com"
 git -C "$DEST" fetch -q origin main
 git -C "$DEST" merge-base --is-ancestor origin/main HEAD \
   || { echo "the copy's main is behind origin/main: update the checkout first" >&2; exit 1; }
-FOREIGN="$(git -C "$DEST" log --format='%h %ae %s' HEAD | awk -v e="$EXPORT_EMAIL" '$2 != e' | head -n 20)"
+# Only commits since the last export count, and one the line names in a `Backports: <copy-sha>` line of its own history
+# has been taken. The last export is the newest commit by the export's author.
+LAST_EXPORT="$(git -C "$DEST" log -1 --format=%H --author="$EXPORT_EMAIL" HEAD)"
+TAKEN="$(git log --format=%B HEAD | awk '/^Backports:/ { for (i = 2; i <= NF; i++) print $i }')"
+FOREIGN="$(git -C "$DEST" log --format='%H %ae %s' "${LAST_EXPORT:+$LAST_EXPORT..}HEAD" \
+  | awk -v e="$EXPORT_EMAIL" '$2 != e' | while read -r sha rest; do
+      printf '%s\n' "$TAKEN" | grep -qE "^${sha:0:7}" || printf '%s %s\n' "${sha:0:12}" "$rest"
+    done)"
 if [ -n "$FOREIGN" ]; then
-  printf 'the copy has commits that are not exports; take them into the line first:\n%s\n' "$FOREIGN" >&2; exit 1
+  printf 'the copy has commits made since the last export; take each into the line and name it in a\n"Backports: <sha>" line of the commit that does, then export again:\n%s\n' "$FOREIGN" >&2
+  exit 1
 fi
 OPEN_PRS="$(gh pr list --repo "$COPY_REPO" --state open --json number,title --jq '.[] | "#\(.number) \(.title)"')"
 if [ -n "$OPEN_PRS" ]; then

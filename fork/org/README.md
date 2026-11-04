@@ -17,8 +17,8 @@ The export leaves out:
   `.gitattributes` carries no LFS rules here, so nothing in this repository goes to an LFS store.
 
 Make a change in the line, not here. The export refuses to run while this repository has a commit by anyone but the
-export's author, or an open pull request, so a change made here is never overwritten in silence: it waits until the
-line has taken it. Take a fix to the line's maintainers on the project board. Each export commit names the line commit it
+export's author since the last export, or an open pull request, so a change made here is never overwritten in silence:
+it waits until the line has taken it and named it in a `Backports: <sha>` line. Take a fix to the line's maintainers on the project board. Each export commit names the line commit it
 was built from in a `Source-Revision:` line.
 
 [`line.env`](line.env) names the upstream release this tree is (`LINE_BASE`), the test files of the patches
