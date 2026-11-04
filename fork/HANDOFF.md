@@ -12,11 +12,12 @@ publish tarball releases that consumers pin.
   workflow is disabled (repository settings). Four that later upstream releases added had run here unnoticed
   (`lambda-arm64-image`, `lambda-sam-template`, `player-safari`, and `windows-window-probe` from `v0.8.221`);
   they were disabled on 2026-10-30 and a running one cancelled. The door audit now lists added workflow files.
-- `main` = upstream `v0.9.12` (merge `15dc2bc03`) + two patches + `fork/`. `git diff v0.9.12 main -- . ':!fork'` shows
+- `main` = upstream `v0.9.13` (merge `fdfd05e84`) + two patches + `fork/`. `git diff v0.9.13 main -- . ':!fork'` shows
   exactly what we carry: the speech patch (`packages/cli/src/tts/`) and the Node 26 / macOS patch with its watcher test
   fixes (`packages/cli/src/server/fileWatcher*`, `utils/projectLock.test.ts`, `whisper/sherpa.test.ts`), plus our
   header in `CLAUDE.md`, `AGENTS.md` and `README.md`. `upstream` mirrors HeyGen's `main`.
-- Latest release `fork-v0.9.12-sshlg.1` (table below), a clean merge although upstream touched the speech patch's
+- Latest release `fork-v0.9.13-sshlg.1` (table below), a clean merge, built from scratch after the 2026-11-04 cleanup
+  removed `node_modules` and build outputs. Before it `fork-v0.9.12-sshlg.1`, a clean merge although upstream touched the speech patch's
   `tts/synthesize.ts` (`makeOutputFolder` for the output folder, #7151); the 41 speech tests pass. Before it
   `fork-v0.9.11-sshlg.1`, a clean merge; its first two push attempts failed during a GitHub
   incident (Git Operations degraded, 2026-11-04), and a watcher on githubstatus.com ran it once it cleared. Before it
@@ -41,7 +42,7 @@ publish tarball releases that consumers pin.
   `fork-v0.8.192-sshlg.1` (`ssheleg/frame-agent` `main` `e7a61cd7a`, `package.json`). Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
   `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`, `v0.8.231-sshlg.1` is message `d80105a7`, `v0.9.5-sshlg.1` is message
-  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`.
+  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`.
 
 ## Patches
 
@@ -100,6 +101,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.13-sshlg.1`  | `fdfd05e84` | 2026-11-04 | `cd73bc5614c3dce16d6eba5b278ce6af001d0a60f500912e2c7175a7bc545b5d` |
 | `fork-v0.9.12-sshlg.1`  | `15dc2bc03` | 2026-11-04 | `466203881c4ce473c5d123f577a4b40018f989b7c8caa6275db2407fafe29ddc` |
 | `fork-v0.9.11-sshlg.1`  | `96165a7ad` | 2026-11-04 | `b81ca2ac3765df6d611fd130b28e1a1c333c982f3861342881dfb0903b0dc16f` |
 | `fork-v0.9.10-sshlg.1`  | `ccfd9e3e6` | 2026-11-04 | `a48e6e56231bc5ef46c970caecdaecdf6526c75378d8b9814bd328dfac42ccdc` |
@@ -153,6 +155,7 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.9.9..v0.9.10`    | `billing top-up` is renamed `add-credits` with no alias. `billing` shows the price and on Enter creates a Stripe checkout with HeyGen and opens it in a browser (`commands/billing.ts:56`, `heygen/plan.ts:175`); the payment itself is the person's, in the browser, and without a terminal it only prints the checkout link (`billing.ts:50`). `CLAUDE_CONFIG_DIR` locates Claude Code's global skills (`utils/skillsManifest.ts:397`). `templates pull` unpacks from memory through `tar` and reuses only a template it pulled. No new commands, outliving children, workflows or run-time installs. Skills: 6 files.                                                                                                                                                                                                                                       |
 | `v0.9.10..v0.9.11`   | New command `update`: `--check` only reports; without it, it reinstalls the CLI the way it was installed (`upgradeRunningCli`, `commands/update.ts:122`; npm, brew or the project's lockfile, `utils/installerDetection.ts`) and updates skills, and unattended without `--yes` it asks for a person (`update.ts:238`). For this line `update --yes` after the next upstream release would replace the line's build with npm's, so consumers should forbid it with `upgrade`. New `media-use voices --limit`; a credit limit the person names now holds on every paid media call (`skills/media-use/scripts/lib/credit-limit.mjs`). `HYPERFRAMES_PLUGIN_VERSION`. No outliving children or workflows.                                                                                                                                                          |
 | `v0.9.11..v0.9.12`   | Nothing for a confining consumer: no new commands, flags, environment variables, children, network calls, workflows or run-time installs. A render whose page never becomes ready fails once with a plain reason. Skills: 15 files; they no longer tell the agent to install, update or remove skills (#7102).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `v0.9.12..v0.9.13`   | New command `media-use avatars --limit`: the avatar looks on the HyperFrames account, signed in only (`heygen/avatars.ts:75`). Network failures name the host (`utils/networkFailure.ts`, a wrapper around `fetch`, no new host). The desktop-app hint is no longer printed under CI or a pipe unless `HYPERFRAMES_AGENT=1` (`utils/desktopApp.ts`). No new environment variables, outliving children, workflows or run-time installs. Skills: 5 files.                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Next task
 
@@ -172,8 +175,8 @@ sha256 `eeaecc1025606b7fd38222d738260b48c7f8e8f97a8141f692556f0785b8b00d`); shar
 download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.9.12`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.9.12 v<new>`, add its findings to the table above and the release to the release table, and
+1. Upstream releases after `v0.9.13`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+   `fork/door-audit.sh v0.9.13 v<new>`, add its findings to the table above and the release to the release table, and
    post them to the consumer on the board (thread `b4d4f898`). The release disables any workflow the merge added
    (`fork/workflows-guard.sh`). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
    shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
