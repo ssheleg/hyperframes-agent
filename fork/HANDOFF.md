@@ -71,6 +71,9 @@ publish tarball releases that consumers pin.
 
 ## Tooling (2026-11-02)
 
+- Copy strategy S2/S3 (board thread `b91254c4`, accepted by the coordinator on 2026-11-04): `fork/export.sh` writes
+  `Source-Revision: line@<sha12>` into each export commit and refuses while the copy has a commit by anyone but the
+  export's author or an open pull request (`2766d1de3`; checked both ways on a local commit, then reset).
 - `fork/status.sh` reads both lines at once and names the next step (exit 10 when one is due). Its first run found
   upstream `v0.9.0` to `v0.9.5` not merged, taken the same day.
 - `fork/workflows-guard.sh` disables active workflows and cancels their runs; `fork/release.sh --publish` runs it after
