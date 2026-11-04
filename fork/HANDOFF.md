@@ -73,6 +73,9 @@ publish tarball releases that consumers pin.
 
 ## Tooling (2026-11-02)
 
+- The copy carries the Appvillis prefix (operator, board thread `0f7e45aa`, 2026-11-04): renamed on GitHub to
+  `appvillis-com/appvillis-hyperframes-agent`, titled Appvillis HyperFrames Agent (`2d486260c`, copy `4e9cefd`, org-index
+  `954a4ad`, consumers told in `7913a557`, message `3c45c47d`). Its local checkout's origin points at the new name.
 - Copy strategy S2/S3 (board thread `b91254c4`, accepted by the coordinator on 2026-11-04): `fork/export.sh` writes
   `Source-Revision: line@<sha12>` into each export commit and refuses while the copy has a commit by anyone but the
   export's author or an open pull request (`2766d1de3`; checked both ways on a local commit, then reset).
