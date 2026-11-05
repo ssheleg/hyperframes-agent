@@ -13,7 +13,7 @@ FROM="$1"; TO="$2"
 cd "$(git rev-parse --show-toplevel)"
 for t in "$FROM" "$TO"; do git rev-parse -q --verify "refs/tags/$t" >/dev/null || { echo "no tag $t (git fetch upstream --tags)" >&2; exit 2; }; done
 
-SHIPPED=(packages ':(exclude)**/*.test.ts' ':(exclude)**/*.fixture.ts' ':(exclude)**/tests/**' ':(exclude)**/test/**' ':(exclude)**/*.spec.ts' ':(exclude)**/__goldens__/**')
+SHIPPED=(packages ':(exclude)**/*.test.ts' ':(exclude)**/*.test.tsx' ':(exclude)**/*.test.mjs' ':(exclude)**/*.test.js' ':(exclude)**/*.fixture.ts' ':(exclude)**/tests/**' ':(exclude)**/test/**' ':(exclude)**/*.spec.ts' ':(exclude)**/__goldens__/**')
 added() { git diff "$FROM" "$TO" -- "${SHIPPED[@]}" | awk '/^\+\+\+ b\//{f=substr($0,7)} /^\+[^+]/{print f": "substr($0,2)}'; }
 section() { printf '\n## %s\n' "$1"; }
 

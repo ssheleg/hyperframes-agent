@@ -7,7 +7,8 @@ publish tarball releases that consumers pin.
 
 ## State (2026-11-05)
 
-- `main` carries upstream `v0.9.15` (merge `5ceec4b00`, clean; upstream touched only `projectLock.test.ts` among the
+- `main` carries upstream `v0.9.16` (merge, clean; released as `fork-v0.9.16-sshlg.1`, `9470648c8`, 79 of 79, the
+  same day as the one below). Before it upstream `v0.9.15` (merge `5ceec4b00`, clean; upstream touched only `projectLock.test.ts` among the
   patched files and the patch survives). Released as `fork-v0.9.15-sshlg.1` (`42cbd37ea`, table below): the first check
   run failed only the three watcher tests under a busy `fseventsd`; after `release.sh` began waiting for three calm
   readings, the publish run, started once the disk had 8 GB free (the estate's rule for release builds, board thread
@@ -53,7 +54,7 @@ publish tarball releases that consumers pin.
   its team copy runs `fork-v0.9.13-appvillis.1` on Linux (Ubuntu 24.04), so the line's patches build there. Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
   `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`, `v0.8.231-sshlg.1` is message `d80105a7`, `v0.9.5-sshlg.1` is message
-  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`, `v0.9.15-sshlg.1` is message `ed34a776`.
+  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`, `v0.9.15-sshlg.1` is message `ed34a776`, `v0.9.16-sshlg.1` is message `700ca361`.
 
 ## Patches
 
@@ -116,6 +117,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.16-sshlg.1`  | `9470648c8` | 2026-11-05 | `089177194604f68ba2ecef94a55e545eeea0e270646528f2936e377c3d1d25d9` |
 | `fork-v0.9.15-sshlg.1`  | `42cbd37ea` | 2026-11-05 | `0862b49c5fe0384c00087b4b74ebaa31fe06e11345269c35bd302def31c010fa` |
 | `fork-v0.9.13-sshlg.1`  | `fdfd05e84` | 2026-11-04 | `cd73bc5614c3dce16d6eba5b278ce6af001d0a60f500912e2c7175a7bc545b5d` |
 | `fork-v0.9.12-sshlg.1`  | `15dc2bc03` | 2026-11-04 | `466203881c4ce473c5d123f577a4b40018f989b7c8caa6275db2407fafe29ddc` |
@@ -173,6 +175,7 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.9.11..v0.9.12`     | Nothing for a confining consumer: no new commands, flags, environment variables, children, network calls, workflows or run-time installs. A render whose page never becomes ready fails once with a plain reason. Skills: 15 files; they no longer tell the agent to install, update or remove skills (#7102).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `v0.9.12..v0.9.13`     | New command `media-use avatars --limit`: the avatar looks on the HyperFrames account, signed in only (`heygen/avatars.ts:75`). Network failures name the host (`utils/networkFailure.ts`, a wrapper around `fetch`, no new host). The desktop-app hint is no longer printed under CI or a pipe unless `HYPERFRAMES_AGENT=1` (`utils/desktopApp.ts`). No new environment variables, outliving children, workflows or run-time installs. Skills: 5 files.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `v0.9.13..v0.9.15`     | Local renders take a lock, one at a time per user account (#7168): a second `render` waits for the first (`--wait`, the default) or fails at once with `--no-wait`; `HYPERFRAMES_RENDER_LOCK=off` lets them run side by side (`utils/renderLock.ts:49`). The lock is `render.lock` in the CLI cache (`hyperframesCacheDir("locks")`, `renderLock.ts:47`), so a consumer that runs two renders in parallel under one account now gets them in turn unless it sets the variable. New flag `billing --skill`: the pricing link names the skill that sent the person (`heygen/plan.ts`, `from=cli`, `utm_source=cli`; same HeyGen billing host). Cloud render packs the system fonts a project uses into its zip (#7165). No new outliving children, workflows or run-time installs. Skills: 13 files. The audit missed `HYPERFRAMES_RENDER_LOCK` (read from an `env` parameter, not `process.env`); `door-audit.sh` now reads every `env.X`, `env?.X` and `env["X"]`. |
+| `v0.9.15..v0.9.16`     | Every settings file follows `HYPERFRAMES_CONFIG_DIR` (#7229), and previews and every per-user cache follow `HYPERFRAMES_CACHE_DIR` (#7224), so a consumer that confines the engine with them now holds all of it there. New flag `--lint-verbose` (`check`, `lint`); `render` prints `reference_background` as an `@hf-result` line and in batch manifest rows (#7203); `capture` retries a refused screenshot once. The environment section lists `HYPERFRAMES_CATALOG_ARTIFACT_DIR` and `HYPERFRAMES_STDOUT_IS_TTY` only because their lines moved; both were read in `v0.9.15`. No new commands, hosts, outliving children, workflows or run-time installs. Skills: 14 files. The audit now leaves out `.test.mjs`, `.test.js` and `.test.tsx` files, which it had listed as shipped code.                                                                                                                                                                      |
 | correction, 2026-11-05 | Run with that pattern over `v0.8.184..v0.9.13`, the audit adds what the earlier reports missed: the CLI writes the signed-in HeyGen token into a child's environment as `HEYGEN_ACCESS_TOKEN` (and removes it when not signed in, `auth/media-environment.ts:53`), and the render tuning switches `HF_DE_PARALLEL_STREAM`, `HF_DE_SINGLE_MIN_FRAMES` and `PRODUCER_EXPERIMENTAL_FAST_CAPTURE` (`producer/src/services/renderOrchestrator.ts`, all opt-in).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Next task
@@ -197,8 +200,8 @@ list 0 over the line's files, gitleaks 0); shared audit
 download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.9.15`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.9.15 v<new>`, add its findings to the table above and the release to the release table, and
+1. Upstream releases after `v0.9.16`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+   `fork/door-audit.sh v0.9.16 v<new>`, add its findings to the table above and the release to the release table, and
    post them to the consumer on the board (thread `b4d4f898`). The release disables any workflow the merge added
    (`fork/workflows-guard.sh`). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
    shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
