@@ -7,7 +7,7 @@ patches. It exists so that team agents can install the engine from the organisat
 ## How the copy is refreshed
 
 The line itself is maintained outside this organisation. After each of its releases its export script writes the
-whole tree here as one new commit on `main` (author `Робот <r@e.com>`), fast-forward only; `main` is never rewritten.
+whole tree here as one new commit on `main` (author `appvillis-hyperframes-agent <appvillis-hyperframes-agent@users.noreply.github.com>`; exports up to 2026-11-05 carry `Робот <r@e.com>`), fast-forward only; `main` is never rewritten.
 The export leaves out:
 
 - upstream's Git history and the line's own maintenance notes;

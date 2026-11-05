@@ -29,16 +29,20 @@ esac
 
 # A change made in the copy itself (a commit by anyone but the export's author, or an open pull request) would be
 # replaced by this export without a trace. It goes back to the line first (copy strategy S3, board thread b91254c4).
-EXPORT_EMAIL="r@e.com"
+# The export's author is a service identity (copy rule S2, board thread 86a85968). Exports up to 2026-11-05 were
+# authored `Робот <r@e.com>`; they still count as exports, and the copy's history is never rewritten.
+EXPORT_NAME="appvillis-hyperframes-agent"
+EXPORT_EMAIL="appvillis-hyperframes-agent@users.noreply.github.com"
+LEGACY_EXPORT_EMAIL="r@e.com"
 git -C "$DEST" fetch -q origin main
 git -C "$DEST" merge-base --is-ancestor origin/main HEAD \
   || { echo "the copy's main is behind origin/main: update the checkout first" >&2; exit 1; }
 # Only commits since the last export count, and one the line names in a `Backports: <copy-sha>` line of its own history
 # has been taken. The last export is the newest commit by the export's author.
-LAST_EXPORT="$(git -C "$DEST" log -1 --format=%H --author="$EXPORT_EMAIL" HEAD)"
+LAST_EXPORT="$(git -C "$DEST" log -1 --format=%H --author="$EXPORT_EMAIL" --author="$LEGACY_EXPORT_EMAIL" HEAD)"
 TAKEN="$(git log --format=%B HEAD | awk '/^Backports:/ { for (i = 2; i <= NF; i++) print $i }')"
 FOREIGN="$(git -C "$DEST" log --format='%H %ae %s' "${LAST_EXPORT:+$LAST_EXPORT..}HEAD" \
-  | awk -v e="$EXPORT_EMAIL" '$2 != e' | while read -r sha rest; do
+  | awk -v e="$EXPORT_EMAIL" -v l="$LEGACY_EXPORT_EMAIL" '$2 != e && $2 != l' | while read -r sha rest; do
       printf '%s\n' "$TAKEN" | grep -qE "^${sha:0:7}" || printf '%s %s\n' "${sha:0:12}" "$rest"
     done)"
 if [ -n "$FOREIGN" ]; then
@@ -106,7 +110,7 @@ git -C "$DEST" ls-files -z | (cd "$DEST" && xargs -0 rm -f)
 cp -R "$STAGE/." "$DEST/"
 git -C "$DEST" add -A
 if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this tree"; exit 0; fi
-GIT_AUTHOR_NAME="Робот" GIT_AUTHOR_EMAIL="r@e.com" GIT_COMMITTER_NAME="Робот" GIT_COMMITTER_EMAIL="r@e.com" \
+GIT_AUTHOR_NAME="$EXPORT_NAME" GIT_AUTHOR_EMAIL="$EXPORT_EMAIL" GIT_COMMITTER_NAME="$EXPORT_NAME" GIT_COMMITTER_EMAIL="$EXPORT_EMAIL" \
   git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)" \
     -m "Source-Revision: line@$(git rev-parse --short=12 HEAD)"
 log "committed $(git -C "$DEST" rev-parse --short HEAD) in the copy"
