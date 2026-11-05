@@ -16,3 +16,7 @@
 /home/someone/
 /home/tester/
 /home/u/
+# The author credit of a public shader algorithm in upstream's vendored three-path-tracer (registry/examples/
+# path-traced-3d, since v0.9.16): verbatim in the base tag, attribution that must travel with the code.
+me@michelemorrone.eu
+brutpitt@gmail.com
