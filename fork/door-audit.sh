@@ -38,8 +38,10 @@ git diff "$FROM" "$TO" -- packages/cli/src/commands ':(exclude)**/*.test.ts' ':(
 ' | sort -u
 
 section "Environment variables read in shipped code"
-added | grep -oE '^[^:]+: .*(process\.env\.[A-Z][A-Z0-9_]+|env\[["'"'"'][A-Z][A-Z0-9_]+["'"'"']\])' \
-  | sed -E 's/^([^:]+): .*(process\.env\.|env\[["'"'"'])([A-Z][A-Z0-9_]+).*/\3  (\1)/' | sort -u || true
+# Any `env.X`, `env?.X` or `env["X"]`: process.env, and an `env` parameter (renderLock.ts reads
+# `env.HYPERFRAMES_RENDER_LOCK` from one, which a `process.env.` pattern missed in v0.9.14).
+added | grep -oE '^[^:]+: .*(^|[^[:alnum:]_])env(\??\.[A-Z][A-Z0-9_]+|\[["'"'"'][A-Z][A-Z0-9_]+["'"'"']\])' \
+  | sed -E 's/^([^:]+): .*env(\??\.|\[["'"'"'])([A-Z][A-Z0-9_]+).*/\3  (\1)/' | sort -u || true
 # Names kept in a constant and read through process.env[name] elsewhere (const URL_ENV = "HYPERFRAMES_...").
 added | grep -E '^[^:]+: .*(env|ENV).*["'"'"'][A-Z][A-Z0-9]*_[A-Z0-9_]+["'"'"']' \
   | sed -E 's/^([^:]+): .*["'"'"']([A-Z][A-Z0-9]*_[A-Z0-9_]+)["'"'"'].*/\2  (\1, named in a constant)/' | sort -u || true

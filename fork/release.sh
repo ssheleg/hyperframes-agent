@@ -95,15 +95,25 @@ grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not
 
 # The watcher tests run on the real file system, and FSEvents delivers nothing for 15 s while fseventsd is busy
 # (fork/HANDOFF.md, "Watcher tests under load"). Its own CPU is the signal, not the load average: wait for it.
+# One reading under the limit is not enough: on 2026-11-05 the tests started on one, fseventsd went back to 100%
+# within seconds and three watcher tests heard nothing. So it takes FSEVENTSD_CALM_SAMPLES readings in a row, 10 s apart.
 wait_for_fseventsd() {
   [ "$(uname -s)" = Darwin ] || return 0
-  local limit="${FSEVENTSD_MAX_CPU:-60}" deadline=$((SECONDS + ${FSEVENTSD_WAIT_SECONDS:-1800})) cpu
+  local limit="${FSEVENTSD_MAX_CPU:-60}" calm_needed="${FSEVENTSD_CALM_SAMPLES:-3}" calm=0
+  local deadline=$((SECONDS + ${FSEVENTSD_WAIT_SECONDS:-1800})) cpu
   while :; do
     cpu="$(ps -Ao pcpu=,comm= | awk '$2 ~ /fseventsd$/ { s += $1 } END { printf "%d", s }')"
-    [ "$cpu" -lt "$limit" ] && return 0
-    [ "$SECONDS" -lt "$deadline" ] || { echo "fseventsd still at ${cpu}% CPU (limit ${limit}%); the watcher tests would fail" >&2; return 1; }
-    log "fseventsd at ${cpu}% CPU, waiting for it to fall under ${limit}%"
-    sleep 30
+    if [ "$cpu" -lt "$limit" ]; then
+      calm=$((calm + 1))
+      [ "$calm" -ge "$calm_needed" ] && return 0
+    else
+      calm=0
+    fi
+    [ "$SECONDS" -lt "$deadline" ] || { echo "fseventsd still at ${cpu}% CPU (limit ${limit}%, ${calm} of ${calm_needed} calm readings); the watcher tests would fail" >&2; return 1; }
+    if [ "$calm" -gt 0 ]; then sleep 10; else
+      log "fseventsd at ${cpu}% CPU, waiting for it to stay under ${limit}% for ${calm_needed} readings"
+      sleep 30
+    fi
   done
 }
 
