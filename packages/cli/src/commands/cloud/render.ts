@@ -43,6 +43,7 @@ import {
 } from "@hyperframes/core";
 import { c } from "../../ui/colors.js";
 import { errorBox, formatBytes, formatDuration } from "../../ui/format.js";
+import { describeUnresolvedFontUse } from "../../cloud/fontFailure.js";
 import { resolveDefaultFpsArg } from "../../utils/renderArgs.js";
 import { resolveProject, type ProjectDir } from "../../utils/project.js";
 import { readProjectConfig } from "../../utils/projectConfig.js";
@@ -72,6 +73,7 @@ import {
   pollUntilTerminal,
 } from "../../cloud/index.js";
 import { reportApiError } from "../../cloud/errors.js";
+import { describeUnresolvedFonts, embedSystemFonts } from "../../cloud/fontPreflight.js";
 import { parseEnumFlag, parseIntFlag, parseNumericFlag } from "../../cloud/parsing.js";
 import { uploadAssetViaDirectUpload, uploadZipViaDirectUpload } from "../../cloud/upload.js";
 import {
@@ -347,7 +349,7 @@ export default defineCommand({
     });
 
     if (detail.status === "failed") {
-      handleFailedRender(detail, asJson);
+      handleFailedRender(detail, asJson, project.kind === "dir" ? (project.dir ?? ".") : undefined);
     }
 
     if (!detail.video_url) {
@@ -669,6 +671,16 @@ async function prepareLocalArchive(
     console.log(`${c.accent("◆")}  Zipping ${c.accent(project.name)}`);
   }
   const { fileMap, entryPath } = stageProjectFiles(project, composition);
+  const missingFonts = await embedSystemFonts({
+    dir: project.dir,
+    entryFile: composition,
+    entryPath,
+    fileMap,
+  });
+  if (missingFonts.length > 0) {
+    errorBox("Fonts not on this computer", describeUnresolvedFonts(missingFonts));
+    failCommand();
+  }
   const offloaded = await offloadMedia(project, fileMap, entryPath, asJson, upload, variablesText);
 
   // Media left on disk barely compresses: past the limit, its size is the report and nothing is read.
@@ -1011,14 +1023,22 @@ function formatTickLine(detail: HyperframesRenderDetail, elapsedMs: number): str
 // Terminal handlers
 // ---------------------------------------------------------------------------
 
-function handleFailedRender(detail: HyperframesRenderDetail, asJson: boolean): never {
+function handleFailedRender(
+  detail: HyperframesRenderDetail,
+  asJson: boolean,
+  projectDir?: string,
+): never {
   if (asJson) {
     console.log(JSON.stringify(withMeta({ render: detail }), null, 2));
     failCommand();
   }
+  const fontUse =
+    projectDir && detail.failure_message
+      ? describeUnresolvedFontUse(detail.failure_message, projectDir)
+      : undefined;
   errorBox(
     "Render failed",
-    detail.failure_message ?? "(no failure_message returned)",
+    [detail.failure_message ?? "(no failure_message returned)", fontUse].filter(Boolean).join("\n"),
     `Inspect: hyperframes cloud get ${detail.render_id}`,
   );
   failCommand();
