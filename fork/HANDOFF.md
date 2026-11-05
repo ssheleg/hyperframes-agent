@@ -8,11 +8,11 @@ publish tarball releases that consumers pin.
 ## State (2026-11-05)
 
 - `main` carries upstream `v0.9.15` (merge `5ceec4b00`, clean; upstream touched only `projectLock.test.ts` among the
-  patched files and the patch survives). `fork-v0.9.15-sshlg.1` is not published yet: its check run failed only the
-  three watcher tests under a busy `fseventsd`, and a rerun waits for 8 GB free on the disk (the estate's rule for
-  release builds, board thread `b91254c4`) and a calm `fseventsd`. The team copy was rechecked on 2026-11-05 for the
-  operator's personal markers (word list over the tree and all 11 commits, gitleaks over the history): 0 (board
-  message `e50da555`).
+  patched files and the patch survives). Released as `fork-v0.9.15-sshlg.1` (`42cbd37ea`, table below): the first check
+  run failed only the three watcher tests under a busy `fseventsd`; after `release.sh` began waiting for three calm
+  readings, the publish run, started once the disk had 8 GB free (the estate's rule for release builds, board thread
+  `b91254c4`), passed 79 of 79. The team copy was rechecked on 2026-11-05 for the operator's personal markers (word
+  list over the tree and all 11 commits, gitleaks over the history): 0 (board message `e50da555`).
 
 ## State (2026-11-02, evening)
 
@@ -53,7 +53,7 @@ publish tarball releases that consumers pin.
   its team copy runs `fork-v0.9.13-appvillis.1` on Linux (Ubuntu 24.04), so the line's patches build there. Every release is announced to it
   on the project board, thread `b4d4f898`, with its door audit; `v0.8.193-sshlg.1` is message `7b997544`,
   `v0.8.198-sshlg.1` is message `d9a91a4f`, `v0.8.206-sshlg.1` is message `1368c271`, `v0.8.210-sshlg.1` is message `1befaec4`, `v0.8.221-sshlg.1` is message `a0f6b927`, `v0.8.231-sshlg.1` is message `d80105a7`, `v0.9.5-sshlg.1` is message
-  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`.
+  `86579635`, `v0.9.8-sshlg.1` is message `df1eb3a2`, `v0.9.9-sshlg.1` is message `f1e3e2b3`, `v0.9.10-sshlg.1` is message `4f9bb9ec`, `v0.9.11-sshlg.1` is message `c1b84a77`, `v0.9.12-sshlg.1` is message `15cb59f9`, `v0.9.13-sshlg.1` is message `4fd9d660`, `v0.9.15-sshlg.1` is message `ed34a776`.
 
 ## Patches
 
@@ -116,6 +116,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.15-sshlg.1`  | `42cbd37ea` | 2026-11-05 | `0862b49c5fe0384c00087b4b74ebaa31fe06e11345269c35bd302def31c010fa` |
 | `fork-v0.9.13-sshlg.1`  | `fdfd05e84` | 2026-11-04 | `cd73bc5614c3dce16d6eba5b278ce6af001d0a60f500912e2c7175a7bc545b5d` |
 | `fork-v0.9.12-sshlg.1`  | `15dc2bc03` | 2026-11-04 | `466203881c4ce473c5d123f577a4b40018f989b7c8caa6275db2407fafe29ddc` |
 | `fork-v0.9.11-sshlg.1`  | `96165a7ad` | 2026-11-04 | `b81ca2ac3765df6d611fd130b28e1a1c333c982f3861342881dfb0903b0dc16f` |
@@ -194,8 +195,8 @@ sha256 `4f27c68a969c1dd441a0c176ed33791b1d8a58590522ea0d9447446e782a754f`, the f
 download of a private release answers 404; it moves to a new release by replacing that file (its message `091eca5f`). Its
 checkout is `~/DATA/_worktrees/hyperframes-agent-org`. How it is refreshed: fork/README.md, "The team copy".
 
-1. Upstream releases after `v0.9.13`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
-   `fork/door-audit.sh v0.9.13 v<new>`, add its findings to the table above and the release to the release table, and
+1. Upstream releases after `v0.9.15`: `fork/status.sh` names them. Read the new tags' commits and take the latest (fork/README.md, "Taking an upstream release"), then `fork/release.sh 1 --publish`, run
+   `fork/door-audit.sh v0.9.15 v<new>`, add its findings to the table above and the release to the release table, and
    post them to the consumer on the board (thread `b4d4f898`). The release disables any workflow the merge added
    (`fork/workflows-guard.sh`). Then refresh the team copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push`, the
    shared audit to `ready`, `fork/release.sh 1 --publish` in the copy's checkout, and tell its consumers in thread
