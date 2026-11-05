@@ -41,49 +41,91 @@ function priceLine(
 
 const WAIT_TIMEOUT_EXIT = 124;
 
+function refuseUnreadCheckout(): null {
+  console.error(
+    c.error(
+      "Could not read this account's plan, so no checkout opens from here. Finish on the page.",
+    ),
+  );
+  return null;
+}
+
 type CheckoutSource = { skill?: string; baseline?: number };
+
+type AtEnter = () => Promise<{ covered: true } | { covered: false; missing?: number }>;
 
 async function openCheckout(
   kind: "plans" | "credits",
   offer: Offer,
   missing: number | undefined,
   signal: AbortSignal,
-  source: CheckoutSource,
+  source: CheckoutSource & { atEnter: AtEnter; needed?: number },
 ): Promise<void> {
+  const { atEnter, needed, ...from } = source;
   if (isUnattended()) {
-    console.log(`Checkout link: ${c.accent(await createCheckout(kind, offer, missing, source))}`);
+    const link = await createCheckout(kind, offer, missing, { ...from, stop: signal });
+    if (!signal.aborted) console.log(`Checkout link: ${c.accent(link)}`);
     return;
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    await rl.question("Press Enter to pay ", { signal });
+    await rl.question("Press Enter to pay here (not if you already paid on the page) ", { signal });
   } finally {
     rl.close();
   }
-  await openBrowser(await createCheckout(kind, offer, missing, source));
+  if (signal.aborted) return;
+  const fresh = await atEnter();
+  if (signal.aborted) return;
+  if (fresh.covered) {
+    console.log("The page has taken the payment, so no second checkout opens.");
+    return;
+  }
+  const line = priceLine(kind, offer, fresh.missing, needed);
+  if (line && line !== priceLine(kind, offer, missing, needed)) console.log(line);
+  const link = await createCheckout(kind, offer, fresh.missing, { ...from, stop: signal });
+  if (!signal.aborted) await openBrowser(link);
 }
 
 async function offerCheckout(
   kind: "plans" | "credits",
-  before: Plan | null,
+  before: Plan,
   signal: AbortSignal,
   needed: number | undefined,
   source: CheckoutSource,
+  done: (p: Plan | null) => boolean,
 ): Promise<CheckoutError | null> {
-  const offer = await readOffer();
-  const missing = needed ? needed - (before?.credits ?? 0) : undefined;
+  const offer = await readOffer(signal);
+  if (signal.aborted) return null;
+  const shortBy = (p: Plan) => (needed ? needed - p.credits : undefined);
+  const missing = shortBy(before);
   const line = priceLine(kind, offer, missing, needed);
   if (line) console.log(line);
+  const atEnter: AtEnter = async () => {
+    const now = await readPlan(signal);
+    if (done(now)) return { covered: true };
+    return { covered: false, missing: now ? shortBy(now) : missing };
+  };
   try {
-    await openCheckout(kind, offer, missing, signal, source);
+    await openCheckout(kind, offer, missing, signal, { ...source, atEnter, needed });
     return null;
   } catch (error) {
-    if (signal.aborted) return null;
-    console.error(c.error(error instanceof Error ? error.message : String(error)));
-    if (!(error instanceof CheckoutError)) return null;
-    trackBillingCheckoutFailed({ reason: error.reason });
-    return error;
+    return signal.aborted ? null : reportCheckoutFailure(error);
   }
+}
+
+async function readPlanBefore(stop: AbortSignal): Promise<Plan | null> {
+  for (let attempt = 1; ; attempt++) {
+    const plan = await readPlan(stop);
+    if (plan || attempt === 3 || stop.aborted) return plan;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
+function reportCheckoutFailure(error: unknown): CheckoutError | null {
+  console.error(c.error(error instanceof Error ? error.message : String(error)));
+  if (!(error instanceof CheckoutError)) return null;
+  trackBillingCheckoutFailed({ reason: error.reason });
+  return error;
 }
 
 /** Opens the plans or credits page, then waits until the account shows the change, so the run continues on its own. */
@@ -121,7 +163,11 @@ export default defineCommand({
     }
     const needed = Number(args.needed) || undefined;
     const skill = checkoutSkill(args.skill);
-    const before = await readPlan();
+    const deadline = Date.now() + (Number(args.timeout) || 600) * 1000;
+    const stop = new AbortController();
+    const atDeadline = setTimeout(() => stop.abort(), deadline - Date.now());
+    atDeadline.unref?.();
+    const before = await readPlanBefore(stop.signal);
     const done = (p: Plan | null) =>
       action === "subscribe"
         ? !!p && p.plan !== "none"
@@ -139,24 +185,28 @@ export default defineCommand({
     });
     console.log(`${action === "subscribe" ? "Plans" : "Credits"} page: ${c.accent(url)}`);
     await openBrowser(url);
-    const deadline = Date.now() + (Number(args.timeout) || 600) * 1000;
-    const stop = new AbortController();
     const giveUp = new AbortController();
     const waiting = (async () => {
-      while (Date.now() < deadline && !giveUp.signal.aborted) {
+      while (!stop.signal.aborted && !giveUp.signal.aborted) {
         await new Promise((r) => setTimeout(r, 2000));
-        const now = await readPlan();
+        const now = await readPlan(stop.signal);
         if (done(now)) return now;
       }
       return null;
-    })().finally(() => stop.abort());
-    const checkoutFailure = await offerCheckout(
-      action === "subscribe" ? "plans" : "credits",
-      before,
-      stop.signal,
-      needed,
-      { skill, baseline: before?.credits },
-    );
+    })().finally(() => {
+      clearTimeout(atDeadline);
+      stop.abort();
+    });
+    const checkoutFailure = before
+      ? await offerCheckout(
+          action === "subscribe" ? "plans" : "credits",
+          before,
+          stop.signal,
+          needed,
+          { skill, baseline: before.credits },
+          done,
+        )
+      : refuseUnreadCheckout();
     if (checkoutFailure?.reason === "checkout_unavailable") {
       giveUp.abort();
       failCommand();

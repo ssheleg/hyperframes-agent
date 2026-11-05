@@ -1192,6 +1192,7 @@ npx hyperframes lint [dir] --json
 Errors (`✗`) must be fixed before rendering — a missing adapter library, invalid
 attributes. Warnings (`⚠`) are likely problems. Info (`ℹ`) notices are hidden
 unless you pass `--verbose`, which keeps output clean for agents and CI.
+`--lint-verbose`, which `render`, `preview` and `publish` use for the same wish, works here and on `check` too.
 `--json` adds `errorCount`, `warningCount`, `infoCount`, and a `findings` array.
 
 The linter catches missing attributes, missing adapter libraries (GSAP, Lottie,
@@ -1562,7 +1563,9 @@ with a `reverse` field: whether you are signed in, the plan (`free`, `pro`, or
 purchase to this run (both `null` when HeyGen says no plan can be bought right now). It stops the
 run only when HeyGen blocks it for a Free account: it then exits non-zero with that command, or,
 without one, says a plan can't be purchased right now. Signed out, offline, or on a server without
-the route, it skips the session and still probes.
+the route, it skips the session and still probes; `--dir` is still created with a
+`hyperframes.json` naming the skill. `init` accepts that folder with the video already in it when
+it is the `--video` it was given.
 
 ```bash
 npx hyperframes reverse start ref.mp4 --dir my-rebuild
@@ -2004,7 +2007,10 @@ default 3); `--json` prints the results as JSON.
 ## Keep the environment healthy
 
 HyperFrames keeps what it downloads and builds (the headless browser, models, optional packages, fonts and project
-history) under `~/.cache/hyperframes`. Set `HYPERFRAMES_CACHE_DIR` to an absolute path to keep it somewhere else.
+history) under `~/.cache/hyperframes`. Set `HYPERFRAMES_CACHE_DIR` to an absolute path to keep it somewhere else;
+background preview records, the registry's manifest cache, the local search model and catalog, and the records of
+what an app already showed then move there too, so a sandbox that only lets the CLI write inside your project can
+run them.
 
 ### `doctor`
 
@@ -2510,7 +2516,7 @@ hyperframes auth logout --yes            # no prompt
 | `HYPERFRAMES_API_KEY` | Alias for `HEYGEN_API_KEY`.                      |
 | `HEYGEN_ACCESS_TOKEN` | OAuth token from a host app; used first, never refreshed. |
 | `HEYGEN_API_URL`      | API base URL (default `https://api.heygen.com`). |
-| `HYPERFRAMES_CONFIG_DIR` | Credentials root (default `~/.hyperframes`). |
+| `HYPERFRAMES_CONFIG_DIR` | Settings root: credentials, telemetry and update settings, project links (default `~/.hyperframes`). |
 | `HYPERFRAMES_ENV` | `prod` (default) or `dev`; `dev` uses a separate credential directory. Hosts and the OAuth client id come from `HEYGEN_API_URL` and `HYPERFRAMES_OAUTH_*`. |
 | `HYPERFRAMES_OAUTH_CLIENT_ID` | Override the selected public OAuth client. |
 

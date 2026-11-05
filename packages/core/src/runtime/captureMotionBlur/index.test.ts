@@ -1,4 +1,7 @@
+import gsap from "gsap";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createGsapAdapter } from "../adapters/gsap";
+import type { RuntimeTimelineLike } from "../types";
 import {
   type CaptureMotionBlurHost,
   captureMotionBlurBusy,
@@ -167,6 +170,35 @@ function textAfterStartingAtHalf(): string {
   initCaptureMotionBlur({ ...h, seek });
   void paintCaptureMotionBlur(0.5, PLAY);
   return text;
+}
+
+function gsapCallsFilm(movesSlider = false) {
+  const { root, el, h } = movingHost({
+    "data-motion-blur": "on",
+    "data-motion-blur-events": "on",
+    "data-motion-blur-shutter": "360",
+  });
+  const label = root.appendChild(document.createElement("p"));
+  label.textContent = "A";
+  const tl = gsap.timeline({ paused: true });
+  tl.to(el, { x: 300, duration: 1, ease: "none" }, 0)
+    .call(() => void (label.textContent = "B"), [], 0.5)
+    .call(() => void label.classList.toggle("on"), [], 0.6);
+  if (movesSlider) tl.call(() => void (el.style.left = el.style.left ? "" : "40px"), [], 0.2);
+  const x = () => Number(gsap.getProperty(el, "x")) + (parseFloat(el.style.left) || 0);
+  el.getBoundingClientRect = () =>
+    ({ left: x(), top: 0, right: x() + 10, bottom: 10, width: 10, height: 10 }) as DOMRect;
+  const adapter = createGsapAdapter({ getTimeline: () => tl as unknown as RuntimeTimelineLike });
+  const seek = vi.fn((t: number, suppressEvents: boolean) =>
+    adapter.seek({ time: t, suppressEvents }),
+  );
+  initCaptureMotionBlur({ ...h, seek });
+  const paintAt = (t: number): string => {
+    seek(t, false);
+    void paintCaptureMotionBlur(t, PLAY);
+    return `${label.textContent}${label.className ? ` ${label.className}` : ""}`;
+  };
+  return Object.assign(paintAt, { seek });
 }
 
 describe("opt-in and off switches", () => {
@@ -637,6 +669,55 @@ describe("wrapping", () => {
     expect(events).toEqual(["quiet:begin", "quiet:end:plain", "seek:0.5:true"]);
   });
 
+  it("keeps the offset of a scrolled container when the root moves in and out of the canvas", () => {
+    installHtmlInCanvas();
+    const { root, h } = movingHost();
+    const list = document.createElement("div");
+    const inner = document.createElement("div");
+    list.append(inner);
+    root.append(list);
+    const offsets = new Map<HTMLElement, [number, number]>([
+      [root, [0, 0]],
+      [list, [0, 0]],
+      [inner, [0, 0]],
+    ]);
+    for (const [el] of offsets) {
+      Object.defineProperties(el, {
+        scrollLeft: {
+          get: () => offsets.get(el)?.[0],
+          set: (v: number) => offsets.set(el, [v, offsets.get(el)?.[1] ?? 0]),
+          configurable: true,
+        },
+        scrollTop: {
+          get: () => offsets.get(el)?.[1],
+          set: (v: number) => offsets.set(el, [offsets.get(el)?.[0] ?? 0, v]),
+          configurable: true,
+        },
+      });
+    }
+    const reset = () => {
+      for (const el of offsets.keys()) offsets.set(el, [0, 0]);
+    };
+    initCaptureMotionBlur({
+      ...h,
+      ignoreMutations: (write) => {
+        write();
+        reset();
+      },
+    });
+    offsets.set(list, [12, 300]);
+    offsets.set(inner, [0, 40]);
+    void paintCaptureMotionBlur(0.5, PLAY);
+    expect(root.parentElement?.tagName).toBe("CANVAS");
+    expect(offsets.get(list)).toEqual([12, 300]);
+    expect(offsets.get(inner)).toEqual([0, 40]);
+    offsets.set(root, [0, 7]);
+    expect(paintCaptureMotionBlur(0.5)).toBeNull();
+    expect(root.parentElement).toBe(document.body);
+    expect(offsets.get(list)).toEqual([12, 300]);
+    expect(offsets.get(root)).toEqual([0, 7]);
+  });
+
   it("does not re-seek when there was nothing to unwrap", () => {
     installHtmlInCanvas();
     const { h } = movingHost();
@@ -1079,6 +1160,27 @@ describe("painting", () => {
   it("leaves a worker starting mid-film the state of the calls behind it, not ahead of it", () => {
     installHtmlInCanvas();
     expect(textAfterStartingAtHalf()).toBe("first");
+  });
+
+  it.each([
+    [[0.3], ["A"]],
+    [[0.55], ["B"]],
+    [[0.7], ["B on"]],
+    [
+      [0.3, 0.7],
+      ["A", "B on"],
+    ],
+  ])("leaves real GSAP calls' DOM as a plain seek does when painting %j", (times, shown) => {
+    installHtmlInCanvas();
+    const paintAt = gsapCallsFilm();
+    expect(times.map(paintAt)).toEqual(shown);
+  });
+
+  it("leaves a call just past the frame unfired after reads that run callbacks", () => {
+    installHtmlInCanvas();
+    const paintAt = gsapCallsFilm(true);
+    expect(paintAt(0.49)).toBe("A");
+    expect(paintAt.seek.mock.calls.some(([t, quiet]) => t > 0.5 && t < 0.51 && !quiet)).toBe(true);
   });
 
   it("fires timeline callbacks during discovery only when the root allows events", () => {
