@@ -62,6 +62,7 @@ import {
 import { buildSyntheticRenderJob } from "./shared.js";
 import { assemble } from "./assemble.js";
 import { constrainAacTruePeak } from "../render/audioPadTrim.js";
+import { limitDeliveryPeaks } from "../render/audioDeliveryLimit.js";
 
 function ffmpegOrThrow(args: string[]): void {
   const ffmpeg = spawnSync(getFfmpegBinary(), ["-nostdin", "-loglevel", "error", ...args]);
@@ -388,6 +389,34 @@ describe("resolveChunkPlan", () => {
     const result = resolveChunkPlan(600, 240, 16);
     expect(result.chunkCount).toBe(3);
     expect(result.effectiveChunkSize).toBe(240);
+  });
+
+  describe("sized in one plan from a frame budget and a fan-out floor", () => {
+    // The workflow's budget is 1600 frames a chunk and its fan-out 4 chunks, up to a tier cap of 16.
+    const size = (totalFrames: number, cap = 16) =>
+      resolveChunkPlan(totalFrames, undefined, cap, 1600, 4).chunkCount;
+
+    it("adds chunks to a long film so each stays inside the budget", () => {
+      expect(size(10929)).toBe(7);
+      expect(
+        resolveChunkPlan(10929, undefined, 16, 1600, 4).effectiveChunkSize,
+      ).toBeLessThanOrEqual(1600);
+    });
+
+    it("keeps a short film at the fan-out instead of collapsing it to the budget", () => {
+      expect(size(1800)).toBe(4);
+      expect(size(6400)).toBe(4);
+    });
+
+    it("rejects a non-positive or non-integer floor", () => {
+      expect(() => resolveChunkPlan(1800, undefined, 16, 1600, 0)).toThrow(/minParallelChunks/);
+      expect(() => resolveChunkPlan(1800, undefined, 16, 1600, 2.5)).toThrow(/minParallelChunks/);
+    });
+
+    it("never goes past the cap, however long the film", () => {
+      expect(size(54000, 9)).toBe(9);
+      expect(size(1800, 2)).toBe(2);
+    });
   });
 
   it("rejects non-positive totalFrames", () => {
@@ -1072,7 +1101,7 @@ describe.skipIf(spawnSync(getFfmpegBinary(), ["-version"]).status !== 0)(
         ["-nostdin", "-i", join(stitched, "audio.m4a"), "-af", "volumedetect", "-f", "null", "-"],
         { encoding: "utf-8" },
       );
-      expect(Number(/max_volume: (-?[\d.]+) dB/.exec(volume.stderr)?.[1])).toBeLessThan(-1);
+      expect(Number(/max_volume: (-?[\d.]+) dB/.exec(volume.stderr)?.[1])).toBeLessThanOrEqual(-1);
 
       const withCfr = join(runRoot, "plan-stitch-cfr");
       await buildLocalExecutionPlan(project, { ...config, cfr: true }, withCfr, {
@@ -1253,17 +1282,29 @@ describe.skipIf(spawnSync(getFfmpegBinary(), ["-version"]).status !== 0)(
       expect(planned.chunkCount).toBe(1);
       const delivered = join(runRoot, "loudness-delivered.mp4");
       await assemble(planDir, [video], join(planDir, "audio.m4a"), delivered);
+      // Built as delivery is: the track read as 16-bit (the mixer does; noise encodes 0.4 dB hotter for it), float PCM
+      // fitted to the frames, then guardDeliveryPeaks: the peak limit, the whole-mix cut.
+      const referenceSource = join(runRoot, "loudness-reference-source.wav");
+      ffmpegOrThrow([
+        ...[
+          "-i",
+          join(project, "tone.wav"),
+          "-af",
+          "aformat=sample_fmts=s16,apad,atrim=0:3.033333",
+        ],
+        ...["-c:a", "pcm_f32le", "-y", referenceSource],
+      ]);
       const reference = join(runRoot, "loudness-reference.m4a");
-      const encoded = await encodeAac(join(project, "tone.wav"), reference, 91 / 30, {
-        timeout: 30_000,
-        filter: "apad,atrim=0:3.033333",
-      });
+      const encoded = await encodeAac(referenceSource, reference, 91 / 30, { timeout: 30_000 });
       expect(encoded.success, encoded.stderr).toBe(true);
-      const held = await constrainAacTruePeak({
+      const delivery = {
         audioPath: reference,
-        sourcePath: join(project, "tone.wav"),
+        sourcePath: referenceSource,
         targetDurationSeconds: 91 / 30,
-      });
+      };
+      const limited = await limitDeliveryPeaks({ ...delivery, timeoutMs: 60_000 });
+      expect(limited.success, limited.error).toBe(true);
+      const held = await constrainAacTruePeak(delivery);
       expect(held.success, held.error).toBe(true);
       const measure = (path: string) => {
         const result = spawnSync(

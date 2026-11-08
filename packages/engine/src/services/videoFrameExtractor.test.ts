@@ -3858,6 +3858,26 @@ const FFPROBE_READS_CONTAINER_TRANSFER =
   (FFPROBE_RELEASE !== undefined &&
     (FFPROBE_RELEASE[0]! > 8 || (FFPROBE_RELEASE[0] === 8 && FFPROBE_RELEASE[1]! >= 1)));
 
+/** The colour probes run so far: first-frame reads, and SPS transfer reads of an HLG source. */
+function colourProbeRuns() {
+  const runs = vi
+    .mocked(runFfmpeg)
+    .mock.calls.map(([args]) => args)
+    .filter((args) => args.some((arg) => /showinfo|trace_headers/.test(arg)));
+  return {
+    firstFrame: runs.filter((args) => args.includes("-frames:v")).length,
+    keyframes: runs.filter((args) => args.includes("nokey")).length,
+  };
+}
+
+function colourProbesSince(before: ReturnType<typeof colourProbeRuns>) {
+  const now = colourProbeRuns();
+  return {
+    firstFrame: now.firstFrame - before.firstFrame,
+    keyframes: now.keyframes - before.keyframes,
+  };
+}
+
 describe.skipIf(!HAS_ZSCALE)("forced-SDR HDR extraction", () => {
   let fixtureDir = "";
 
@@ -3977,8 +3997,7 @@ describe.skipIf(!HAS_ZSCALE)("forced-SDR HDR extraction", () => {
   it("probes each source's first frame once, however many cuts of it extract together", async () => {
     const sources = ["a", "b"].map((name) => join(fixtureDir, `cuts-${name}.mp4`));
     for (const source of sources) await synthesizeHlgClip(source);
-    const probes = () =>
-      vi.mocked(runFfmpeg).mock.calls.filter(([args]) => args.includes("showinfo")).length;
+    const probes = colourProbeRuns;
     const before = probes();
     await Promise.all(
       Array.from({ length: 12 }, (_, cut) =>
@@ -3990,14 +4009,13 @@ describe.skipIf(!HAS_ZSCALE)("forced-SDR HDR extraction", () => {
         }),
       ),
     );
-    expect(probes() - before).toBe(2);
+    expect(colourProbesSince(before)).toEqual({ firstFrame: 2, keyframes: 2 });
   }, 60_000);
 
   it("probes a source again after its first-frame probe failed", async () => {
     const source = join(fixtureDir, "probe-retry.mp4");
     await synthesizeHlgClip(source);
-    const probes = () =>
-      vi.mocked(runFfmpeg).mock.calls.filter(([args]) => args.includes("showinfo")).length;
+    const probes = colourProbeRuns;
     const { runFfmpeg: real } =
       await vi.importActual<typeof import("../utils/runFfmpeg.js")>("../utils/runFfmpeg.js");
     vi.mocked(runFfmpeg).mockImplementation((args, opts) =>
@@ -4025,7 +4043,76 @@ describe.skipIf(!HAS_ZSCALE)("forced-SDR HDR extraction", () => {
       vi.mocked(runFfmpeg).mockImplementation(real);
     }
     await extract("retry-again");
-    expect(probes() - before).toBe(2);
+    expect(colourProbesSince(before)).toEqual({ firstFrame: 2, keyframes: 1 });
+  }, 60_000);
+
+  it("tone-maps an HLG source at HLG's white when a large header SEI follows its SPS", async () => {
+    const source = join(fixtureDir, "hlg-x265-header.mp4");
+    // x265 stores its settings as an SEI after the SPS in the file header; traced, it runs past 64 KB.
+    // No B-frames: at 1 fps their reorder gap is a whole second, which Windows ffmpeg's mp4 muxer can refuse.
+    const synthesized = await runFfmpeg([
+      ...["-y", "-hide_banner", "-loglevel", "error"],
+      ...["-f", "lavfi", "-i", "color=c=0xe0b080:s=64x64:r=1:d=1"],
+      "-vf",
+      "zscale=pin=bt709:tin=bt709:min=bt709:p=bt2020:t=arib-std-b67:m=bt2020nc:r=tv,format=yuv420p10le",
+      ...[
+        "-c:v",
+        "libx265",
+        "-x265-params",
+        "colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc:log-level=error:bframes=0",
+      ],
+      ...["-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc"],
+      source,
+    ]);
+    if (!synthesized.success) {
+      throw new Error(`x265 HLG fixture synthesis failed: ${synthesized.stderr.slice(-400)}`);
+    }
+    const before = vi.mocked(runFfmpeg).mock.calls.length;
+    await extractVideoFramesRange(source, "hlg-x265-header", 0, 1, {
+      fps: 1,
+      outputDir: join(fixtureDir, "x265-header"),
+      format: "png",
+      toneMapHdrToSdr: true,
+    });
+    const toneMaps = vi
+      .mocked(runFfmpeg)
+      .mock.calls.slice(before)
+      .flatMap(([args]) => args.filter((arg) => arg.includes("tonemap=")));
+    expect(toneMaps).toHaveLength(1);
+    expect(toneMaps[0]).toContain("npl=203");
+  }, 60_000);
+
+  it("reads an HLG source's keyframes again after that read failed", async () => {
+    const source = join(fixtureDir, "keyframe-retry.mp4");
+    await synthesizeHlgClip(source);
+    const { runFfmpeg: real } =
+      await vi.importActual<typeof import("../utils/runFfmpeg.js")>("../utils/runFfmpeg.js");
+    vi.mocked(runFfmpeg).mockImplementation((args, opts) =>
+      args.includes("nokey")
+        ? Promise.resolve({
+            success: false,
+            exitCode: 1,
+            stderr: "",
+            durationMs: 0,
+            terminationReason: "exit",
+          })
+        : real(args, opts),
+    );
+    const extract = (id: string) =>
+      extractVideoFramesRange(source, id, 0, 1, {
+        fps: 1,
+        outputDir: join(fixtureDir, "keyframe-retry"),
+        format: "png",
+        toneMapHdrToSdr: true,
+      });
+    const before = colourProbeRuns();
+    try {
+      await extract("keyframes-failed");
+    } finally {
+      vi.mocked(runFfmpeg).mockImplementation(real);
+    }
+    await extract("keyframes-again");
+    expect(colourProbesSince(before)).toEqual({ firstFrame: 2, keyframes: 2 });
   }, 60_000);
 
   // One stream with HLG frames, then PQ frames: each is tone-mapped with its own transfer.
@@ -4148,7 +4235,7 @@ describe.skipIf(!HAS_ZSCALE)("forced-SDR HDR extraction", () => {
       "-t",
       "1",
       "-vf",
-      "fps=1,zscale=t=linear:npl=100,tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv",
+      "fps=1,zscale=t=linear:npl=203,tonemap=hable:desat=0,zscale=p=bt709:t=bt709:m=bt709:r=tv",
       "-q:v",
       "0",
       "-compression_level",

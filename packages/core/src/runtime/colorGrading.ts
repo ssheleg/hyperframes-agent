@@ -1,3 +1,4 @@
+import { wallClearTimeout, wallSetTimeout } from "./wallClock";
 import {
   HF_COLOR_GRADING_ADJUST_KEYS,
   HF_COLOR_GRADING_ANIMATABLE_PROPERTIES,
@@ -3347,11 +3348,19 @@ function readAnimatedGrading(entry: ColorGradingEntry): ResolvedHfColorGrading {
   return animated;
 }
 
+const CLI_SEEK_DRAW_GATE = Symbol.for("hyperframes.webglDrawGate");
+
+function drawsGated(): boolean {
+  const gate: unknown = Reflect.get(window, CLI_SEEK_DRAW_GATE);
+  return typeof gate === "object" && gate !== null && Reflect.get(gate, "skip") === true;
+}
+
 function uploadSourceTexture(
   gl: WebGLRenderingContext,
   texture: WebGLTexture,
   source: TexImageSource,
 ): void {
+  if (drawsGated()) return;
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -3931,7 +3940,7 @@ export function createColorGradingRuntime(pausedMediaLease?: {
     });
     canvas.addEventListener("webglcontextrestored", () => {
       if (shared?.canvas !== canvas) return;
-      clearTimeout(rebuildTimer);
+      wallClearTimeout(rebuildTimer);
       for (const entry of trackedEntries()) {
         entry.contextLost = !replaceProgramResources(entry);
         entry.drawError = entry.contextLost ? "WebGL context restore failed" : null;
@@ -3945,8 +3954,8 @@ export function createColorGradingRuntime(pausedMediaLease?: {
   };
 
   const watchForRestore = (canvas: HTMLCanvasElement, gl: WebGLRenderingContext): void => {
-    clearTimeout(rebuildTimer);
-    rebuildTimer = setTimeout(() => rebuildLostContext(canvas, gl), CONTEXT_RESTORE_GRACE_MS);
+    wallClearTimeout(rebuildTimer);
+    rebuildTimer = wallSetTimeout(() => rebuildLostContext(canvas, gl), CONTEXT_RESTORE_GRACE_MS);
   };
 
   const rebuildLostContext = (canvas: HTMLCanvasElement, gl: WebGLRenderingContext): void => {
@@ -4289,7 +4298,7 @@ export function createColorGradingRuntime(pausedMediaLease?: {
   const destroy = (): void => {
     if (destroyed) return;
     destroyed = true;
-    clearTimeout(rebuildTimer);
+    wallClearTimeout(rebuildTimer);
     observer?.disconnect();
     observer = null;
     for (const element of trackedElements) removeElement(element);
