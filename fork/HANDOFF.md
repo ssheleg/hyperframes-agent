@@ -20,6 +20,9 @@ publish tarball releases that consumers pin.
   The copy: export `e701a03`, shared audit `ready`, `fork-v0.9.21-appvillis.1` (sha256
   `6fbbb1be8964a6551e628d3e83f2f8ba845e86d36ea59252fce3422b2fb68ec0`), built the same way from a clone of the copy on
   the second machine. Door audit: the `v0.9.16..v0.9.21` row below.
+- Open: neither v0.9.21 release is announced on the board yet (consumer thread `b4d4f898` with the door audit row,
+  copy thread `7913a557`), and the question about the migration (thread `0e1e694d`) is unread: the session that
+  released them lost the board's tools. The next session posts both and reads the answer first.
 
 ## State (2026-11-05)
 
