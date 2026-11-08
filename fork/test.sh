@@ -37,7 +37,9 @@ case "$*" in
 esac
 EOF
 printf '#!/bin/sh\necho "ssh stub: no network in tests" >&2; exit 255\n' > "$STUB/ssh"
-chmod +x "$STUB/gh" "$STUB/ssh"
+# gitleaks finds nothing in the fixtures; the stub keeps the tests from depending on it being installed.
+printf '#!/bin/sh\nexit 0\n' > "$STUB/gitleaks"
+chmod +x "$STUB/gh" "$STUB/ssh" "$STUB/gitleaks"
 export GH_STUB_DIR="$WORK/gh"; mkdir -p "$GH_STUB_DIR"
 export PATH="$STUB:$PATH"
 export FORK_TEST_RUNNING=1
