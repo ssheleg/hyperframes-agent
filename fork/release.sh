@@ -64,6 +64,12 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || [ -n "$(git ls-remot
   echo "tag $TAG already exists; use the next number" >&2; exit 1
 fi
 log "base $BASE, commit ${COMMIT:0:12}, CLI version $VERSION, tag $TAG"
+# fork/test.sh runs this script on throwaway repositories: it sets FORK_TEST_RUNNING so that run does not recurse.
+# An exported copy carries no fork/test.sh (it is the line's own tooling): there the step is skipped.
+if [ -z "${FORK_TEST_RUNNING:-}" ] && [ -x fork/test.sh ]; then
+  log "tests of the line's own scripts"
+  TEST_OUT="$(fork/test.sh 2>&1)" || { printf '%s\n' "$TEST_OUT" | grep -v '^ok' >&2; echo "fork/test.sh failed" >&2; exit 1; }
+fi
 
 TMPS=(); PKG_SAVED=""
 # The version stamp goes back from a saved copy, not `git checkout`: a checkout that met a busy index failed silently

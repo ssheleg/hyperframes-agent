@@ -28,7 +28,8 @@ publish tarball releases that consumers pin.
   [`agent-type-plan.md`](agent-type-plan.md). Wave 1 done 2026-11-08 (`6fc41f571`): the door audit skips test
   utilities, the export checks the tree before committing and the copy before pushing (it now needs
   `ORG_TRANSFER_AUDIT` and `ORG_TRANSFER_MARKERS`), the copy builds in the organization's space on the second machine.
-  **Next task: wave 2, P-5** (`fork/test.sh` for the line's own scripts), then wave 3 (report back to the base, P-6).
+  Wave 2 done the same day: `fork/test.sh` (32 cases), run first by `fork/release.sh`.
+  **Next task: wave 3, P-6** (report the line's lessons back to the template base on the board), then P-7 and P-8.
 
 ## State (2026-11-05)
 

@@ -96,6 +96,9 @@ fork/release.sh <n>             # build, run the patches' tests, pack, smoke-ins
 fork/release.sh <n> --publish   # also tag, push main and the tag, create the release, re-download and check the sha256
 ```
 
+`fork/test.sh` tests the line's own scripts (throwaway Git repositories, stubs for `gh` and `ssh`, about 20 s);
+`fork/release.sh` runs it before it builds anything.
+
 The smoke step installs the tarball into an empty directory, checks that `hyperframes --version`
 prints the line's version, and that a start removes the marker of a dead pid.
 
