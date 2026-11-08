@@ -38,8 +38,9 @@ of this line:
    first, in a commit whose message carries `Backports: <copy-sha>`; then the export goes through. No
    workflows, no file an LFS rule covers, no maintenance notes of this line; `fork/org/` supplies the copy's README,
    HANDOFF, NOTICE, `.gitleaks.toml` and the headers of `CLAUDE.md`, `AGENTS.md` and `README.md`.
-2. Audit it with the shared org-transfer-audit, passing each line of `fork/org/audit-allow-literals.txt` (upstream's
-   placeholder home paths) as `--allow-literal`; it must read `ready`.
+2. The export checks itself: with `ORG_TRANSFER_AUDIT` and `ORG_TRANSFER_MARKERS` naming the shared transfer audit and
+   its marker file, it audits the exported tree (allow list `fork/org/audit-allow-literals.txt`) and runs gitleaks before
+   it commits, and audits the copy with its history before `--push`; anything but `ready` refuses.
 3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-appvillis.<n>` (it reads the base and
    the patch tests from the copy's `fork/line.env`).
 
@@ -108,6 +109,9 @@ fork/release.sh <n> --publish --prebuilt fork/out/<tarball>        # here: check
 ```
 
 `--prebuilt` refuses a tarball whose name, `.sha256`, version or `hyperframesFork.commit` is not this release's.
+On the second machine the personal space publishes too: its GitHub CLI is `~/.local/bin/gh`, a wrapper that reads the
+token from the credential store (call it from a login shell). The copy builds in the organization's space there, from a
+clone reached by its own read-only deploy key (`Host gh-appvillis-hyperframes-agent`).
 
 ## Taking an upstream release
 

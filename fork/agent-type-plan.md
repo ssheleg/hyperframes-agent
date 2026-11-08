@@ -50,13 +50,17 @@ Findings the base holds against this source: F13 (a session transcript at the ro
 ### Wave 1: defects and the gate (now)
 
 - P-1 Door audit leaves out `__fixtures__`, `__test_utils__`, `__tests__` and `*.test-helpers.*`; a correction to the
-  `v0.9.16..v0.9.21` report goes to the consumers. Done when a rerun over that range lists none of those paths.
+  `v0.9.16..v0.9.21` report goes to the consumers. **Done 2026-11-08** (`6fc41f571`): reruns over `v0.9.16..v0.9.21`
+  and `v0.9.5..v0.9.16` drop only those lines.
 - P-2 `fork/export.sh` runs the word check (the shared transfer audit with the allow list) and the secret scan on the
   copy before committing, and `--push` pushes only after they pass. Done when an export with a planted marker refuses
-  and commits nothing.
+  and commits nothing. **Done 2026-11-08** (`6fc41f571`): an export of a throwaway line clone with a planted marker
+  read `fix_tree`, refused, and left the throwaway copy on its HEAD with a clean tree.
 - P-3 The release route on the second machine: its personal space has a working GitHub CLI (a wrapper that reads the
   token from the credential store); write it down; build the copy in the organization's space (deploy key and clone in
-  place since 2026-11-08, first build waits on GitHub's downloads answering again).
+  place since 2026-11-08). **Done 2026-11-08**: the personal space's GitHub CLI is a wrapper over the credential store
+  (`~/.local/bin/gh`, from a login shell); the copy built in the organization's space (79 passed, 6 skipped, smoke),
+  after GitHub's release downloads had answered 504 for about 12 minutes.
 - P-4 Insights journal lines for 2026-11-08.
 
 ### Wave 2: tests of the line's tools
