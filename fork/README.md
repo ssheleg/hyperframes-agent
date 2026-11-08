@@ -92,6 +92,15 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
   where the registry has one; the kinds made outside the registry (talking head, screen recording, generated footage)
   with the skill that makes them; and the style layer: the 18 tokens of `themes/CONTRACT.md`, the theme packs and the
   frame presets of the `hyperframes` skill. The same tree gives the same bytes.
+- `visual-types-files-<base>-<line>.<n>.tar.gz`, beside it: the preview frames (`posters/`, JPEG at most 640 px wide
+  when ffmpeg is installed) and the line's composition recipes (`recipes/`). Each item's `poster_file` and each
+  recipe's `file` are paths inside it, so a caller shows them without the network. `files.posters_missing` lists the
+  frames upstream's registry links but does not serve (64 of 178 answered 403 on 2026-11-08). The release refuses when
+  no frame at all could be fetched.
+- Composition recipes (`compositions` in the catalogue, sources in `fork/recipes/`) cover layouts the registry has no
+  block for. `presenter-over-diagram`: a cut-out presenter over a diagram that fills the frame; the presenter shrinks
+  into a corner while it plays and leaves by turns (a dissolve, then a reverse grow); nothing covers the face. It is a
+  root composition because the runtime seeks media only in the root; `npx hyperframes lint` and `check` pass on it.
 - `fork/style-preset.mjs` keeps a project's taste as a `hyperframes-style-preset/1` file: every contract token
   (`--dur-beat` is the pace), and optionally a frame preset, a caption item, preferred transitions, the text density
   and who decided each field (a person or the agent, with the date). `new <theme-pack>` starts one, `check` says what is

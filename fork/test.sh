@@ -144,6 +144,23 @@ if printf '%s' "$VTJ" | node -e '
   process.exit(ok?0:1) })'; then ok "visual-types: groups items by tag, names libraries, reads tokens, packs and presets"
 else fail "visual-types: groups items by tag, names libraries, reads tokens, packs and presets" "$(printf '%s' "$VTJ" | head -c 300)"; fi
 expect "visual-types: the same tree gives the same bytes" 0 "" -- test "$(node fork/visual-types.mjs --root "$VT" --base v1.2.3)" = "$VTJ"
+# --files: one frame reachable, one not; the recipe is copied and named by its path inside the archive.
+mkdir -p "$VT/fork/recipes/presenter-over-diagram" "$WORK/frames"
+printf '<html></html>\n' > "$VT/fork/recipes/presenter-over-diagram/index.html"
+printf 'not really a png' > "$WORK/frames/w.png"
+printf '{"name":"wipe-a","type":"hyperframes:block","tags":["transition"],"files":[],"preview":{"poster":"file://%s/frames/none.png"}}\n' "$WORK" > "$VT/registry/blocks/wipe-a/registry-item.json"
+printf '{"name":"title-a","type":"hyperframes:block","tags":["typography"],"files":[{"path":"a.html"}],"preview":{"poster":"file://%s/frames/w.png"}}\n' "$WORK" > "$VT/registry/blocks/title-a/registry-item.json"
+FILES="$WORK/vt-files"
+# The frame is not an image, so ffmpeg (if installed) fails on it and the original is kept under its own name.
+VTF="$(node fork/visual-types.mjs --root "$VT" --release 1.2.3-sshlg.1 --files "$FILES" 2>&1)"
+if printf '%s' "$VTF" | node -e '
+  let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ const c=JSON.parse(s); const t=Object.fromEntries(c.types.map(x=>[x.id,x]));
+  const ok = c.files.asset==="visual-types-files-1.2.3-sshlg.1.tar.gz" && c.files.posters_fetched===1 && c.files.posters_missing.join()==="wipe-a"
+    && t["kinetic-typography"].items[0].poster_file==="posters/title-a.png" && !t.transitions.items[0].poster_file
+    && c.compositions.length===1 && c.compositions[0].file==="recipes/presenter-over-diagram/index.html";
+  process.exit(ok?0:1) })' && [ -s "$FILES/posters/title-a.png" ] && [ -f "$FILES/recipes/presenter-over-diagram/index.html" ]; then
+  ok "visual-types --files: frames and recipes inside the archive, an unreachable frame listed"
+else fail "visual-types --files: frames and recipes inside the archive, an unreachable frame listed" "$(printf '%s' "$VTF" | head -c 300)"; fi
 node fork/style-preset.mjs new plain --name demo --root "$VT" > "$WORK/preset.json"
 expect "style-preset: a preset from a theme pack is whole" 0 "whole (3 tokens)" -- node fork/style-preset.mjs check "$WORK/preset.json" --root "$VT"
 node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1]));p.frame_preset="plain";p.transitions=["wipe-a"];p.captions="title-a";delete p.tokens["--fg"];p.tokens["--dur-beat"]="slow";fs.writeFileSync(process.argv[2],JSON.stringify(p))' "$WORK/preset.json" "$WORK/bad.json"

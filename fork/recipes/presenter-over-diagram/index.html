@@ -1,0 +1,169 @@
+<!doctype html>
+<!--
+  Recipe: a presenter cut out over a diagram (board request 963d49a2, 2026-11-08).
+  The diagram fills the frame; the presenter shrinks into a corner while it plays and leaves by turns: first a dissolve,
+  then a reverse grow back to full frame. Nothing is ever laid over the presenter's face.
+
+  Use it as a project's root composition (index.html). Media must stay in the ROOT: the runtime never seeks a <video>
+  inside a sub-composition. To use real footage, replace #presenter-stand-in with
+    <video id="presenter-media" class="clip" src="assets/presenter-cutout.webm" playsinline data-has-audio="true"
+           data-start="0" data-duration="16" data-track-index="1"></video>
+  where the cut-out WebM comes from `npx hyperframes media-use generate --type cutout --video assets/host.mp4
+  --out assets/presenter-cutout.webm` (or a keyed clip from a media service), and replace #diagram's stand-in with the
+  project's diagram (or a sub-composition: data-composition-src="compositions/diagram.html"). Times live in TIMES.
+  The palette and pace come from the project's style preset tokens (fork/style-preset.mjs css).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: transparent;
+        overflow: hidden;
+      }
+      #pod-root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--bg, #0f1116);
+        font-family: var(--font-body, Inter, "Helvetica Neue", Arial, sans-serif);
+        color: var(--fg, #f5f6f8);
+      }
+      /* The scene behind the presenter when the diagram is away (a set, a blurred plate, a brand ground). */
+      #pod-set {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(120% 90% at 70% 40%, var(--surface, #1c2030) 0%, var(--bg, #0f1116) 70%);
+      }
+      /* The diagram fills the whole frame: never drawn small in a corner of its own square. */
+      #diagram {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+      }
+      #diagram svg {
+        width: 100%;
+        height: 100%;
+      }
+      .pod-node rect {
+        fill: var(--surface, #1c2030);
+        stroke: var(--brand, #4f7cff);
+        stroke-width: 3;
+      }
+      .pod-node text {
+        fill: var(--fg, #f5f6f8);
+        font-size: 40px;
+        font-weight: 600;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .pod-edge {
+        stroke: var(--muted, #7c8496);
+        stroke-width: 4;
+        fill: none;
+      }
+      .pod-dot {
+        fill: var(--accent, #22c3ee);
+      }
+      /* The presenter: transforms only on the wrapper, so swapping the stand-in for a <video> changes nothing else. */
+      #presenter {
+        position: absolute;
+        left: 1080px;
+        top: 90px;
+        width: 720px;
+        height: 990px;
+        transform-origin: 100% 100%;
+      }
+      #presenter-stand-in {
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(150px 180px at 50% 26%, #e9c7ad 0 99%, transparent 100%),
+          radial-gradient(330px 420px at 50% 92%, var(--brand, #4f7cff) 0 99%, transparent 100%);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="pod-root"
+      data-composition-id="presenter-over-diagram"
+      data-start="0"
+      data-duration="16"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div id="pod-set"></div>
+      <div id="diagram">
+        <svg viewBox="0 0 1920 1080" aria-label="diagram">
+          <path class="pod-edge" id="pod-e1" d="M 520 540 L 960 300" />
+          <path class="pod-edge" id="pod-e2" d="M 520 540 L 960 780" />
+          <path class="pod-edge" id="pod-e3" d="M 960 300 L 1400 540" />
+          <path class="pod-edge" id="pod-e4" d="M 960 780 L 1400 540" />
+          <g class="pod-node" id="pod-n1"><rect x="370" y="470" width="300" height="140" rx="20" /><text x="520" y="540">Input</text></g>
+          <g class="pod-node" id="pod-n2"><rect x="810" y="230" width="300" height="140" rx="20" /><text x="960" y="300">Model</text></g>
+          <g class="pod-node" id="pod-n3"><rect x="810" y="710" width="300" height="140" rx="20" /><text x="960" y="780">Rules</text></g>
+          <g class="pod-node" id="pod-n4"><rect x="1250" y="470" width="300" height="140" rx="20" /><text x="1400" y="540">Result</text></g>
+          <circle class="pod-dot" id="pod-d1" r="14" cx="520" cy="540" />
+          <circle class="pod-dot" id="pod-d2" r="14" cx="520" cy="540" />
+        </svg>
+      </div>
+      <div id="presenter">
+        <div id="presenter-stand-in"></div>
+      </div>
+      <div
+        id="pod-drv"
+        class="clip"
+        data-start="0"
+        data-duration="16"
+        data-track-index="0"
+        style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none"
+      ></div>
+    </div>
+    <script>
+      (function () {
+        window.__timelines = window.__timelines || {};
+        // Seconds. Each diagram beat: the presenter goes to the corner while the diagram fills the frame, then leaves.
+        var TIMES = { firstDiagram: 3, secondDiagram: 10 };
+        // The corner: bottom right, small enough that the diagram reads, big enough that the face does.
+        var CORNER = { scale: 0.34, x: 70, y: 0 };
+        var IN = 0.7;
+        var OUT = 0.6;
+        var tl = gsap.timeline({ paused: true });
+
+        function diagramBeat(at, exit) {
+          tl.to("#diagram", { opacity: 1, duration: IN, ease: "power2.out" }, at);
+          tl.to("#presenter", { scale: CORNER.scale, x: CORNER.x, y: CORNER.y, duration: IN, ease: "power3.inOut" }, at);
+          tl.fromTo(".pod-node", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.4, stagger: 0.25, ease: "power2.out" }, at + IN);
+          tl.fromTo(".pod-edge", { opacity: 0 }, { opacity: 1, duration: 0.4, stagger: 0.2 }, at + IN + 0.3);
+          tl.fromTo("#pod-d1", { attr: { cx: 520, cy: 540 } }, { attr: { cx: 1400, cy: 540 }, duration: 2.2, ease: "none" }, at + IN + 1);
+          tl.fromTo("#pod-d2", { attr: { cx: 520, cy: 540 } }, { attr: { cx: 1400, cy: 540 }, duration: 2.2, ease: "none" }, at + IN + 1.6);
+          if (exit === "dissolve") {
+            // The presenter dissolves away; the diagram holds alone, then the set comes back with the presenter.
+            tl.to("#presenter", { opacity: 0, duration: OUT, ease: "power2.in" }, at + 4.2);
+            tl.to("#diagram", { opacity: 0, duration: OUT, ease: "power2.in" }, at + 5 - OUT);
+            tl.set("#presenter", { scale: 1, x: 0, y: 0 }, at + 5 - OUT);
+            tl.to("#presenter", { opacity: 1, duration: OUT, ease: "power2.out" }, at + 5 - OUT);
+          } else {
+            // Reverse grow: the presenter grows back to full frame as the diagram fades under it.
+            tl.to("#presenter", { scale: 1, x: 0, y: 0, duration: IN, ease: "power3.inOut" }, at + 3.3);
+            tl.to("#diagram", { opacity: 0, duration: IN, ease: "power2.in" }, at + 3.3);
+          }
+        }
+
+        diagramBeat(TIMES.firstDiagram, "dissolve");
+        diagramBeat(TIMES.secondDiagram, "grow");
+        tl.to("#pod-drv", { opacity: 0, duration: 0.01 }, 15.99);
+        window.__timelines["presenter-over-diagram"] = tl;
+      })();
+    </script>
+  </body>
+</html>

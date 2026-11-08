@@ -6,9 +6,15 @@
 // it in the result (board request b948516e, 2026-11-08).
 //
 //   node fork/visual-types.mjs [--root <checkout>] [--base vX.Y.Z] [--release <label>] [--commit <sha>]
+//                              [--files <dir>]
 //
 // Read only from the checkout: registry/*/*/registry-item.json and the files beside each, themes/, and the frame
-// presets of the hyperframes skill. No network, no clock: the same tree gives the same bytes.
+// presets of the hyperframes skill, and the line's composition recipes (fork/recipes/). No network, no clock: the same
+// tree gives the same bytes. With --files <dir> it also fetches every item's preview frame into <dir>/posters/ and
+// copies the recipes into <dir>/recipes/, and names each as a path inside the release's files archive
+// (`visual-types-files-<label>.tar.gz`), so a caller shows frames and uses recipes without the network (frame-agent,
+// board message 7c794df6). A frame that cannot be fetched keeps only its URL and is listed in `files.posters_missing`.
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -18,6 +24,7 @@ const opt = (name, fallback = "") => {
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
 const ROOT = path.resolve(opt("--root", "."));
+const POSTERS = opt("--files") ? path.resolve(opt("--files")) : "";
 
 // A visual type is a person's word for a kind of video; an item belongs to every type one of its tags names.
 const TYPES = [
@@ -228,6 +235,7 @@ function entry({ item, techniques }) {
   if (item.dimensions) e.dimensions = item.dimensions;
   if (item.duration) e.duration = item.duration;
   if (item.preview?.poster) e.poster = item.preview.poster;
+  if (posters.got.has(item.name)) e.poster_file = posters.got.get(item.name);
   if (item.preview?.video) e.video = item.preview.video;
   return e;
 }
@@ -278,7 +286,104 @@ function framePresets() {
     });
 }
 
+// Fetches each preview frame once; file:// works too, so the tests need no network.
+async function fetchPosters(list) {
+  const got = new Map();
+  const missing = [];
+  if (!POSTERS) return { got, missing };
+  fs.mkdirSync(path.join(POSTERS, "posters"), { recursive: true });
+  // Frames are shown on a gate, not printed: with ffmpeg present each becomes a JPEG at most 640 px wide (the
+  // registry's PNGs weighed 41 MB for 114 frames on 2026-11-08); without it the original is kept.
+  const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+  for (const { item } of list) {
+    const url = item.preview?.poster;
+    if (!url) continue;
+    const ext = (path.extname(new URL(url).pathname) || ".jpg").toLowerCase();
+    const rel = `posters/${item.name}${ext}`;
+    try {
+      let bytes;
+      if (url.startsWith("file://")) bytes = fs.readFileSync(new URL(url));
+      else {
+        const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        bytes = Buffer.from(await res.arrayBuffer());
+      }
+      if (!bytes.length) throw new Error("empty");
+      fs.writeFileSync(path.join(POSTERS, rel), bytes);
+      let kept = rel;
+      if (ffmpeg) {
+        const small = `posters/${item.name}.jpg`;
+        const out = path.join(POSTERS, `${small}.tmp.jpg`);
+        const r = spawnSync("ffmpeg", [
+          "-v",
+          "error",
+          "-y",
+          "-i",
+          path.join(POSTERS, rel),
+          "-vf",
+          "scale='min(640,iw)':-2",
+          "-q:v",
+          "4",
+          out,
+        ]);
+        if (r.status === 0 && fs.existsSync(out) && fs.statSync(out).size > 0) {
+          fs.rmSync(path.join(POSTERS, rel));
+          fs.renameSync(out, path.join(POSTERS, small));
+          kept = small;
+        } else fs.rmSync(out, { force: true });
+      }
+      got.set(item.name, kept);
+    } catch {
+      missing.push(item.name);
+    }
+  }
+  return { got, missing: missing.sort() };
+}
+
+// The line's own composition recipes: whole root compositions for a layout the registry has no block for.
+const RECIPES = [
+  {
+    id: "presenter-over-diagram",
+    label: "Presenter over a diagram",
+    shows:
+      "a cut-out presenter with a diagram: the diagram fills the frame while the presenter shrinks into a corner, exits alternate (dissolve, reverse grow), nothing ever covers the face",
+    dir: "presenter-over-diagram",
+    needs:
+      "a cut-out clip of the presenter with alpha (npx hyperframes media-use generate --type cutout) placed in the root, never in a sub-composition",
+    pairs_with: [
+      "whip-pan",
+      "whip-pan-cut",
+      "zoom-through-transition",
+      "cut-the-curve",
+      "freeze-frame-dressing",
+    ],
+  },
+];
+function recipes() {
+  return RECIPES.filter((r) => exists(path.join(ROOT, "fork", "recipes", r.dir, "index.html"))).map(
+    (r) => {
+      const out = {
+        id: r.id,
+        label: r.label,
+        shows: r.shows,
+        source: `fork/recipes/${r.dir}/index.html`,
+        needs: r.needs,
+      };
+      out.pairs_with = r.pairs_with.filter((n) => items.some(({ item }) => item.name === n));
+      if (POSTERS) {
+        fs.mkdirSync(path.join(POSTERS, "recipes", r.dir), { recursive: true });
+        fs.cpSync(path.join(ROOT, "fork", "recipes", r.dir), path.join(POSTERS, "recipes", r.dir), {
+          recursive: true,
+        });
+        out.file = `recipes/${r.dir}/index.html`;
+      }
+      return out;
+    },
+  );
+}
+
 const items = registryItems();
+const posters = await fetchPosters(items);
 const typed = new Set();
 const types = TYPES.map(([id, label, shows, tags]) => {
   const want = new Set(tags);
@@ -311,8 +416,16 @@ const catalog = {
   how_to_use:
     "Show the types (label, shows, a poster of the first items) to the person before a generation and let them choose, or record that they left it to the agent. Install an item with its `install` command; set a project's taste with a style preset (fork/style-preset.mjs).",
   totals: { items: items.length, typed: typed.size, untyped: items.length - typed.size },
+  files: POSTERS
+    ? {
+        asset: opt("--release") ? `visual-types-files-${opt("--release")}.tar.gz` : null,
+        posters_fetched: posters.got.size,
+        posters_missing: posters.missing,
+      }
+    : null,
   types,
   outside_registry: OUTSIDE,
+  compositions: recipes(),
   styles: {
     token_contract: { file: "themes/CONTRACT.md", tokens: themeTokens() },
     theme_packs: themePacks(),

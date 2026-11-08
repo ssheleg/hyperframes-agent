@@ -198,11 +198,17 @@ log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 
 # The catalogue of visual types travels with every release (fork/visual-types.mjs; board request b948516e): built from
 # this commit's registry, not from the tarball, so a prebuilt tarball gets the same file.
+# Its files archive carries the preview frames and the line's recipes, so callers show them without the network.
 CATALOG="visual-types-${LABEL}.json"
-node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" > "$OUT/$CATALOG"
-node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items) process.exit(1)' "$OUT/$CATALOG" \
-  || { echo "the catalogue of visual types is empty" >&2; exit 1; }
-log "catalogue $OUT/$CATALOG"
+CATALOG_FILES="visual-types-files-${LABEL}.tar.gz"
+tmpdir catalog CATALOG_DIR
+node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" --files "$CATALOG_DIR" > "$OUT/$CATALOG"
+# A run that fetched no frame at all had no network: upstream's registry links some frames that answer 403, never all.
+node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items || !c.files.posters_fetched) process.exit(1)' "$OUT/$CATALOG" \
+  || { echo "the catalogue of visual types is empty or fetched no preview frame" >&2; exit 1; }
+mkdir -p "$CATALOG_DIR/posters" "$CATALOG_DIR/recipes"
+(cd "$CATALOG_DIR" && tar -czf "$OUT/$CATALOG_FILES" posters recipes)
+log "catalogue $OUT/$CATALOG and $OUT/$CATALOG_FILES ($(node -p 'const c=require(process.argv[1]); c.files.posters_fetched+" frames, "+c.files.posters_missing.length+" not fetchable, "+c.compositions.length+" recipes"' "$OUT/$CATALOG"))"
 
 [ "$PUBLISH" = 1 ] || { log "not published (no --publish)"; exit 0; }
 
@@ -228,9 +234,9 @@ tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
   echo
   echo "sha256: \`$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")\`"
   echo
-  echo "Visual types and style presets: \`$CATALOG\` (what the engine can make, with registry items, libraries and preview frames; fork/README.md)."
+  echo "Visual types and style presets: \`$CATALOG\` (what the engine can make, with registry items, libraries and preview frames) and \`$CATALOG_FILES\` (the frames and the line's composition recipes, for use without the network); fork/README.md."
 } > "$NOTES"
-gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" "$OUT/$CATALOG" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
+gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" "$OUT/$CATALOG" "$OUT/$CATALOG_FILES" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
 
 log "verify the published asset"
 tmpdir check CHECK
