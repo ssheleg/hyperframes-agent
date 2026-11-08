@@ -98,6 +98,17 @@ fork/release.sh <n> --publish   # also tag, push main and the tag, create the re
 The smoke step installs the tarball into an empty directory, checks that `hyperframes --version`
 prints the line's version, and that a start removes the marker of a dead pid.
 
+A release build wants about 8 GB of free disk. On a machine short of it, build on another one over SSH and publish
+from here; the other machine needs a clone of this repository, Bun and Node, and no GitHub CLI sign-in:
+
+```sh
+git push origin HEAD:main                                          # the other machine builds origin's main
+FORK_REMOTE_DIR=<clone> fork/remote-build.sh <ssh-host> <n>        # build, test, pack, smoke there; the tarball comes back to fork/out/
+fork/release.sh <n> --publish --prebuilt fork/out/<tarball>        # here: check it is this commit and version, smoke, publish
+```
+
+`--prebuilt` refuses a tarball whose name, `.sha256`, version or `hyperframesFork.commit` is not this release's.
+
 ## Taking an upstream release
 
 1. `git fetch upstream --tags && git push origin upstream/main:refs/heads/upstream`

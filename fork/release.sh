@@ -5,6 +5,9 @@
 #   fork/release.sh <n>              build + check, leave the tarball in fork/out/
 #   fork/release.sh <n> --publish    also tag, push the branch and the tag, create the release
 #   fork/release.sh <n> --skip-deps  reuse the built workspace packages (the CLI is always rebuilt)
+#   fork/release.sh <n> --publish --prebuilt <tgz>
+#                                    publish a tarball another machine built from this same commit
+#                                    (fork/remote-build.sh): no build, no tests, the smoke install still runs
 #
 # Names (see fork/README.md):
 #   CLI version  <base>+sshlg.<n>        build metadata: semver compares it equal to <base>, so
@@ -14,18 +17,24 @@
 #   asset        hyperframes-<base>-sshlg.<n>.tgz (no "+" in a URL)
 set -euo pipefail
 
-usage() { echo "usage: fork/release.sh <n> [--publish] [--skip-deps]" >&2; exit 2; }
+usage() { echo "usage: fork/release.sh <n> [--publish] [--skip-deps] [--prebuilt <tgz>]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 N="$1"; shift
 [[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "release number must be a positive integer, got: $N" >&2; exit 2; }
-PUBLISH=0; DEPS=1
-for arg in "$@"; do
-  case "$arg" in
+PUBLISH=0; DEPS=1; PREBUILT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
     --publish) PUBLISH=1 ;;
     --skip-deps) DEPS=0 ;;
+    --prebuilt) [ $# -ge 2 ] || usage; PREBUILT="$2"; shift ;;
     *) usage ;;
   esac
+  shift
 done
+if [ -n "$PREBUILT" ]; then
+  [ -f "$PREBUILT" ] || { echo "no tarball at $PREBUILT" >&2; exit 2; }
+  PREBUILT="$(cd "$(dirname "$PREBUILT")" && pwd)/$(basename "$PREBUILT")"
+fi
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
@@ -72,80 +81,95 @@ trap cleanup EXIT
 # never reach cleanup, and every run would leave its directories behind.
 tmpdir() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-$1.XXXXXX")"; TMPS+=("$d"); printf -v "$2" '%s' "$d"; }
 
-if [ "$DEPS" = 1 ]; then
-  log "build the workspace packages the CLI bundles"
-  bun install --frozen-lockfile
-  bun run --filter '@hyperframes/{parsers,lint,studio-server}' build
-  bun run --filter @hyperframes/core build
-  bun run --filter '@hyperframes/{engine,producer,player,studio,shader-transitions,aws-lambda,gcp-cloud-run,sdk,inspector}' build
-fi
+if [ -n "$PREBUILT" ]; then
+  # Built elsewhere from this commit (fork/remote-build.sh): check that it is this release before trusting it.
+  [ "$(basename "$PREBUILT")" = "$TARBALL" ] || { echo "the prebuilt tarball is $(basename "$PREBUILT"), this release is $TARBALL" >&2; exit 1; }
+  [ -f "$PREBUILT.sha256" ] || { echo "no $PREBUILT.sha256 beside the prebuilt tarball" >&2; exit 1; }
+  (cd "$(dirname "$PREBUILT")" && shasum -a 256 -c "$TARBALL.sha256" >/dev/null) \
+    || { echo "the prebuilt tarball does not match its .sha256" >&2; exit 1; }
+  BUILT="$(tar -xzOf "$PREBUILT" package/package.json | node -e '
+    let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{const p=JSON.parse(s); console.log(p.version+" "+((p.hyperframesFork||{}).commit||""))})')"
+  [ "$BUILT" = "$VERSION $COMMIT" ] || { echo "the prebuilt tarball is '$BUILT', this release is '$VERSION $COMMIT'" >&2; exit 1; }
+  mkdir -p "$OUT"
+  if [ "$PREBUILT" != "$OUT/$TARBALL" ]; then cp "$PREBUILT" "$PREBUILT.sha256" "$OUT/"; fi
+  log "prebuilt $TARBALL checked: version $VERSION, commit ${COMMIT:0:12}"
+else
+  if [ "$DEPS" = 1 ]; then
+    log "build the workspace packages the CLI bundles"
+    bun install --frozen-lockfile
+    bun run --filter '@hyperframes/{parsers,lint,studio-server}' build
+    bun run --filter @hyperframes/core build
+    bun run --filter '@hyperframes/{engine,producer,player,studio,shader-transitions,aws-lambda,gcp-cloud-run,sdk,inspector}' build
+  fi
 
-log "build the CLI as $VERSION"
-# tsup bakes package.json's version into dist as __CLI_VERSION__; the stamp is reverted on exit.
-tmpdir pkg PKG_DIR; cp packages/cli/package.json "$PKG_DIR/package.json"; PKG_SAVED="$PKG_DIR/package.json"
-VERSION="$VERSION" node -e '
-  const fs = require("fs");
-  const p = "packages/cli/package.json";
-  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-  pkg.version = process.env.VERSION;
-  fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
-'
-bun run --filter @hyperframes/cli build
-grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not carry $VERSION" >&2; exit 1; }
+  log "build the CLI as $VERSION"
+  # tsup bakes package.json's version into dist as __CLI_VERSION__; the stamp is reverted on exit.
+  tmpdir pkg PKG_DIR; cp packages/cli/package.json "$PKG_DIR/package.json"; PKG_SAVED="$PKG_DIR/package.json"
+  VERSION="$VERSION" node -e '
+    const fs = require("fs");
+    const p = "packages/cli/package.json";
+    const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+    pkg.version = process.env.VERSION;
+    fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+  '
+  bun run --filter @hyperframes/cli build
+  grep -rqF "\"$VERSION\"" packages/cli/dist || { echo "packages/cli/dist does not carry $VERSION" >&2; exit 1; }
 
-# The watcher tests run on the real file system, and FSEvents delivers nothing for 15 s while fseventsd is busy
-# (fork/HANDOFF.md, "Watcher tests under load"). Its own CPU is the signal, not the load average: wait for it.
-# One reading under the limit is not enough: on 2026-11-05 the tests started on one, fseventsd went back to 100%
-# within seconds and three watcher tests heard nothing. So it takes FSEVENTSD_CALM_SAMPLES readings in a row, 10 s apart.
-wait_for_fseventsd() {
-  [ "$(uname -s)" = Darwin ] || return 0
-  local limit="${FSEVENTSD_MAX_CPU:-60}" calm_needed="${FSEVENTSD_CALM_SAMPLES:-3}" calm=0
-  local deadline=$((SECONDS + ${FSEVENTSD_WAIT_SECONDS:-1800})) cpu
-  while :; do
-    cpu="$(ps -Ao pcpu=,comm= | awk '$2 ~ /fseventsd$/ { s += $1 } END { printf "%d", s }')"
-    if [ "$cpu" -lt "$limit" ]; then
-      calm=$((calm + 1))
-      [ "$calm" -ge "$calm_needed" ] && return 0
-    else
-      calm=0
-    fi
-    [ "$SECONDS" -lt "$deadline" ] || { echo "fseventsd still at ${cpu}% CPU (limit ${limit}%, ${calm} of ${calm_needed} calm readings); the watcher tests would fail" >&2; return 1; }
-    if [ "$calm" -gt 0 ]; then sleep 10; else
-      log "fseventsd at ${cpu}% CPU, waiting for it to stay under ${limit}% for ${calm_needed} readings"
-      sleep 30
-    fi
+  # The watcher tests run on the real file system, and FSEvents delivers nothing for 15 s while fseventsd is busy
+  # (fork/HANDOFF.md, "Watcher tests under load"). Its own CPU is the signal, not the load average: wait for it.
+  # One reading under the limit is not enough: on 2026-11-05 the tests started on one, fseventsd went back to 100%
+  # within seconds and three watcher tests heard nothing. So it takes FSEVENTSD_CALM_SAMPLES readings in a row, 10 s apart.
+  wait_for_fseventsd() {
+    [ "$(uname -s)" = Darwin ] || return 0
+    local limit="${FSEVENTSD_MAX_CPU:-60}" calm_needed="${FSEVENTSD_CALM_SAMPLES:-3}" calm=0
+    local deadline=$((SECONDS + ${FSEVENTSD_WAIT_SECONDS:-1800})) cpu
+    while :; do
+      cpu="$(ps -Ao pcpu=,comm= | awk '$2 ~ /fseventsd$/ { s += $1 } END { printf "%d", s }')"
+      if [ "$cpu" -lt "$limit" ]; then
+        calm=$((calm + 1))
+        [ "$calm" -ge "$calm_needed" ] && return 0
+      else
+        calm=0
+      fi
+      [ "$SECONDS" -lt "$deadline" ] || { echo "fseventsd still at ${cpu}% CPU (limit ${limit}%, ${calm} of ${calm_needed} calm readings); the watcher tests would fail" >&2; return 1; }
+      if [ "$calm" -gt 0 ]; then sleep 10; else
+        log "fseventsd at ${cpu}% CPU, waiting for it to stay under ${limit}% for ${calm_needed} readings"
+        sleep 30
+      fi
+    done
+  }
+
+  log "tests of the fork's patches"
+  PATCHED_TESTS="${LINE_TESTS:-$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')}"
+  if [ -n "$PATCHED_TESTS" ]; then
+    case "$PATCHED_TESTS" in *fileWatcher*) wait_for_fseventsd ;; esac
+    # shellcheck disable=SC2086
+    (cd packages/cli && npx vitest run ${PATCHED_TESTS//packages\/cli\//})
+  fi
+
+  log "pack"
+  tmpdir pack STAGE
+  cp -R packages/cli/bin packages/cli/dist packages/cli/package.json "$STAGE/"
+  for f in README.md LICENSE; do
+    if [ -f "packages/cli/$f" ]; then cp "packages/cli/$f" "$STAGE/"; elif [ -f "$f" ]; then cp "$f" "$STAGE/"; fi
   done
-}
+  STAGE="$STAGE" BASE="$BASE" COMMIT="$COMMIT" REPO="$REPO" LABEL="$LABEL" node -e '
+    const fs = require("fs");
+    const p = process.env.STAGE + "/package.json";
+    const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+    pkg.name = "hyperframes"; // the name upstream publishes the CLI under
+    pkg.repository = { type: "git", url: "https://github.com/" + process.env.REPO, directory: "packages/cli" };
+    pkg.hyperframesFork = { repository: process.env.REPO, base: process.env.BASE, release: process.env.LABEL, commit: process.env.COMMIT };
+    fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+  '
+  mkdir -p "$OUT"
+  rm -f "$OUT/$TARBALL" "$OUT/$TARBALL.sha256"
+  PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].filename))')"
+  [ -f "$OUT/$PACKED" ] || { echo "npm pack did not produce $PACKED" >&2; exit 1; }
+  [ "$PACKED" = "$TARBALL" ] || mv "$OUT/$PACKED" "$OUT/$TARBALL"
+  (cd "$OUT" && shasum -a 256 "$TARBALL" > "$TARBALL.sha256")
 
-log "tests of the fork's patches"
-PATCHED_TESTS="${LINE_TESTS:-$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts')}"
-if [ -n "$PATCHED_TESTS" ]; then
-  case "$PATCHED_TESTS" in *fileWatcher*) wait_for_fseventsd ;; esac
-  # shellcheck disable=SC2086
-  (cd packages/cli && npx vitest run ${PATCHED_TESTS//packages\/cli\//})
 fi
-
-log "pack"
-tmpdir pack STAGE
-cp -R packages/cli/bin packages/cli/dist packages/cli/package.json "$STAGE/"
-for f in README.md LICENSE; do
-  if [ -f "packages/cli/$f" ]; then cp "packages/cli/$f" "$STAGE/"; elif [ -f "$f" ]; then cp "$f" "$STAGE/"; fi
-done
-STAGE="$STAGE" BASE="$BASE" COMMIT="$COMMIT" REPO="$REPO" LABEL="$LABEL" node -e '
-  const fs = require("fs");
-  const p = process.env.STAGE + "/package.json";
-  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-  pkg.name = "hyperframes"; // the name upstream publishes the CLI under
-  pkg.repository = { type: "git", url: "https://github.com/" + process.env.REPO, directory: "packages/cli" };
-  pkg.hyperframesFork = { repository: process.env.REPO, base: process.env.BASE, release: process.env.LABEL, commit: process.env.COMMIT };
-  fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
-'
-mkdir -p "$OUT"
-rm -f "$OUT/$TARBALL" "$OUT/$TARBALL.sha256"
-PACKED="$(cd "$STAGE" && npm pack --silent --json --pack-destination "$OUT" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s)[0].filename))')"
-[ -f "$OUT/$PACKED" ] || { echo "npm pack did not produce $PACKED" >&2; exit 1; }
-[ "$PACKED" = "$TARBALL" ] || mv "$OUT/$PACKED" "$OUT/$TARBALL"
-(cd "$OUT" && shasum -a 256 "$TARBALL" > "$TARBALL.sha256")
 
 log "smoke: install the tarball into an empty project and run it"
 tmpdir smoke SMOKE

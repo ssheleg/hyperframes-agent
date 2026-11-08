@@ -5,6 +5,17 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
+## State (2026-11-08)
+
+- The estate's migration (one model for every agent: placement, data apart from the source, keys by name, an
+  organization copy, heavy work on the second machine) as it applies to a line without a service:
+  [`migration.md`](migration.md), items M-1 to M-8. Done here: the exported session transcript at the repository root
+  (the agents base's finding F13, excluded only by `.git/info/exclude`) moved to the line's local data folder; release
+  builds can run on the second machine (`fork/remote-build.sh`, then `fork/release.sh <n> --publish --prebuilt`),
+  checked without publishing at `42ad14381`. The local `node_modules` was removed when the disk reached zero; a build
+  here needs `bun install` first.
+- Next: upstream `v0.9.17` to `v0.9.19` are not merged (`fork/status.sh`); take them by the two-step route.
+
 ## State (2026-11-05)
 
 - `main` carries upstream `v0.9.16` (merge, clean; released as `fork-v0.9.16-sshlg.1`, `9470648c8`, 79 of 79, the
