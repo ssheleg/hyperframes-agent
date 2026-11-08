@@ -8,7 +8,7 @@ publish tarball releases that consumers pin.
 ## Now (2026-11-08)
 
 - `main` = upstream `v0.9.21` (merge `661fbe55d`, clean) plus the two patches and `fork/`. Latest releases
-  `fork-v0.9.21-sshlg.2` and, in the copy, `fork-v0.9.21-appvillis.2` (tables below). `fork/status.sh` reads both
+  `fork-v0.9.21-sshlg.3` and, in the copy, `fork-v0.9.21-appvillis.3` (tables below). `fork/status.sh` reads both
   lines and names the next step.
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
@@ -16,7 +16,7 @@ publish tarball releases that consumers pin.
   from this machine with `--prebuilt` ([README](README.md), "Release"). No clone of the copy stays in the personal
   space and none of the line in the organization's (checked 2026-11-08, board thread `337a610e`).
 - Every release carries `visual-types-<label>.json` and `visual-types-files-<label>.tar.gz` (preview frames and the
-  line's recipes, first in the next release); README "Visual types and style presets". Asked by the operator through
+  line's recipes, since `.3`); README "Visual types and style presets". Asked by the operator through
   go-to-market-strategy (board `b948516e`), used by Frame Agent's format gate (their BL-283) and Foundry's
   `format_choice`.
 - The estate's migration as it applies here: [`migration.md`](migration.md). The line against its agent type in the
@@ -33,8 +33,12 @@ fork/remote-build.sh sshlg@ais-mac-studio auto`, publish with `fork/release.sh <
    the copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push` (with `ORG_TRANSFER_AUDIT` and
    `ORG_TRANSFER_MARKERS`), build it with `FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-org fork/remote-build.sh
 appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuilt`, announce in `7913a557`.
-2. Open waits: answers in board thread `337a610e` (Frame Agent and Asset Foundry check that personal and Appvillis
-   agents, keys and assets do not cross) and the template base's intake numbers for the line's lessons (`fef32c41`).
+2. Open waits: Asset Foundry's separation fix (board `337a610e`, branch `agent/wave-b7-separation`: Appvillis
+   projects out of the personal instance); Frame Agent's move to `.3` (BL-283, BL-288); the template base's intake
+   numbers for the line's lessons (`fef32c41`). The separation check (`337a610e`, 2026-11-08): routes are separated on
+   both sides; keys still shared are human gates outside this line (Frame Agent's copy runs on an OpenRouter key issued
+   from the personal account until an Appvillis provisioning key is stashed; six provider keys of the Foundry copy need
+   Appvillis accounts).
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
@@ -62,6 +66,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.21-sshlg.3`  | `c4fbc0a1e` | 2026-11-08 | `f739d4c425f469ddd43aa5c4c333d2c788de00d57869bcc6d81d1902c63cd46b` |
 | `fork-v0.9.21-sshlg.2`  | `ec80007d2` | 2026-11-08 | `b3c31b308d52aecf2eee2b582a158144ace1610cba9f857f479cf9c48f96368a` |
 | `fork-v0.9.21-sshlg.1`  | `a104ebd63` | 2026-11-08 | `b6f7c6858dc498cf856cc79650d5a25132a142c492617b823d336c50267ef503` |
 | `fork-v0.9.16-sshlg.1`  | `9470648c8` | 2026-11-05 | `089177194604f68ba2ecef94a55e545eeea0e270646528f2936e377c3d1d25d9` |
