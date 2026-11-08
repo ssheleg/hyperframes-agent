@@ -77,8 +77,11 @@ Findings the base holds against this source: F13 (a session transcript at the ro
 
 - P-6 Report to the base through the board (`agents-db.contribute`): F13 fixed; the remote build with `--prebuilt`;
   three calm readings; the door-audit exclusions; the export gate. Each with its commit.
-- P-7 `release.sh` proposes `n` from existing tags (the variant's `next_release`) and refuses a gap.
-- P-8 HANDOFF compacted: current state, the next task and open waits first; history moved to a dated file.
+- P-7 `release.sh` proposes `n` from existing tags (the variant's `next_release`) and refuses a gap. **Done
+  2026-11-08**: `auto` in `release.sh` and `remote-build.sh`, three cases in `fork/test.sh`.
+- P-8 HANDOFF compacted: current state, the next task and open waits first; history moved to a dated file. **Done
+  2026-11-08**: `HANDOFF.md` 242 to 148 lines, dated notes verbatim in `HISTORY.md` (kept out of the copy), the copy's
+  releases as a table.
 
 ### Board request b948516e: visual types and style presets
 

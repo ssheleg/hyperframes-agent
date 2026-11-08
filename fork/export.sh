@@ -86,7 +86,7 @@ git archive HEAD | tar -x -C "$STAGE"
 # fixtures upstream keeps as plain blobs under the same rules), upstream's workflows, this line's notes.
 git ls-files | git check-attr --stdin filter | awk -F': filter: ' '$2 == "lfs" { print $1 }' \
   | while IFS= read -r f; do rm -f "$STAGE/$f"; done
-rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/agent-type-plan.md" "$STAGE/fork/test.sh" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh"
+rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/agent-type-plan.md" "$STAGE/fork/test.sh" "$STAGE/fork/HISTORY.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh"
 # Nor LFS rules: with them, `git add` in the copy would turn a file into a pointer whose object goes to the
 # organisation's LFS store.
 find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +

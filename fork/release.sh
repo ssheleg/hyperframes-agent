@@ -20,7 +20,7 @@ set -euo pipefail
 usage() { echo "usage: fork/release.sh <n> [--publish] [--skip-deps] [--prebuilt <tgz>]" >&2; exit 2; }
 [ $# -ge 1 ] || usage
 N="$1"; shift
-[[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "release number must be a positive integer, got: $N" >&2; exit 2; }
+[[ "$N" =~ ^([1-9][0-9]*|auto)$ ]] || { echo "release number must be a positive integer or auto, got: $N" >&2; exit 2; }
 PUBLISH=0; DEPS=1; PREBUILT=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -53,6 +53,13 @@ BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 BASE="${LINE_BASE:-$(git tag --merged HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | awk '!/-/' | head -n1)}"
 [ -n "$BASE" ] || { echo "no upstream release tag is merged into HEAD" >&2; exit 1; }
 COMMIT="$(git rev-parse HEAD)"
+# The numbers already taken on this base, here and on origin: `auto` takes the next one, and a number past it is a gap.
+BASE_RE="${BASE#v}"; BASE_RE="${BASE_RE//./\\.}"
+TAKEN="$( { git tag -l "fork-v${BASE#v}-sshlg.*"; git ls-remote --tags origin "refs/tags/fork-v${BASE#v}-sshlg.*" 2>/dev/null | sed 's#.*refs/tags/##; s#\^{}$##'; } \
+  | sed -n "s/^fork-v${BASE_RE}-sshlg\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -n1)"
+NEXT=$(( ${TAKEN:-0} + 1 ))
+if [ "$N" = auto ]; then N="$NEXT"
+elif [ "$N" -gt "$NEXT" ]; then echo "release number $N leaves a gap: the next on ${BASE} is $NEXT" >&2; exit 1; fi
 VERSION="${BASE#v}+sshlg.${N}"
 LABEL="${BASE#v}-sshlg.${N}"
 TAG="fork-v${LABEL}"

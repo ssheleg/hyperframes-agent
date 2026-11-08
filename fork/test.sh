@@ -77,11 +77,12 @@ mktgz() { # mktgz <dir> <file name> <version> <commit>
 }
 P="$WORK/prebuilt"
 mktgz "$P/a" hyperframes-1.2.3-sshlg.1.tgz "1.2.3+sshlg.1" "$COMMIT"
-expect "release: --prebuilt of another release number" 1 "this release is hyperframes-1.2.3-sshlg.2.tgz" \
-  -- fork/release.sh 2 --prebuilt "$P/a/hyperframes-1.2.3-sshlg.1.tgz"
-mktgz "$P/b" hyperframes-1.2.3-sshlg.2.tgz "1.2.3+sshlg.1" "$COMMIT"
-expect "release: --prebuilt renamed to another number" 1 "this release is '1.2.3+sshlg.2" \
-  -- fork/release.sh 2 --prebuilt "$P/b/hyperframes-1.2.3-sshlg.2.tgz"
+mktgz "$P/a2" hyperframes-1.2.3-sshlg.2.tgz "1.2.3+sshlg.2" "$COMMIT"
+expect "release: --prebuilt of another release number" 1 "this release is hyperframes-1.2.3-sshlg.1.tgz" \
+  -- fork/release.sh 1 --prebuilt "$P/a2/hyperframes-1.2.3-sshlg.2.tgz"
+mktgz "$P/b" hyperframes-1.2.3-sshlg.1.tgz "1.2.3+sshlg.2" "$COMMIT"
+expect "release: --prebuilt renamed to another number" 1 "this release is '1.2.3+sshlg.1" \
+  -- fork/release.sh 1 --prebuilt "$P/b/hyperframes-1.2.3-sshlg.1.tgz"
 mktgz "$P/c" hyperframes-1.2.3-sshlg.1.tgz "1.2.3+sshlg.1" "0000000000000000000000000000000000000000"
 expect "release: --prebuilt of another commit" 1 "this release is" \
   -- fork/release.sh 1 --prebuilt "$P/c/hyperframes-1.2.3-sshlg.1.tgz"
@@ -93,6 +94,10 @@ expect "release: --prebuilt without its .sha256" 1 ".sha256 beside" \
   -- fork/release.sh 1 --prebuilt "$P/e/hyperframes-1.2.3-sshlg.1.tgz"
 gitq tag -a fork-v1.2.3-sshlg.1 -m t
 expect "release: an existing tag is refused" 1 "already exists" -- fork/release.sh 1
+expect "release: a number past the next is a gap" 1 "leaves a gap: the next on v1.2.3 is 2" -- fork/release.sh 3
+expect "release: auto takes the next number" 1 "this release is hyperframes-1.2.3-sshlg.2.tgz" \
+  -- fork/release.sh auto --prebuilt "$P/a/hyperframes-1.2.3-sshlg.1.tgz"
+expect "release: neither a number nor auto" 2 "positive integer or auto" -- fork/release.sh next
 git tag -d fork-v1.2.3-sshlg.1 >/dev/null
 printf 'x\n' >> README.md
 expect "release: a dirty tree is refused" 1 "uncommitted changes" -- fork/release.sh 1

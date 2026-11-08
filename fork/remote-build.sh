@@ -3,17 +3,17 @@
 # short of disk (a release build wants about 8 GB) still publishes. The other machine needs a clone of this
 # repository, Bun and Node; it needs no GitHub CLI sign-in, because publishing stays here:
 #
-#   fork/remote-build.sh <ssh-host> <n> [--skip-deps]
+#   fork/remote-build.sh <ssh-host> <n|auto> [--skip-deps]
 #   fork/release.sh <n> --publish --prebuilt fork/out/<tarball>      what this script prints at the end
 #
 # FORK_REMOTE_DIR names the clone on the other machine, relative to its home or absolute (required).
 # HEAD must be on origin's main already: the other machine builds exactly that commit, which it fetches.
 set -euo pipefail
 
-usage() { echo "usage: FORK_REMOTE_DIR=<dir> fork/remote-build.sh <ssh-host> <n> [--skip-deps]" >&2; exit 2; }
+usage() { echo "usage: FORK_REMOTE_DIR=<dir> fork/remote-build.sh <ssh-host> <n|auto> [--skip-deps]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
 HOST="$1"; N="$2"; shift 2
-[[ "$N" =~ ^[1-9][0-9]*$ ]] || { echo "release number must be a positive integer, got: $N" >&2; exit 2; }
+[[ "$N" =~ ^([1-9][0-9]*|auto)$ ]] || { echo "release number must be a positive integer or auto, got: $N" >&2; exit 2; }
 EXTRA=""
 for arg in "$@"; do
   case "$arg" in

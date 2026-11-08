@@ -140,6 +140,8 @@ fork/release.sh <n> --publish --prebuilt fork/out/<tarball>        # here: check
 ```
 
 `--prebuilt` refuses a tarball whose name, `.sha256`, version or `hyperframesFork.commit` is not this release's.
+`<n>` may be `auto` in both scripts: the next number on the base from the tags here and on origin. A number past it is
+refused as a gap, and an existing tag as taken.
 On the second machine the personal space publishes too: its GitHub CLI is `~/.local/bin/gh`, a wrapper that reads the
 token from the credential store (call it from a login shell). The copy builds in the organization's space there, from a
 clone reached by its own read-only deploy key (`Host gh-appvillis-hyperframes-agent`).
