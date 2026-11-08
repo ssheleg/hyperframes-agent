@@ -68,7 +68,7 @@ Findings the base holds against this source: F13 (a session transcript at the ro
 - P-5 `fork/test.sh`, plain Bash with temporary Git repositories, no network: version and tag names, `--prebuilt`
   refusals (number, renamed tarball, appended byte, missing file, missing `.sha256`), `remote-build.sh` refusals (dirty
   tree, HEAD not on origin, unsafe directory), export refusals (a foreign commit, a commit named in `Backports:`, the
-  line's name in the tree), door-audit exclusions, status exit codes. `release.sh` runs it first. **Done 2026-11-08**: 32 cases in about 20 s, no network
+  line's name in the tree), door-audit exclusions. `release.sh` runs it first. **Done 2026-11-08**: 31 cases in about 20 s, no network
   (stubs for `gh` and `ssh`); `release.sh` runs them first and skips them in a copy, which carries no `fork/test.sh`.
   Writing them found that the export refused its own test file (it holds the line's name as test data), so the copy
   leaves `fork/test.sh` out.
