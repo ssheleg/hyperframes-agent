@@ -8,6 +8,11 @@
 # The copy carries no upstream history (upstream's history names a person's address) and none of this line's
 # maintenance notes; fork/org/ supplies its README, HANDOFF, NOTICE and the headers of CLAUDE.md, AGENTS.md and
 # README.md, which go on top of upstream's own text at the base tag.
+#
+# Every export is checked before it is committed, and again before it is pushed (the template's order: check, commit
+# once, push only after the gate). ORG_TRANSFER_AUDIT names the shared transfer audit and ORG_TRANSFER_MARKERS its
+# marker file (both outside this repository); fork/org/audit-allow-literals.txt is its allow list. gitleaks scans the
+# exported files with fork/org/gitleaks.toml.
 set -euo pipefail
 
 COPY_REPO="appvillis-com/appvillis-hyperframes-agent"
@@ -19,6 +24,19 @@ for arg in "$@"; do case "$arg" in --push) PUSH=1 ;; *) usage ;; esac; done
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
+AUDIT="${ORG_TRANSFER_AUDIT:-}"; MARKERS="${ORG_TRANSFER_MARKERS:-}"
+[ -n "$AUDIT" ] && [ -f "$AUDIT" ] || { echo "set ORG_TRANSFER_AUDIT to the shared transfer audit (org-transfer-audit.py)" >&2; exit 2; }
+[ -n "$MARKERS" ] && [ -f "$MARKERS" ] || { echo "set ORG_TRANSFER_MARKERS to its marker file" >&2; exit 2; }
+command -v gitleaks >/dev/null || { echo "gitleaks is not installed" >&2; exit 2; }
+ALLOW=()
+while IFS= read -r l; do case "$l" in ''|'#'*) ;; *) ALLOW+=(--allow-literal "$l") ;; esac; done < fork/org/audit-allow-literals.txt
+# Prints the verdict line and the counts; returns 0 only on "ready".
+audit_copy() {
+  local out
+  out="$(python3 "$AUDIT" "$DEST" --marker-file "$MARKERS" "${ALLOW[@]}" "$@" 2>&1)" || true
+  printf '%s\n' "$out" | sed -n '1,4p' | sed 's/^/[fork-export]   /' >&2
+  printf '%s\n' "$out" | head -n1 | grep -q ': ready$'
+}
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo "export from main" >&2; exit 1; }
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "the tree has uncommitted changes" >&2; exit 1; }
 case "$(git -C "$DEST" remote get-url origin 2>/dev/null)" in
@@ -68,7 +86,7 @@ git archive HEAD | tar -x -C "$STAGE"
 # fixtures upstream keeps as plain blobs under the same rules), upstream's workflows, this line's notes.
 git ls-files | git check-attr --stdin filter | awk -F': filter: ' '$2 == "lfs" { print $1 }' \
   | while IFS= read -r f; do rm -f "$STAGE/$f"; done
-rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh"
+rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/agent-type-plan.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh"
 # Nor LFS rules: with them, `git add` in the copy would turn a file into a pointer whose object goes to the
 # organisation's LFS store.
 find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +
@@ -110,11 +128,21 @@ git -C "$DEST" ls-files -z | (cd "$DEST" && xargs -0 rm -f)
 cp -R "$STAGE/." "$DEST/"
 git -C "$DEST" add -A
 if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this tree"; exit 0; fi
+# Before the commit: the exported tree (the audit reads the files the index lists) and a secret scan of the same files.
+# A refusal puts the copy back on its own HEAD: nothing was committed, its tree was clean before this run.
+refuse_tree() { git -C "$DEST" reset -q --hard HEAD; echo "$1; the copy is back on its HEAD, nothing committed" >&2; exit 1; }
+log "check the exported tree"
+audit_copy --no-history || refuse_tree "the transfer audit of the exported tree is not ready"
+gitleaks dir "$STAGE" --config fork/org/gitleaks.toml --no-banner --redact --log-level error >&2 \
+  || refuse_tree "gitleaks found a secret in the exported files"
 GIT_AUTHOR_NAME="$EXPORT_NAME" GIT_AUTHOR_EMAIL="$EXPORT_EMAIL" GIT_COMMITTER_NAME="$EXPORT_NAME" GIT_COMMITTER_EMAIL="$EXPORT_EMAIL" \
   git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)" \
     -m "Source-Revision: line@$(git rev-parse --short=12 HEAD)"
 log "committed $(git -C "$DEST" rev-parse --short HEAD) in the copy"
 if [ "$PUSH" = 1 ]; then
+  # Before the push: the whole copy, history included (its gitleaks pass covers the new commit).
+  log "check the copy with its history"
+  audit_copy || { echo "the transfer audit of the copy is not ready: not pushed (the commit stays local)" >&2; exit 1; }
   git -C "$DEST" push -q origin HEAD:refs/heads/main
   log "pushed $COPY_REPO main"
 fi

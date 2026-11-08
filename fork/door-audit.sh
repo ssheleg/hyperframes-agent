@@ -5,7 +5,9 @@
 #
 #   fork/door-audit.sh v0.8.181 v0.8.184
 #
-# Tests, fixtures and test-only perf harnesses are left out: they never ship in the CLI tarball.
+# Tests, fixtures, test helpers and test-only perf harnesses are left out: they never ship in the CLI tarball (no shipped
+# file imports `__fixtures__`, `__test_utils__` or a `*.test-helpers.*` file; checked with git grep on 2026-11-08, after
+# the v0.9.16..v0.9.21 report listed variables and a spawnSync from them as shipped code).
 set -euo pipefail
 
 [ $# -eq 2 ] || { echo "usage: fork/door-audit.sh <from-tag> <to-tag>" >&2; exit 2; }
@@ -13,7 +15,7 @@ FROM="$1"; TO="$2"
 cd "$(git rev-parse --show-toplevel)"
 for t in "$FROM" "$TO"; do git rev-parse -q --verify "refs/tags/$t" >/dev/null || { echo "no tag $t (git fetch upstream --tags)" >&2; exit 2; }; done
 
-SHIPPED=(packages ':(exclude)**/*.test.ts' ':(exclude)**/*.test.tsx' ':(exclude)**/*.test.mjs' ':(exclude)**/*.test.js' ':(exclude)**/*.fixture.ts' ':(exclude)**/tests/**' ':(exclude)**/test/**' ':(exclude)**/*.spec.ts' ':(exclude)**/__goldens__/**')
+SHIPPED=(packages ':(exclude)**/*.test.ts' ':(exclude)**/*.test.tsx' ':(exclude)**/*.test.mjs' ':(exclude)**/*.test.js' ':(exclude)**/*.fixture.ts' ':(exclude)**/tests/**' ':(exclude)**/test/**' ':(exclude)**/*.spec.ts' ':(exclude)**/__goldens__/**' ':(exclude)**/__fixtures__/**' ':(exclude)**/__test_utils__/**' ':(exclude)**/__tests__/**' ':(exclude)**/*.test-helpers.*')
 added() { git diff "$FROM" "$TO" -- "${SHIPPED[@]}" | awk '/^\+\+\+ b\//{f=substr($0,7)} /^\+[^+]/{print f": "substr($0,2)}'; }
 section() { printf '\n## %s\n' "$1"; }
 
