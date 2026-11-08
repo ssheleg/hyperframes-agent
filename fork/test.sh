@@ -52,7 +52,7 @@ git init -q -b main "$LINE"
   printf '{"name":"@hyperframes/cli","version":"1.2.3"}\n' > packages/cli/package.json
   printf 'upstream\n' > README.md; printf 'claude\n' > CLAUDE.md; printf 'agents\n' > AGENTS.md
   gitq add -A; gitq commit -q -m base; gitq tag v1.2.3
-  cp "$FORK"/*.sh fork/; cp "$FORK"/org/* fork/org/
+  cp "$FORK"/*.sh "$FORK"/*.mjs fork/; cp "$FORK"/org/* fork/org/
   gitq add -A; gitq commit -q -m "fork scripts"
   git remote add origin "$ORIGIN"; git push -q origin main
 )
@@ -119,6 +119,36 @@ if printf '%s' "$AUDIT" | grep -q SHIPPED_VAR && ! printf '%s' "$AUDIT" | grep -
   ok "door-audit: lists shipped code, leaves test utilities out"
 else fail "door-audit: lists shipped code, leaves test utilities out" "$(printf '%s' "$AUDIT" | grep -E '_VAR' | tr '\n' ' ')"; fi
 expect "door-audit: refuses an unknown tag" 2 "no tag" -- fork/door-audit.sh v1.2.3 v9.9.9
+
+# --- visual-types.mjs and style-preset.mjs ---------------------------------------------------------------------------
+VT="$WORK/vt"; mkdir -p "$VT/themes" "$VT/registry/blocks/title-a" "$VT/registry/blocks/wipe-a" "$VT/registry/components/odd" \
+  "$VT/skills/hyperframes/assets/frame-presets/plain"
+# shellcheck disable=SC2016  # backticks are the file's own markdown
+printf '## Final token set\n\n| Group | Tokens |\n| --- | --- |\n| Palette | `--bg`, `--fg` |\n| Motion | `--dur-beat` |\n\n`--demo-bg` is not a token.\n\n## Next\n' > "$VT/themes/CONTRACT.md"
+printf ':root {\n  --bg: #fff;\n  --fg: #000;\n  --dur-beat: 0.4s;\n}\n' > "$VT/themes/plain.css"
+printf -- '---\nname: Plain\ndescription: >\n  A plain frame.\n---\n' > "$VT/skills/hyperframes/assets/frame-presets/plain/FRAME.md"
+printf '{"name":"title-a","type":"hyperframes:block","tags":["typography"],"files":[{"path":"a.html"}],"preview":{"poster":"https://x/p.jpg"}}\n' > "$VT/registry/blocks/title-a/registry-item.json"
+printf '<script>gsap.to(1)</script>\n' > "$VT/registry/blocks/title-a/a.html"
+printf '{"name":"wipe-a","type":"hyperframes:block","tags":["transition"],"files":[]}\n' > "$VT/registry/blocks/wipe-a/registry-item.json"
+printf '{"name":"odd","type":"hyperframes:component","tags":["nothing-known"],"files":[]}\n' > "$VT/registry/components/odd/registry-item.json"
+VTJ="$(node fork/visual-types.mjs --root "$VT" --base v1.2.3)"
+if printf '%s' "$VTJ" | node -e '
+  let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ const c=JSON.parse(s); const t=Object.fromEntries(c.types.map(x=>[x.id,x]));
+  const ok = c.totals.items===3 && c.totals.untyped===1 && t["kinetic-typography"].count===1 && t["kinetic-typography"].items[0].techniques.includes("gsap")
+    && t["kinetic-typography"].items[0].poster && t.transitions.count===1 && c.styles.token_contract.tokens.join()==="--bg,--fg,--dur-beat"
+    && c.styles.frame_presets[0].description==="A plain frame." && c.styles.theme_packs[0].name==="plain";
+  process.exit(ok?0:1) })'; then ok "visual-types: groups items by tag, names libraries, reads tokens, packs and presets"
+else fail "visual-types: groups items by tag, names libraries, reads tokens, packs and presets" "$(printf '%s' "$VTJ" | head -c 300)"; fi
+expect "visual-types: the same tree gives the same bytes" 0 "" -- test "$(node fork/visual-types.mjs --root "$VT" --base v1.2.3)" = "$VTJ"
+node fork/style-preset.mjs new plain --name demo --root "$VT" > "$WORK/preset.json"
+expect "style-preset: a preset from a theme pack is whole" 0 "whole (3 tokens)" -- node fork/style-preset.mjs check "$WORK/preset.json" --root "$VT"
+node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1]));p.frame_preset="plain";p.transitions=["wipe-a"];p.captions="title-a";delete p.tokens["--fg"];p.tokens["--dur-beat"]="slow";fs.writeFileSync(process.argv[2],JSON.stringify(p))' "$WORK/preset.json" "$WORK/bad.json"
+BAD="$(node fork/style-preset.mjs check "$WORK/bad.json" --root "$VT" 2>&1)"; BADRC=$?
+if [ "$BADRC" = 1 ] && printf '%s' "$BAD" | grep -q "token --fg is missing" && printf '%s' "$BAD" | grep -q "not a duration" \
+  && printf '%s' "$BAD" | grep -q "title-a is not tagged captions" && ! printf '%s' "$BAD" | grep -q "frame preset\|wipe-a"; then
+  ok "style-preset: names every missing token, a bad pace and a wrong caption item"
+else fail "style-preset: names every missing token, a bad pace and a wrong caption item" "$(printf '%s' "$BAD" | tr '\n' ' ')"; fi
+expect "style-preset: css writes every token in a :root block" 0 "--dur-beat: 0.4s;" -- node fork/style-preset.mjs css "$WORK/preset.json" --root "$VT"
 
 # --- workflows-guard.sh ---------------------------------------------------------------------------------------------
 : > "$GH_STUB_DIR/workflows"

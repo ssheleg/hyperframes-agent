@@ -22,7 +22,9 @@ it waits until the line has taken it and named it in a `Backports: <sha>` line. 
 was built from in a `Source-Revision:` line.
 
 [`line.env`](line.env) names the upstream release this tree is (`LINE_BASE`), the test files of the patches
-(`LINE_TESTS`) and the patches (`LINE_PATCHES`); `release.sh` reads it.
+(`LINE_TESTS`) and the patches (`LINE_PATCHES`); `release.sh` reads it. Every release also carries
+`visual-types-<base>-appvillis.<n>.json`, the engine's catalogue of visual types, registry items and style tokens
+(`node fork/visual-types.mjs`), and `fork/style-preset.mjs` checks a project's style preset against the token contract.
 
 ## Versions, tags and assets
 

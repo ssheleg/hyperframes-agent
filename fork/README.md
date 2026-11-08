@@ -79,6 +79,25 @@ The lockfile then holds the tarball's sha512. The other engine packages (`@hyper
 ours touches them. Releases made before the rename (2026-10-19) name `sshlg/heygen-hyperframes-vr` in their
 `hyperframesFork.repository`; GitHub redirects that address here.
 
+## Visual types and style presets
+
+Agents above the engine show a person what kinds of video it can make before a generation, and keep the taste the
+person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
+
+- `visual-types-<base>-<line>.<n>.json`, an asset of every release, written by `node fork/visual-types.mjs` from that
+  commit's registry: 11 visual types (kinetic typography; data, charts, maps and diagrams; interface and product; code;
+  captions and overlays; 3D, shaders and particles; transitions; backgrounds and textures; images and footage; camera
+  and depth; talk, interview and social), each with the registry blocks and components that make it, the libraries
+  their files use (GSAP, three.js, WebGL, WebGPU, d3, Lottie, canvas, SVG), an install command and a preview frame
+  where the registry has one; the kinds made outside the registry (talking head, screen recording, generated footage)
+  with the skill that makes them; and the style layer: the 18 tokens of `themes/CONTRACT.md`, the theme packs and the
+  frame presets of the `hyperframes` skill. The same tree gives the same bytes.
+- `fork/style-preset.mjs` keeps a project's taste as a `hyperframes-style-preset/1` file: every contract token
+  (`--dur-beat` is the pace), and optionally a frame preset, a caption item, preferred transitions, the text density
+  and who decided each field (a person or the agent, with the date). `new <theme-pack>` starts one, `check` says what is
+  missing or wrong, `css` writes the `:root` block a composition loads. The preset lives with the project's consumer
+  (a video service's project profile); the engine only reads it.
+
 ## Patches on the line
 
 | Patch                                                                              | Upstream                                | Drop when                      |

@@ -196,6 +196,14 @@ case "$FORK_FIELD" in *"$COMMIT"*) ;; *) echo "smoke: the installed package.json
 log "smoke passed: --version '$GOT', dead marker swept, hyperframesFork $FORK_FIELD"
 log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 
+# The catalogue of visual types travels with every release (fork/visual-types.mjs; board request b948516e): built from
+# this commit's registry, not from the tarball, so a prebuilt tarball gets the same file.
+CATALOG="visual-types-${LABEL}.json"
+node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" > "$OUT/$CATALOG"
+node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items) process.exit(1)' "$OUT/$CATALOG" \
+  || { echo "the catalogue of visual types is empty" >&2; exit 1; }
+log "catalogue $OUT/$CATALOG"
+
 [ "$PUBLISH" = 1 ] || { log "not published (no --publish)"; exit 0; }
 
 log "publish"
@@ -219,8 +227,10 @@ tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
   echo "Install: \`npm install https://github.com/$REPO/releases/download/$TAG/$TARBALL\`"
   echo
   echo "sha256: \`$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")\`"
+  echo
+  echo "Visual types and style presets: \`$CATALOG\` (what the engine can make, with registry items, libraries and preview frames; fork/README.md)."
 } > "$NOTES"
-gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
+gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" "$OUT/$CATALOG" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
 
 log "verify the published asset"
 tmpdir check CHECK

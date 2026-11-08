@@ -80,6 +80,11 @@ Findings the base holds against this source: F13 (a session transcript at the ro
 - P-7 `release.sh` proposes `n` from existing tags (the variant's `next_release`) and refuses a gap.
 - P-8 HANDOFF compacted: current state, the next task and open waits first; history moved to a dated file.
 
+### Board request b948516e: visual types and style presets
+
+- P-9 `fork/visual-types.mjs` (a catalogue asset of every release) and `fork/style-preset.mjs` (a project's taste as a
+  checked file), with cases in `fork/test.sh`. **Done 2026-11-08**, first shipped in `fork-v0.9.21-sshlg.2`.
+
 ### Waits on others
 
 - The two signed upstream branches: the operator's send instruction ([upstream-prs.md](upstream-prs.md)).
