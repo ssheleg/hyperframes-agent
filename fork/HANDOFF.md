@@ -14,7 +14,12 @@ publish tarball releases that consumers pin.
   builds can run on the second machine (`fork/remote-build.sh`, then `fork/release.sh <n> --publish --prebuilt`),
   checked without publishing at `42ad14381`. The local `node_modules` was removed when the disk reached zero; a build
   here needs `bun install` first.
-- Next: upstream `v0.9.17` to `v0.9.19` are not merged (`fork/status.sh`); take them by the two-step route.
+- Upstream `v0.9.17` to `v0.9.21` merged (`661fbe55d`, clean; the patches survive) and released as
+  `fork-v0.9.21-sshlg.1` (`a104ebd63`), the first release built on the second machine and published from here: the
+  local run had waited 28 minutes for `fseventsd` (over 100% CPU, other agents' builds) and was stopped before any tag.
+  The copy: export `e701a03`, shared audit `ready`, `fork-v0.9.21-appvillis.1` (sha256
+  `6fbbb1be8964a6551e628d3e83f2f8ba845e86d36ea59252fce3422b2fb68ec0`), built the same way from a clone of the copy on
+  the second machine. Door audit: the `v0.9.16..v0.9.21` row below.
 
 ## State (2026-11-05)
 
@@ -128,6 +133,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.21-sshlg.1`  | `a104ebd63` | 2026-11-08 | `b6f7c6858dc498cf856cc79650d5a25132a142c492617b823d336c50267ef503` |
 | `fork-v0.9.16-sshlg.1`  | `9470648c8` | 2026-11-05 | `089177194604f68ba2ecef94a55e545eeea0e270646528f2936e377c3d1d25d9` |
 | `fork-v0.9.15-sshlg.1`  | `42cbd37ea` | 2026-11-05 | `0862b49c5fe0384c00087b4b74ebaa31fe06e11345269c35bd302def31c010fa` |
 | `fork-v0.9.13-sshlg.1`  | `fdfd05e84` | 2026-11-04 | `cd73bc5614c3dce16d6eba5b278ce6af001d0a60f500912e2c7175a7bc545b5d` |
