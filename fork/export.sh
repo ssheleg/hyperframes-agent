@@ -133,7 +133,8 @@ if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this t
 refuse_tree() { git -C "$DEST" reset -q --hard HEAD; echo "$1; the copy is back on its HEAD, nothing committed" >&2; exit 1; }
 log "check the exported tree"
 audit_copy --no-history || refuse_tree "the transfer audit of the exported tree is not ready"
-gitleaks dir "$STAGE" --config fork/org/gitleaks.toml --no-banner --redact --log-level error >&2 \
+# From inside the stage: gitleaks reports the paths it was given, and the allow list's paths are relative to the root.
+(cd "$STAGE" && gitleaks dir . --config "$ROOT/fork/org/gitleaks.toml" --no-banner --redact --log-level error) >&2 \
   || refuse_tree "gitleaks found a secret in the exported files"
 GIT_AUTHOR_NAME="$EXPORT_NAME" GIT_AUTHOR_EMAIL="$EXPORT_EMAIL" GIT_COMMITTER_NAME="$EXPORT_NAME" GIT_COMMITTER_EMAIL="$EXPORT_EMAIL" \
   git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)" \

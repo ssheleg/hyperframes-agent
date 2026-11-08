@@ -37,8 +37,10 @@ case "$*" in
 esac
 EOF
 printf '#!/bin/sh\necho "ssh stub: no network in tests" >&2; exit 255\n' > "$STUB/ssh"
-# gitleaks finds nothing in the fixtures; the stub keeps the tests from depending on it being installed.
-printf '#!/bin/sh\nexit 0\n' > "$STUB/gitleaks"
+# gitleaks finds nothing in the fixtures; the stub keeps the tests from depending on it being installed, and records
+# where it ran and with what (the allow list's paths only match relative names, so it must scan "." from the stage).
+# shellcheck disable=SC2016  # the stub's own variables expand when it runs
+printf '#!/bin/sh\nprintf "%%s|%%s\\n" "$PWD" "$*" >> "$GH_STUB_DIR/gitleaks.calls"\nexit 0\n' > "$STUB/gitleaks"
 chmod +x "$STUB/gh" "$STUB/ssh" "$STUB/gitleaks"
 export GH_STUB_DIR="$WORK/gh"; mkdir -p "$GH_STUB_DIR"
 export PATH="$STUB:$PATH"
@@ -188,6 +190,15 @@ expect "export: a transfer audit that is not ready refuses before the commit" 1 
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$COPY"
 expect "export: the refused copy has a clean tree" 0 "" -- test -z "$(git -C "$COPY" status --porcelain)"
 expect "export: nothing was committed in the copy by the refusals" 0 "" -- test "$(git -C "$COPY" rev-parse --short=12 HEAD)" = "$TEAM_SHA"
+expect "export: a clean line exports one commit with Source-Revision" 0 "committed" -- fork/export.sh "$COPY"
+expect "export: the commit names the line's revision" 0 "Source-Revision: line@$(git rev-parse --short=12 HEAD)" -- git -C "$COPY" log -1 --format=%B
+CALL="$(tail -n1 "$GH_STUB_DIR/gitleaks.calls" 2>/dev/null)"
+case "$CALL" in
+  *"|dir . --config "*)
+    if [ "${CALL%%|*}" != "$LINE" ]; then ok "export: gitleaks scans the stage as \".\" from inside it"
+    else fail "export: gitleaks scans the stage as \".\" from inside it" "ran in the line's root: $CALL"; fi ;;
+  *) fail "export: gitleaks scans the stage as \".\" from inside it" "call: ${CALL:-none}" ;;
+esac
 
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS failed"; exit 1; fi
