@@ -26,7 +26,14 @@ publish tarball releases that consumers pin.
 - The estate's migration as it applies here: [`migration.md`](migration.md). The line against its agent type in the
   template base (`media-production`, `engine-line`): [`agent-type-plan.md`](agent-type-plan.md), all waves done;
   checked against template 1.12.2 on 2026-11-09 (board request `7b43ec88`, answer `4a6ef49d`).
-- The line's own scripts have tests: `fork/test.sh` (50 cases, no network), run first by `fork/release.sh`.
+- Release archives are packed by `fork/pack.sh` (no AppleDouble twins, owner root; Frame Agent's finding `fe979e90`);
+  the catalogue's files archive and registry mirror of both `v0.9.26` releases were repacked and replaced on
+  2026-11-09.
+- The line's template repository: `passioncode-ai/template-hyperframes-agent` (private, template flag), rendered from
+  the agents base's `media-production` 1.13.0, variant `engine-line` (board request `08dcfc03`). When the line learns
+  something new, add it to the base through its gate first, then render again (the base's
+  `playbooks/make-template-repo.md`, section 6); never edit that repository by hand.
+- The line's own scripts have tests: `fork/test.sh` (51 cases, no network), run first by `fork/release.sh`.
 - History of earlier states, tooling fixes and the copy's early releases: [`HISTORY.md`](HISTORY.md).
 
 ## Next task
