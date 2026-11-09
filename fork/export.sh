@@ -92,7 +92,19 @@ rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/mig
 find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +
 find "$STAGE" -name '.gitattributes.bak' -type f -delete
 
-PATCHES="$(git log --reverse --no-merges --format='- %s' "$BASE..HEAD" -- packages)"
+# The patches the line still carries: a commit whose files all read as in the base again (upstream took it under
+# another commit, or a later commit reverted it) changes nothing and is left out (README, "Taking an upstream release",
+# step 4). `fork-v0.9.26-sshlg.1`'s notes listed the running-markers sweep that v0.8.193 had carried for a month.
+carried_patches() { # carried_patches <base> <head> <git log format> <pathspec...>
+  local base="$1" head="$2" fmt="$3" c
+  shift 3
+  git log --reverse --no-merges --format='%H' "$base..$head" -- "$@" | while read -r c; do
+    [ -n "$(git diff-tree --no-commit-id --name-only -r "$c" -- "$@")" ] || continue
+    git diff-tree --no-commit-id --name-only -r -z "$c" -- "$@" | xargs -0 git diff --quiet "$base" "$head" -- \
+      || git log -1 --format="$fmt" "$c"
+  done
+}
+PATCHES="$(carried_patches "$BASE" HEAD '- %s' packages)"
 TESTS="$(git diff --name-only "$BASE" HEAD -- 'packages/cli/src/**/*.test.ts' | tr '\n' ' ' | sed 's/ $//')"
 for f in CLAUDE.md AGENTS.md; do
   { cat fork/org/header.md; git show "$BASE:$f"; } > "$STAGE/$f"

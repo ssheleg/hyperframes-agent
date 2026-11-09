@@ -242,7 +242,17 @@ expect "export: a transfer audit that is not ready refuses before the commit" 1 
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$COPY"
 expect "export: the refused copy has a clean tree" 0 "" -- test -z "$(git -C "$COPY" status --porcelain)"
 expect "export: nothing was committed in the copy by the refusals" 0 "" -- test "$(git -C "$COPY" rev-parse --short=12 HEAD)" = "$TEAM_SHA"
+# A patch the line still carries is listed for the copy's release notes; one that was reverted is not.
+mkdir -p packages/cli/src; printf 'kept\n' > packages/cli/src/kept.ts; gitq add -A; gitq commit -q -m "fix(cli): a patch still carried"
+printf '{"name":"@hyperframes/cli","version":"9.9.9"}\n' > packages/cli/package.json; gitq commit -q -am "fix(cli): a patch later reverted"
+git show v1.2.3:packages/cli/package.json > packages/cli/package.json; gitq commit -q -am "revert the reverted patch"
 expect "export: a clean line exports one commit with Source-Revision" 0 "committed" -- fork/export.sh "$COPY"
+# Read the way release.sh reads it: sourced.
+git -C "$COPY" show HEAD:fork/line.env > "$WORK/line.env"
+LINE_ENV="$(bash -c '. "$1"; printf "%s" "$LINE_PATCHES"' _ "$WORK/line.env")"
+if printf '%s' "$LINE_ENV" | grep -q "a patch still carried" && ! printf '%s' "$LINE_ENV" | grep -q "later reverted\|revert the reverted"; then
+  ok "export: the copy's patch list names what the line still carries, not a reverted patch"
+else fail "export: the copy's patch list names what the line still carries, not a reverted patch" "$LINE_ENV"; fi
 expect "export: the commit names the line's revision" 0 "Source-Revision: line@$(git rev-parse --short=12 HEAD)" -- git -C "$COPY" log -1 --format=%B
 CALL="$(tail -n1 "$GH_STUB_DIR/gitleaks.calls" 2>/dev/null)"
 case "$CALL" in

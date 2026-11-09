@@ -115,6 +115,18 @@ cleanup() {
 trap cleanup EXIT
 # Sets the variable named by $2 rather than printing: a $(tmpdir ...) would run in a subshell, its TMPS+= would
 # never reach cleanup, and every run would leave its directories behind.
+# The patches the line still carries: a commit whose files all read as in the base again (upstream took it under
+# another commit, or a later commit reverted it) changes nothing and is left out (README, "Taking an upstream release",
+# step 4). `fork-v0.9.26-sshlg.1`'s notes listed the running-markers sweep that v0.8.193 had carried for a month.
+carried_patches() { # carried_patches <base> <head> <git log format> <pathspec...>
+  local base="$1" head="$2" fmt="$3" c
+  shift 3
+  git log --reverse --no-merges --format='%H' "$base..$head" -- "$@" | while read -r c; do
+    [ -n "$(git diff-tree --no-commit-id --name-only -r "$c" -- "$@")" ] || continue
+    git diff-tree --no-commit-id --name-only -r -z "$c" -- "$@" | xargs -0 git diff --quiet "$base" "$head" -- \
+      || git log -1 --format="$fmt" "$c"
+  done
+}
 tmpdir() { local d; d="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-$1.XXXXXX")"; TMPS+=("$d"); printf -v "$2" '%s' "$d"; }
 
 if [ -n "$PREBUILT" ]; then
@@ -261,7 +273,7 @@ tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
   echo
   echo "Patches on top of $BASE:"
   if [ -n "$LINE_PATCHES" ]; then printf '%s\n' "$LINE_PATCHES"; else
-    git log --reverse --no-merges --format='- %s (%h)' "$BASE..$COMMIT" -- . ':!fork'
+    carried_patches "$BASE" "$COMMIT" '- %s (%h)' . ':!fork'
   fi
   echo
   echo "Install: \`npm install https://github.com/$REPO/releases/download/$TAG/$TARBALL\`"
