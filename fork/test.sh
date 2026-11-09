@@ -199,8 +199,11 @@ else fail "visual-types: frames only for typed items, no dash between words, the
 # pack.sh: no AppleDouble twin for a file with an extended attribute, and no account name in the headers.
 PK="$WORK/pack"; mkdir -p "$PK/d"; printf 'x\n' > "$PK/d/f.txt"; xattr -w com.example.test 1 "$PK/d/f.txt" 2>/dev/null || true
 fork/pack.sh "$PK" "$PK/out.tar.gz" d
-LISTING="$(tar -tvzf "$PK/out.tar.gz")"
-if ! printf '%s' "$LISTING" | grep -q '\._' && ! printf '%s' "$LISTING" | grep -q "$(id -un)" && printf '%s' "$LISTING" | grep -q 'd/f.txt'; then
+# Read with Python's tarfile: macOS tar -t hides AppleDouble twins when it lists.
+LISTING="$(python3 -I -c 'import sys,tarfile,os
+m=tarfile.open(sys.argv[1]).getmembers()
+print(" ".join(x.name for x in m), sum(os.path.basename(x.name).startswith("._") for x in m), sum(sys.argv[2] in (x.uname+x.gname) for x in m))' "$PK/out.tar.gz" "$(id -un)")"
+if printf '%s' "$LISTING" | grep -q 'd/f.txt 0 0$'; then
   ok "pack: no AppleDouble twins and no account name in the archive"
 else fail "pack: no AppleDouble twins and no account name in the archive" "$(printf '%s' "$LISTING" | tr '\n' ' ')"; fi
 node fork/style-preset.mjs new plain --name demo --root "$VT" > "$WORK/preset.json"
