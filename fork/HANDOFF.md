@@ -5,40 +5,48 @@
 Run our own line of the HyperFrames engine: take upstream releases when they help, carry our patches, and
 publish tarball releases that consumers pin.
 
-## Now (2026-11-08)
+## Now (2026-11-09)
 
-- `main` = upstream `v0.9.21` (merge `661fbe55d`, clean) plus the two patches and `fork/`. Latest releases
-  `fork-v0.9.21-sshlg.3` and, in the copy, `fork-v0.9.21-appvillis.3` (tables below). `fork/status.sh` reads both
+- `main` = upstream `v0.9.26` (merge `c5d7f4c57`, clean) plus the two patches and `fork/`. Latest releases
+  `fork-v0.9.26-sshlg.1` and, in the copy, `fork-v0.9.26-appvillis.1` (tables below). `fork/status.sh` reads both
   lines and names the next step.
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
   clone `~/DATA/_worktrees/hyperframes-agent-org`, read-only deploy key `gh-appvillis-hyperframes-agent`), published
   from this machine with `--prebuilt` ([README](README.md), "Release"). No clone of the copy stays in the personal
-  space and none of the line in the organization's (checked 2026-11-08, board thread `337a610e`).
-- Every release carries `visual-types-<label>.json` and `visual-types-files-<label>.tar.gz` (preview frames and the
-  line's recipes, since `.3`); README "Visual types and style presets". Asked by the operator through
-  go-to-market-strategy (board `b948516e`), used by Frame Agent's format gate (their BL-283) and Foundry's
-  `format_choice`.
+  space and none of the line in the organization's (checked 2026-11-08, board thread `337a610e`). `fork/release.sh`
+  refuses a local build under 8 GB free and names the remote build (board request `937b4e24`, done 2026-11-09).
+- Every release carries `visual-types-<label>.json`, `visual-types-files-<label>.tar.gz` (preview frames and the
+  line's recipes, since `.3` on v0.9.21) and `registry-<label>.tar.gz` (the registry mirror for runs without the
+  network, since `fork-v0.9.26-sshlg.1`); README "Visual types and style presets". Asked by the operator through
+  go-to-market-strategy (board `b948516e`), used by Frame Agent's format gate (their BL-283, BL-296) and Foundry's
+  `format_choice`. Catalogue strings carry no dash between words (Frame Agent's ask, `61d40364`).
+- Release notes and the copy's `line.env` list only the patches the line still carries (`carried_patches()`,
+  `0ddb8b320`); the notes of `fork-v0.9.26-sshlg.1` were corrected after publication.
 - The estate's migration as it applies here: [`migration.md`](migration.md). The line against its agent type in the
-  template base (`media-production`, `engine-line`): [`agent-type-plan.md`](agent-type-plan.md), all waves done.
-- The line's own scripts have tests: `fork/test.sh` (43 cases, no network), run first by `fork/release.sh`.
+  template base (`media-production`, `engine-line`): [`agent-type-plan.md`](agent-type-plan.md), all waves done;
+  checked against template 1.12.2 on 2026-11-09 (board request `7b43ec88`, answer `4a6ef49d`).
+- The line's own scripts have tests: `fork/test.sh` (50 cases, no network), run first by `fork/release.sh`.
 - History of earlier states, tooling fixes and the copy's early releases: [`HISTORY.md`](HISTORY.md).
 
 ## Next task
 
-1. Upstream releases after `v0.9.21` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
-   `fork/door-audit.sh v0.9.21 v<new>` into the table below, build with `FORK_REMOTE_DIR=DATA/hyperframes-agent
+1. Upstream releases after `v0.9.26` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
+   `fork/door-audit.sh v0.9.26 v<new>` into the table below, build with `FORK_REMOTE_DIR=DATA/hyperframes-agent
 fork/remote-build.sh sshlg@ais-mac-studio auto`, publish with `fork/release.sh <n> --publish --prebuilt <tarball>`
    (or run `fork/release.sh auto --publish` in the personal space there), announce in board thread `b4d4f898`. Then
    the copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push` (with `ORG_TRANSFER_AUDIT` and
    `ORG_TRANSFER_MARKERS`), build it with `FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-org fork/remote-build.sh
 appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuilt`, announce in `7913a557`.
-2. Open waits: Asset Foundry's separation fix (board `337a610e`, branch `agent/wave-b7-separation`: Appvillis
-   projects out of the personal instance); Frame Agent's move to `.3` (BL-283, BL-288); the template base's intake
-   numbers for the line's lessons (`fef32c41`). The separation check (`337a610e`, 2026-11-08): routes are separated on
-   both sides; keys still shared are human gates outside this line (Frame Agent's copy runs on an OpenRouter key issued
-   from the personal account until an Appvillis provisioning key is stashed; six provider keys of the Foundry copy need
-   Appvillis accounts).
+2. Open waits, read at the next board check (no watcher runs between sessions):
+   - Frame Agent moving its CLI pin from `.2` to `fork-v0.9.26-sshlg.1` and taking `registry-*.tar.gz` (thread
+     `b4d4f898`).
+   - The template base's answer to the contribution `7d82ca5b` (success case for remote builds, the catalogue, the
+     dash lesson; thread `fef32c41`).
+   - Done and closed: Asset Foundry's separation (`337a610e`, 0.3.46 on Studio, Appvillis copies removed from the
+     personal instance).
+   - Human gates outside this line: the Frame Agent copy's OpenRouter key from the personal account until an
+     Appvillis provisioning key exists, and Appvillis accounts for six provider keys of the Foundry copy.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
@@ -66,6 +74,7 @@ on 2026-10-25).
 
 | Release                 | Commit      | Date       | sha256                                                             |
 | ----------------------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| `fork-v0.9.26-sshlg.1`  | `c5d7f4c57` | 2026-11-09 | `be2fc250dcae86d984ca081dd5b0fdc49c1198544afb38ecc3b37e36075249ce` |
 | `fork-v0.9.21-sshlg.3`  | `c4fbc0a1e` | 2026-11-08 | `f739d4c425f469ddd43aa5c4c333d2c788de00d57869bcc6d81d1902c63cd46b` |
 | `fork-v0.9.21-sshlg.2`  | `ec80007d2` | 2026-11-08 | `b3c31b308d52aecf2eee2b582a158144ace1610cba9f857f479cf9c48f96368a` |
 | `fork-v0.9.21-sshlg.1`  | `a104ebd63` | 2026-11-08 | `b6f7c6858dc498cf856cc79650d5a25132a142c492617b823d336c50267ef503` |
@@ -105,6 +114,8 @@ copy"). Earlier details per release: [`HISTORY.md`](HISTORY.md).
 
 | Release                     | Export commit | sha256                                                             |
 | --------------------------- | ------------- | ------------------------------------------------------------------ |
+| `fork-v0.9.26-appvillis.1`  | `8773554`     | `59aec71b5e2a0eafe9ca5a7ec02b99cffdaa0e8c882d23f9cce184b065113d16` |
+| `fork-v0.9.21-appvillis.3`  | `82f90fa`     | `5a9b3993f8e52cf0c2fb704f9b7ce577fc684a9a3586f5802d7ae397370cc587` |
 | `fork-v0.9.21-appvillis.2`  | `78ed6be`     | `8e017ee893c1408af06e599ea31b4b0d1b2fa49e7410c707225b8d131c7f8ddb` |
 | `fork-v0.9.21-appvillis.1`  | `e701a03`     | `6fbbb1be8964a6551e628d3e83f2f8ba845e86d36ea59252fce3422b2fb68ec0` |
 | `fork-v0.9.16-appvillis.1`  | `1eb6be4`     | `621d991b02c05af4ed5b75c2b549e582f536d37b3b81bc6889806ec34fe1c76d` |
@@ -148,4 +159,5 @@ What `fork/door-audit.sh <from> <to>` found that a confining consumer must know.
 | `v0.9.13..v0.9.15`     | Local renders take a lock, one at a time per user account (#7168): a second `render` waits for the first (`--wait`, the default) or fails at once with `--no-wait`; `HYPERFRAMES_RENDER_LOCK=off` lets them run side by side (`utils/renderLock.ts:49`). The lock is `render.lock` in the CLI cache (`hyperframesCacheDir("locks")`, `renderLock.ts:47`), so a consumer that runs two renders in parallel under one account now gets them in turn unless it sets the variable. New flag `billing --skill`: the pricing link names the skill that sent the person (`heygen/plan.ts`, `from=cli`, `utm_source=cli`; same HeyGen billing host). Cloud render packs the system fonts a project uses into its zip (#7165). No new outliving children, workflows or run-time installs. Skills: 13 files. The audit missed `HYPERFRAMES_RENDER_LOCK` (read from an `env` parameter, not `process.env`); `door-audit.sh` now reads every `env.X`, `env?.X` and `env["X"]`. |
 | `v0.9.15..v0.9.16`     | Every settings file follows `HYPERFRAMES_CONFIG_DIR` (#7229), and previews and every per-user cache follow `HYPERFRAMES_CACHE_DIR` (#7224), so a consumer that confines the engine with them now holds all of it there. New flag `--lint-verbose` (`check`, `lint`); `render` prints `reference_background` as an `@hf-result` line and in batch manifest rows (#7203); `capture` retries a refused screenshot once. The environment section lists `HYPERFRAMES_CATALOG_ARTIFACT_DIR` and `HYPERFRAMES_STDOUT_IS_TTY` only because their lines moved; both were read in `v0.9.15`. No new commands, hosts, outliving children, workflows or run-time installs. Skills: 14 files. The audit now leaves out `.test.mjs`, `.test.js` and `.test.tsx` files, which it had listed as shipped code.                                                                                                                                                                      |
 | `v0.9.16..v0.9.21`     | New flags: `check --budget` (a time limit for the whole check; the report keeps what it found) and `check`/`lint --include-unmounted`, `audio --layer`, `info --media`, `media-use generate --model`, `telemetry --json`; an unknown command now prints the command that does that job. `check` keeps a 30 s heartbeat timer unref'd (`utils/checkDeadline.ts`), not a child. Segmented renders read `HF_VIDEO_FRAME_WINDOW` (`true` turns the frame window on, `producer/src/services/render/videoFrameWindow.ts`). A new workspace package `@hyperframes/share` (review identity and upload for local hosts, reads `HYPERFRAMES_REVIEW_UPLOAD_ORIGINS`) is not bundled in the CLI. Workflow `stale.yml` added (disabled here by the release). No new child processes, `fetch` calls or run-time installs in shipped code. Skills: 17 files (media-use audio recording and voice credit, reverse-any-video start, HeyGen reference).                              |
+| `v0.9.21..v0.9.26`     | Nothing new for a confining consumer in commands, environment variables, children, network calls, workflows or run-time installs. `check` replays an unchanged project's last pass from `<project>/.hyperframes/cache/check.json` and does not fetch remote scripts again (`--no-cache` runs it fresh; a failed write is skipped, so a read-only project still checks); `--no-craft` skips the craft pass. Renders seed their random values, so a re-render with the same settings gives the same frames. Skills: two lines in `hyperframes-cli` references.                                                                                                                                                                                                                                                                                                                                                                                                       |
 | correction, 2026-11-05 | Run with that pattern over `v0.8.184..v0.9.13`, the audit adds what the earlier reports missed: the CLI writes the signed-in HeyGen token into a child's environment as `HEYGEN_ACCESS_TOKEN` (and removes it when not signed in, `auth/media-environment.ts:53`), and the render tuning switches `HF_DE_PARALLEL_STREAM`, `HF_DE_SINGLE_MIN_FRAMES` and `PRODUCER_EXPERIMENTAL_FAST_CAPTURE` (`producer/src/services/renderOrchestrator.ts`, all opt-in).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
