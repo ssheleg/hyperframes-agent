@@ -151,6 +151,12 @@ FORK_REMOTE_DIR=<clone> fork/remote-build.sh <ssh-host> <n>        # build, test
 fork/release.sh <n> --publish --prebuilt fork/out/<tarball>        # here: check it is this commit and version, smoke, publish
 ```
 
+Published assets are never replaced: consumers pin their sha256, and a replaced asset breaks the pin and makes the
+earlier release impossible to reproduce. A fix to an asset (a repacked archive, a corrected catalogue) ships under the
+next release number. On 2026-11-09 the repacked archives of `v0.9.26` replaced the originals under the same tags and a
+consumer's build refused them as "not the pinned bytes" (board `4fe90f86`). Release notes may be corrected; assets may
+not.
+
 `--prebuilt` refuses a tarball whose name, `.sha256`, version or `hyperframesFork.commit` is not this release's.
 `<n>` may be `auto` in both scripts: the next number on the base from the tags here and on origin. A number past it is
 refused as a gap, and an existing tag as taken.
