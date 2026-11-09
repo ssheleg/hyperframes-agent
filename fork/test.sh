@@ -196,6 +196,13 @@ if printf '%s' "$VTM" | node -e '
   && [ -f "$MIR/components/odd/o.html" ] && [ -f "$MIR/blocks/title-a/registry-item.json" ] && [ ! -e "$MIR/components/odd/big.mp4" ]; then
   ok "visual-types: frames only for typed items, no dash between words, the registry mirrored in its layout"
 else fail "visual-types: frames only for typed items, no dash between words, the registry mirrored in its layout" "$(printf '%s' "$VTM" | head -c 300)"; fi
+# pack.sh: no AppleDouble twin for a file with an extended attribute, and no account name in the headers.
+PK="$WORK/pack"; mkdir -p "$PK/d"; printf 'x\n' > "$PK/d/f.txt"; xattr -w com.example.test 1 "$PK/d/f.txt" 2>/dev/null || true
+fork/pack.sh "$PK" "$PK/out.tar.gz" d
+LISTING="$(tar -tvzf "$PK/out.tar.gz")"
+if ! printf '%s' "$LISTING" | grep -q '\._' && ! printf '%s' "$LISTING" | grep -q "$(id -un)" && printf '%s' "$LISTING" | grep -q 'd/f.txt'; then
+  ok "pack: no AppleDouble twins and no account name in the archive"
+else fail "pack: no AppleDouble twins and no account name in the archive" "$(printf '%s' "$LISTING" | tr '\n' ' ')"; fi
 node fork/style-preset.mjs new plain --name demo --root "$VT" > "$WORK/preset.json"
 expect "style-preset: a preset from a theme pack is whole" 0 "whole (3 tokens)" -- node fork/style-preset.mjs check "$WORK/preset.json" --root "$VT"
 node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1]));p.frame_preset="plain";p.transitions=["wipe-a"];p.captions="title-a";delete p.tokens["--fg"];p.tokens["--dur-beat"]="slow";fs.writeFileSync(process.argv[2],JSON.stringify(p))' "$WORK/preset.json" "$WORK/bad.json"

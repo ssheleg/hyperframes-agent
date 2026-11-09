@@ -252,8 +252,8 @@ node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" 
 node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items || !c.files.posters_fetched || !c.registry_mirror.files) process.exit(1)' "$OUT/$CATALOG" \
   || { echo "the catalogue of visual types is empty, fetched no preview frame or mirrored no registry file" >&2; exit 1; }
 mkdir -p "$CATALOG_DIR/posters" "$CATALOG_DIR/recipes"
-(cd "$CATALOG_DIR" && tar -czf "$OUT/$CATALOG_FILES" posters recipes)
-(cd "$MIRROR_DIR" && tar -czf "$OUT/$REGISTRY_MIRROR" registry)
+fork/pack.sh "$CATALOG_DIR" "$OUT/$CATALOG_FILES" posters recipes
+fork/pack.sh "$MIRROR_DIR" "$OUT/$REGISTRY_MIRROR" registry
 log "catalogue $OUT/$CATALOG, $OUT/$CATALOG_FILES and $OUT/$REGISTRY_MIRROR ($(node -p 'const c=require(process.argv[1]); c.files.posters_fetched+" frames, "+c.files.posters_missing.length+" not fetchable, "+c.compositions.length+" recipes, "+c.registry_mirror.items+" registry items"' "$OUT/$CATALOG"))"
 
 [ "$PUBLISH" = 1 ] || { log "not published (no --publish)"; exit 0; }
