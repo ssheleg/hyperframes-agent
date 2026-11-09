@@ -12,6 +12,7 @@ import type { RuntimeMediaClip } from "./types.js";
 import { clampAudioGain, clipGain, gainTimesLane } from "../audioGain.js";
 import { isMemberGroupHidden } from "../audioGroups.js";
 import { findInjectedRenderFrame } from "./renderFrameSibling.js";
+import { ownsPausedVideoTime } from "./pausedVideoFrames";
 import { isRenderFrameVideo } from "./preloadMedia.js";
 import { registerSeekCompletion } from "./adapters/seek-dispatch.js";
 import { cutToHostSlots, type HostSlot } from "../mediaTiming.js";
@@ -472,6 +473,13 @@ function learnVideoStartLatency(el: HTMLMediaElement, time: number, offset: numb
   videoStartLatency = Math.min(0.1, Math.max(0, averaged));
 }
 
+/** A muted video takes its clock from its audio track, whose late start stalls the picture after a cut. */
+function dropSilentAudioTrack(el: HTMLMediaElement): void {
+  if (el.tagName !== "VIDEO" || !el.defaultMuted) return;
+  const tracks = (el as { audioTracks?: ArrayLike<{ enabled: boolean }> }).audioTracks;
+  for (const track of Array.from(tracks ?? [])) track.enabled = false;
+}
+
 // fallow-ignore-next-line complexity
 export function syncRuntimeMedia(params: {
   clips: RuntimeMediaClip[];
@@ -533,6 +541,7 @@ export function syncRuntimeMedia(params: {
   for (const clip of params.clips) {
     const { el } = clip;
     if (!el.isConnected) continue;
+    dropSilentAudioTrack(el);
     const clipRate = clip.rate ?? clip.playbackRate;
     const origin = clip.origin ?? clip.start;
     const isNonLoopVideo = el.tagName === "VIDEO" && !clip.loop;
@@ -683,6 +692,10 @@ export function syncRuntimeMedia(params: {
       // (no-op when already "auto") and catches elements whose preload
       // was overridden after init.ts set it.
       if (el.preload !== "auto" && !isRenderFrameVideo(el)) el.preload = "auto";
+      if (!params.playing && ownsPausedVideoTime(el)) {
+        if (!el.paused) el.pause();
+        continue;
+      }
       // Per-element rate × global transport rate
       const baseRate = rateAt(clipRate, params.timeSeconds - origin) * params.playbackRate;
       // Too slow for the browser to play: kept paused and stepped onto the playhead by seeks.

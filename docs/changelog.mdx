@@ -9,6 +9,96 @@ Recent HyperFrames releases, including user-facing features, fixes, and migratio
 {/* New release entries are prepended by `bun run changelog:draft <version> --write`. */}
 
 <Update
+  label="HyperFrames v0.9.26"
+  description="Released - 2026-11-08"
+  tags={["Release", "CLI", "Studio Server"]}
+>
+Cloud renders now find media whose file names have accents, even when macOS stores the name differently from the page. A large project's first history copy is also much faster.
+
+## Fixes
+
+- **CLI:** Cloud render finds media whose file name is stored in another Unicode form than the page's ([91ad7fb6e](https://github.com/heygen-com/hyperframes/commit/91ad7fb6ee3fb4d0098385abdea64a1d5acd0dfd), [#7419](https://github.com/heygen-com/hyperframes/pull/7419)).
+
+## Performance
+
+- **Studio Server:** A large project's first history copy takes a fraction of the time ([2927fe615](https://github.com/heygen-com/hyperframes/commit/2927fe615581f03258205a876fada7d6f3111dc8), [#7415](https://github.com/heygen-com/hyperframes/pull/7415)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.25...v0.9.26).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.25"
+  description="Released - 2026-11-08"
+  tags={["Release", "Core", "Producer", "CLI"]}
+>
+Re-rendering a film with the same settings now gives the same result, because every render seeds its random values. A muted video's picture also no longer waits on its own audio track at a cut, and `check` replays an unchanged project's last pass.
+
+## Features
+
+- **CLI:** Check replays an unchanged project's last pass and takes --no-craft ([070b964d7](https://github.com/heygen-com/hyperframes/commit/070b964d7b8cd844a893f0abbe8e0b7f1ac6d879), [#7398](https://github.com/heygen-com/hyperframes/pull/7398)).
+
+## Fixes
+
+- **Core:** A muted video's picture no longer waits on its own audio track at a cut ([fa2e63515](https://github.com/heygen-com/hyperframes/commit/fa2e63515f3a4b80c7f0399c4f393a9a4c6f6d3f), [#7412](https://github.com/heygen-com/hyperframes/pull/7412)).
+- **Producer:** Seed random values in every render so re-renders give the same film ([eb16510a1](https://github.com/heygen-com/hyperframes/commit/eb16510a10fbc30f230ae2b7d6e5a7ac50e31eeb), [#7410](https://github.com/heygen-com/hyperframes/pull/7410)).
+- **Core:** Capture pages load only the clips on screen ([12906e0bf](https://github.com/heygen-com/hyperframes/commit/12906e0bfba41b72d9aad83d6a98c0c8943e5682), [#7402](https://github.com/heygen-com/hyperframes/pull/7402)).
+
+## Internal
+
+- Install ffmpeg through the GitHub API asset route with a cache ([074de9dd1](https://github.com/heygen-com/hyperframes/commit/074de9dd1e7196c1e1f56b6c8704f4bebac41983), [#7401](https://github.com/heygen-com/hyperframes/pull/7401)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.23...v0.9.25).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.23"
+  description="Released - 2026-11-08"
+  tags={["Release", "Core", "Engine", "Studio"]}
+>
+Fade-ins that follow a starting set now end fully visible instead of vanishing when the fade finishes. Failed script reports also name their library, and menu highlights match their panel.
+
+## Features
+
+- **Engine:** A failed CDN script's report names its library and version, never its URL ([adf14d732](https://github.com/heygen-com/hyperframes/commit/adf14d7324109694614955f32ba6cf2b97ad79d2), [#7394](https://github.com/heygen-com/hyperframes/pull/7394)).
+- **Core:** Preview health names the media element that held play ([fd05a3860](https://github.com/heygen-com/hyperframes/commit/fd05a3860c66958ba3d509981e890c699ae4aa5e), [#7159](https://github.com/heygen-com/hyperframes/pull/7159)).
+
+## Fixes
+
+- **Core:** A set written before its tween no longer erases the tween's end ([75fe18c62](https://github.com/heygen-com/hyperframes/commit/75fe18c621be5297d7b09a788fabc75a3cd6c734), [#7397](https://github.com/heygen-com/hyperframes/pull/7397)).
+- **Studio:** A menu row's highlight is rounder than its panel ([ab785e9c5](https://github.com/heygen-com/hyperframes/commit/ab785e9c5c59e9542593e49b93f9547cb2665b44), [#7395](https://github.com/heygen-com/hyperframes/pull/7395)).
+- **Studio:** Bound recovery and verify full-quality playback ([3151fd213](https://github.com/heygen-com/hyperframes/commit/3151fd21330e7e955210bfd3f557bc8d78d243c5), [#7393](https://github.com/heygen-com/hyperframes/pull/7393)).
+
+## Internal
+
+- **Engine:** The decode timeout warning reaches every caller ([0f5914dc4](https://github.com/heygen-com/hyperframes/commit/0f5914dc445ceed38fdc58eadb617f69632c0a29), [#7119](https://github.com/heygen-com/hyperframes/pull/7119)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.22...v0.9.23).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.22"
+  description="Released - 2026-11-08"
+  tags={["Release", "Producer", "Studio", "Core"]}
+>
+Studio previews look sharper: scrubbing shows full-quality decoded frames, and seeking no longer drops to an incomplete picture. Renders also keep page timers on the film's schedule at any worker count.
+
+## Features
+
+- **Studio:** Scrub full-quality video with decoded preview frames ([b7157bdab](https://github.com/heygen-com/hyperframes/commit/b7157bdabbabb194f60126bca45cad21c263a7dc), [#7379](https://github.com/heygen-com/hyperframes/pull/7379)).
+
+## Fixes
+
+- **Producer:** Keep page timers on the film's schedule at every worker count ([fed14b016](https://github.com/heygen-com/hyperframes/commit/fed14b0161baa6edf170ba37e2fb4a0f4656a8f1), [#7390](https://github.com/heygen-com/hyperframes/pull/7390)).
+- **Core:** Retain complete preview pictures during native seeks ([b87a01f6a](https://github.com/heygen-com/hyperframes/commit/b87a01f6a851b0ca02bfad3acfd0c56398024267), [#7378](https://github.com/heygen-com/hyperframes/pull/7378)).
+
+## Internal
+
+- **Producer:** The injector budget test no longer leaves a no-op injector for later tests ([34118d8f2](https://github.com/heygen-com/hyperframes/commit/34118d8f20cf9682f119b157e89b2f3fe42cd4e4), [#7384](https://github.com/heygen-com/hyperframes/pull/7384)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.21...v0.9.22).
+</Update>
+
+<Update
   label="HyperFrames v0.9.21"
   description="Released - 2026-11-07"
   tags={["Release", "Core", "CLI", "Check"]}

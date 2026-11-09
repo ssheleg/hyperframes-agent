@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { createContext, Script } from "node:vm";
-import { buildVirtualTimeShim } from "./fileServer.js";
+import { VIRTUAL_TIME_SHIM } from "./fileServer.js";
 
 type Page = { run: <T = unknown>(code: string) => T };
 
@@ -17,7 +17,7 @@ function page(): Page {
     globalThis.performance = { now: () => 0 };
     globalThis.__renderReady = true;
   `).runInContext(context);
-  new Script(buildVirtualTimeShim({ seedRandomFromFrame: false })).runInContext(context);
+  new Script(VIRTUAL_TIME_SHIM).runInContext(context);
   return { run: <T>(code: string) => new Script(code).runInContext(context) as T };
 }
 
@@ -87,6 +87,16 @@ describe("virtual-time shim timers", () => {
     run("window.fired = 0; (function spin() { setTimeout(() => { fired++; spin(); }, 0); })();");
     run("window.__HF_VIRTUAL_TIME__.seekToTime(10);");
     expect(run("fired")).toBe(11);
+  });
+
+  it("keeps the film's timer schedule on a worker whose first frame is past the start", () => {
+    const { run } = page();
+    run(`window.at = [];
+      requestAnimationFrame(() => (function step() { setTimeout(() => { at.push(Date.now()); step(); }, 100); })());`);
+    run("window.__HF_VIRTUAL_TIME__.seekToTime(4000 / 30);");
+    expect(run("at")).toEqual([100]);
+    run("for (let f = 5; f <= 30; f++) window.__HF_VIRTUAL_TIME__.seekToTime(f * 1000 / 30);");
+    expect(run("at")).toEqual([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]);
   });
 
   it("runs due timers before the frame's animation callbacks", () => {
