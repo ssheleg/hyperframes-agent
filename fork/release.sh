@@ -71,6 +71,29 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || [ -n "$(git ls-remot
   echo "tag $TAG already exists; use the next number" >&2; exit 1
 fi
 log "base $BASE, commit ${COMMIT:0:12}, CLI version $VERSION, tag $TAG"
+# A release build wants about 8 GB; a run that starts short of it fails with ENOSPC half way, and the disk of a shared
+# machine reached zero on 2026-11-08 (board request 937b4e24). Checked before anything runs; FORK_FREE_KB stands in
+# for df in fork/test.sh.
+free_kb() { if [ -n "${FORK_FREE_KB:-}" ]; then echo "$FORK_FREE_KB"; else df -Pk "$1" | awk 'NR==2 { print $4 }'; fi; }
+gb() { awk -v k="$1" 'BEGIN { printf "%.1f", k / 1048576 }'; }
+if [ -z "$PREBUILT" ]; then
+  MIN_FREE_GB="${FORK_MIN_FREE_GB:-8}"
+  HAVE_KB="$(free_kb "$ROOT")"
+  [ "$HAVE_KB" -ge $(( MIN_FREE_GB * 1048576 )) ] || {
+    echo "$(gb "$HAVE_KB") GB free on the build volume, a release build wants ${MIN_FREE_GB} GB (FORK_MIN_FREE_GB):" \
+      "build on another machine with FORK_REMOTE_DIR=<clone> fork/remote-build.sh <host> $N, then publish here with --prebuilt" >&2
+    exit 1
+  }
+else
+  # The smoke step unpacks the tarball and installs its dependencies under TMPDIR.
+  NEED_KB=$(( $(gzip -l "$PREBUILT" | awk 'NR==2 { print int($2 / 1024) }') + ${FORK_SMOKE_FREE_GB:-2} * 1048576 ))
+  HAVE_KB="$(free_kb "${TMPDIR:-/tmp}")"
+  [ "$HAVE_KB" -ge "$NEED_KB" ] || {
+    echo "$(gb "$HAVE_KB") GB free under ${TMPDIR:-/tmp}, the smoke install of the prebuilt tarball wants $(gb "$NEED_KB") GB" \
+      "(its unpacked size plus FORK_SMOKE_FREE_GB, default 2)" >&2
+    exit 1
+  }
+fi
 # fork/test.sh runs this script on throwaway repositories: it sets FORK_TEST_RUNNING so that run does not recurse.
 # An exported copy carries no fork/test.sh (it is the line's own tooling): there the step is skipped.
 if [ -z "${FORK_TEST_RUNNING:-}" ] && [ -x fork/test.sh ]; then
@@ -208,14 +231,18 @@ log "tarball $OUT/$TARBALL ($(cut -d' ' -f1 "$OUT/$TARBALL.sha256"))"
 # Its files archive carries the preview frames and the line's recipes, so callers show them without the network.
 CATALOG="visual-types-${LABEL}.json"
 CATALOG_FILES="visual-types-files-${LABEL}.tar.gz"
+REGISTRY_MIRROR="registry-${LABEL}.tar.gz"
 tmpdir catalog CATALOG_DIR
-node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" --files "$CATALOG_DIR" > "$OUT/$CATALOG"
+tmpdir mirror MIRROR_DIR
+node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" --files "$CATALOG_DIR" \
+  --registry-mirror "$MIRROR_DIR/registry" > "$OUT/$CATALOG"
 # A run that fetched no frame at all had no network: upstream's registry links some frames that answer 403, never all.
-node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items || !c.files.posters_fetched) process.exit(1)' "$OUT/$CATALOG" \
-  || { echo "the catalogue of visual types is empty or fetched no preview frame" >&2; exit 1; }
+node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items || !c.files.posters_fetched || !c.registry_mirror.files) process.exit(1)' "$OUT/$CATALOG" \
+  || { echo "the catalogue of visual types is empty, fetched no preview frame or mirrored no registry file" >&2; exit 1; }
 mkdir -p "$CATALOG_DIR/posters" "$CATALOG_DIR/recipes"
 (cd "$CATALOG_DIR" && tar -czf "$OUT/$CATALOG_FILES" posters recipes)
-log "catalogue $OUT/$CATALOG and $OUT/$CATALOG_FILES ($(node -p 'const c=require(process.argv[1]); c.files.posters_fetched+" frames, "+c.files.posters_missing.length+" not fetchable, "+c.compositions.length+" recipes"' "$OUT/$CATALOG"))"
+(cd "$MIRROR_DIR" && tar -czf "$OUT/$REGISTRY_MIRROR" registry)
+log "catalogue $OUT/$CATALOG, $OUT/$CATALOG_FILES and $OUT/$REGISTRY_MIRROR ($(node -p 'const c=require(process.argv[1]); c.files.posters_fetched+" frames, "+c.files.posters_missing.length+" not fetchable, "+c.compositions.length+" recipes, "+c.registry_mirror.items+" registry items"' "$OUT/$CATALOG"))"
 
 [ "$PUBLISH" = 1 ] || { log "not published (no --publish)"; exit 0; }
 
@@ -241,9 +268,9 @@ tmpdir notes NOTES_DIR; NOTES="$NOTES_DIR/notes.md"
   echo
   echo "sha256: \`$(cut -d' ' -f1 "$OUT/$TARBALL.sha256")\`"
   echo
-  echo "Visual types and style presets: \`$CATALOG\` (what the engine can make, with registry items, libraries and preview frames) and \`$CATALOG_FILES\` (the frames and the line's composition recipes, for use without the network); fork/README.md."
+  echo "Visual types and style presets: \`$CATALOG\` (what the engine can make, with registry items, libraries and preview frames) and \`$CATALOG_FILES\` (the frames and the line's composition recipes, for use without the network), and \`$REGISTRY_MIRROR\` (the registry in its own layout, so a run without the network reads a block's sources); fork/README.md."
 } > "$NOTES"
-gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" "$OUT/$CATALOG" "$OUT/$CATALOG_FILES" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
+gh release create "$TAG" "$OUT/$TARBALL" "$OUT/$TARBALL.sha256" "$OUT/$CATALOG" "$OUT/$CATALOG_FILES" "$OUT/$REGISTRY_MIRROR" --repo "$REPO" --title "hyperframes $VERSION" --notes-file "$NOTES" --verify-tag
 
 log "verify the published asset"
 tmpdir check CHECK

@@ -33,7 +33,7 @@ while IFS= read -r l; do case "$l" in ''|'#'*) ;; *) ALLOW+=(--allow-literal "$l
 # Prints the verdict line and the counts; returns 0 only on "ready".
 audit_copy() {
   local out
-  out="$(python3 "$AUDIT" "$DEST" --marker-file "$MARKERS" "${ALLOW[@]}" "$@" 2>&1)" || true
+  out="$(nice -n 10 python3 "$AUDIT" "$DEST" --marker-file "$MARKERS" "${ALLOW[@]}" "$@" 2>&1)" || true
   printf '%s\n' "$out" | sed -n '1,4p' | sed 's/^/[fork-export]   /' >&2
   printf '%s\n' "$out" | head -n1 | grep -q ': ready$'
 }
@@ -134,7 +134,8 @@ refuse_tree() { git -C "$DEST" reset -q --hard HEAD; echo "$1; the copy is back 
 log "check the exported tree"
 audit_copy --no-history || refuse_tree "the transfer audit of the exported tree is not ready"
 # From inside the stage: gitleaks reports the paths it was given, and the allow list's paths are relative to the root.
-(cd "$STAGE" && gitleaks dir . --config "$ROOT/fork/org/gitleaks.toml" --no-banner --redact --log-level error) >&2 \
+# Niced like the audit: a scan of the whole tree took 365% CPU on a shared machine on 2026-11-08 (board thread 52228175).
+(cd "$STAGE" && nice -n 10 gitleaks dir . --config "$ROOT/fork/org/gitleaks.toml" --no-banner --redact --log-level error) >&2 \
   || refuse_tree "gitleaks found a secret in the exported files"
 GIT_AUTHOR_NAME="$EXPORT_NAME" GIT_AUTHOR_EMAIL="$EXPORT_EMAIL" GIT_COMMITTER_NAME="$EXPORT_NAME" GIT_COMMITTER_EMAIL="$EXPORT_EMAIL" \
   git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify -m "export: HyperFrames $BASE with the line's patches ($TODAY)" \

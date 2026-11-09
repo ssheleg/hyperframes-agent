@@ -91,12 +91,20 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
   their files use (GSAP, three.js, WebGL, WebGPU, d3, Lottie, canvas, SVG), an install command and a preview frame
   where the registry has one; the kinds made outside the registry (talking head, screen recording, generated footage)
   with the skill that makes them; and the style layer: the 18 tokens of `themes/CONTRACT.md`, the theme packs and the
-  frame presets of the `hyperframes` skill. The same tree gives the same bytes.
+  frame presets of the `hyperframes` skill. The same tree gives the same bytes. Every string is written without a dash
+  between words (an em dash, `--` or a spaced hyphen becomes a comma): the registry's own descriptions carried about a
+  hundred, and these texts go in front of people.
 - `visual-types-files-<base>-<line>.<n>.tar.gz`, beside it: the preview frames (`posters/`, JPEG at most 640 px wide
   when ffmpeg is installed) and the line's composition recipes (`recipes/`). Each item's `poster_file` and each
   recipe's `file` are paths inside it, so a caller shows them without the network. `files.posters_missing` lists the
   frames upstream's registry links but does not serve (64 of 178 answered 403 on 2026-11-08). The release refuses when
-  no frame at all could be fetched.
+  no frame at all could be fetched. Frames are fetched only for items a type lists; the 38 items no type names are
+  counted in `totals.untyped`.
+- `registry-<base>-<line>.<n>.tar.gz`, beside them: the registry in the layout the HTTPS registry serves
+  (`registry/registry.json`, then `registry/<type-dir>/<name>/registry-item.json` with every file beside it; 457 items,
+  823 files, 39 MB on 2026-11-09). Each item's `mirror_dir` names its directory, so a run without the network reads a
+  block's own sources and copies each file to its `target` (the CLI's `add` reads only an `https://` registry). Files a
+  manifest hosts on a CDN (`url`, 410 of them) are not in it and are listed in `registry_mirror.hosted_elsewhere`.
 - Composition recipes (`compositions` in the catalogue, sources in `fork/recipes/`) cover layouts the registry has no
   block for. `presenter-over-diagram`: a cut-out presenter over a diagram that fills the frame; the presenter shrinks
   into a corner while it plays and leaves by turns (a dissolve, then a reverse grow); nothing covers the face. It is a
@@ -126,6 +134,10 @@ fork/release.sh <n> --publish   # also tag, push main and the tag, create the re
 
 `fork/test.sh` tests the line's own scripts (throwaway Git repositories, stubs for `gh` and `ssh`, about 20 s);
 `fork/release.sh` runs it before it builds anything.
+
+Before that, `fork/release.sh` reads the free space of the build volume and refuses under 8 GB (`FORK_MIN_FREE_GB`),
+naming `fork/remote-build.sh` as the way out; with `--prebuilt` it skips that and checks instead that `TMPDIR` holds
+the tarball's unpacked size plus 2 GB (`FORK_SMOKE_FREE_GB`) for the smoke install.
 
 The smoke step installs the tarball into an empty directory, checks that `hyperframes --version`
 prints the line's version, and that a start removes the marker of a dead pid.

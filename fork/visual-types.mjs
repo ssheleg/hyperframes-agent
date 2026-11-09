@@ -6,7 +6,7 @@
 // it in the result (board request b948516e, 2026-11-08).
 //
 //   node fork/visual-types.mjs [--root <checkout>] [--base vX.Y.Z] [--release <label>] [--commit <sha>]
-//                              [--files <dir>]
+//                              [--files <dir>] [--registry-mirror <dir>]
 //
 // Read only from the checkout: registry/*/*/registry-item.json and the files beside each, themes/, and the frame
 // presets of the hyperframes skill, and the line's composition recipes (fork/recipes/). No network, no clock: the same
@@ -14,6 +14,14 @@
 // copies the recipes into <dir>/recipes/, and names each as a path inside the release's files archive
 // (`visual-types-files-<label>.tar.gz`), so a caller shows frames and uses recipes without the network (frame-agent,
 // board message 7c794df6). A frame that cannot be fetched keeps only its URL and is listed in `files.posters_missing`.
+// Frames are fetched only for items a type lists: an item no type names is counted in totals.untyped and has no frame.
+// With --registry-mirror <dir> it copies the registry into <dir> in the layout the HTTPS registry serves
+// (registry.json, then <type-dir>/<name>/registry-item.json and every file beside it), names each item's directory as
+// `mirror_dir`, and the release packs it as `registry-<label>.tar.gz`, so a run without the network reads a block's own
+// sources (frame-agent, board message 61d40364). A file a manifest hosts elsewhere (`url`) is not copied and is listed in
+// `registry_mirror.hosted_elsewhere`.
+// Every string of the catalogue is written without a dash between words (an em dash, `--` or a spaced hyphen becomes a
+// comma): the texts go in front of people, and the registry's own descriptions carry about a hundred.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -25,6 +33,7 @@ const opt = (name, fallback = "") => {
 };
 const ROOT = path.resolve(opt("--root", "."));
 const POSTERS = opt("--files") ? path.resolve(opt("--files")) : "";
+const MIRROR = opt("--registry-mirror") ? path.resolve(opt("--registry-mirror")) : "";
 
 // A visual type is a person's word for a kind of video; an item belongs to every type one of its tags names.
 const TYPES = [
@@ -237,7 +246,56 @@ function entry({ item, techniques }) {
   if (item.preview?.poster) e.poster = item.preview.poster;
   if (posters.got.has(item.name)) e.poster_file = posters.got.get(item.name);
   if (item.preview?.video) e.video = item.preview.video;
+  if (mirror.dirs.has(item.name)) e.mirror_dir = mirror.dirs.get(item.name);
   return e;
+}
+
+// The registry as the HTTPS registry lays it out, for a run without the network.
+function mirrorRegistry() {
+  const dirs = new Map();
+  const hosted = [];
+  let files = 0;
+  if (!MIRROR) return { dirs, hosted, files };
+  const reg = path.join(ROOT, "registry");
+  fs.mkdirSync(MIRROR, { recursive: true });
+  if (exists(path.join(reg, "registry.json")))
+    fs.copyFileSync(path.join(reg, "registry.json"), path.join(MIRROR, "registry.json"));
+  for (const kind of fs.readdirSync(reg).sort()) {
+    const dir = path.join(reg, kind);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    for (const name of fs.readdirSync(dir).sort()) {
+      const manifest = path.join(dir, name, "registry-item.json");
+      if (!exists(manifest)) continue;
+      const item = JSON.parse(read(manifest));
+      const rel = `${kind}/${name}/`;
+      fs.mkdirSync(path.join(MIRROR, kind, name), { recursive: true });
+      fs.copyFileSync(manifest, path.join(MIRROR, kind, name, "registry-item.json"));
+      for (const f of item.files || []) {
+        if (f.url) {
+          hosted.push(`${item.name}/${f.path}`);
+          continue;
+        }
+        const src = path.join(dir, name, f.path);
+        if (/(^|[/\\])\.\.([/\\]|$)/.test(f.path) || !exists(src)) continue;
+        const dest = path.join(MIRROR, kind, name, f.path);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(src, dest);
+        files++;
+      }
+      dirs.set(item.name, rel);
+    }
+  }
+  return { dirs, hosted: hosted.sort(), files };
+}
+
+// A dash between words reads as a pause no reader of these labels needs; a comma says the same.
+function plain(value) {
+  if (typeof value === "string")
+    return value.replace(/\s*\u2014\s*/g, ", ").replace(/(?<=\S) -{1,2} (?=\S)/g, ", ");
+  if (Array.isArray(value)) return value.map(plain);
+  if (value && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)]));
+  return value;
 }
 
 function themeTokens() {
@@ -383,7 +441,11 @@ function recipes() {
 }
 
 const items = registryItems();
-const posters = await fetchPosters(items);
+const typeTags = new Set(TYPES.flatMap(([, , , tags]) => tags));
+const posters = await fetchPosters(
+  items.filter(({ item }) => (item.tags || []).some((t) => typeTags.has(t))),
+);
+const mirror = mirrorRegistry();
 const typed = new Set();
 const types = TYPES.map(([id, label, shows, tags]) => {
   const want = new Set(tags);
@@ -414,13 +476,23 @@ const catalog = {
     commit: opt("--commit") || null,
   },
   how_to_use:
-    "Show the types (label, shows, a poster of the first items) to the person before a generation and let them choose, or record that they left it to the agent. Install an item with its `install` command; set a project's taste with a style preset (fork/style-preset.mjs).",
+    "Show the types (label, shows, a poster of the first items) to the person before a generation and let them choose, or record that they left it to the agent. Install an item with its `install` command, or without the network copy the files of its `mirror_dir` from the registry mirror to their targets; set a project's taste with a style preset (fork/style-preset.mjs).",
   totals: { items: items.length, typed: typed.size, untyped: items.length - typed.size },
   files: POSTERS
     ? {
         asset: opt("--release") ? `visual-types-files-${opt("--release")}.tar.gz` : null,
         posters_fetched: posters.got.size,
         posters_missing: posters.missing,
+      }
+    : null,
+  registry_mirror: MIRROR
+    ? {
+        asset: opt("--release") ? `registry-${opt("--release")}.tar.gz` : null,
+        layout:
+          "registry.json, then <type-dir>/<name>/registry-item.json with every file beside it, as the HTTPS registry serves them; an item's mirror_dir names its directory, and each file goes to its target in the project",
+        items: mirror.dirs.size,
+        files: mirror.files,
+        hosted_elsewhere: mirror.hosted,
       }
     : null,
   types,
@@ -432,4 +504,4 @@ const catalog = {
     frame_presets: framePresets(),
   },
 };
-process.stdout.write(JSON.stringify(catalog, null, 2) + "\n");
+process.stdout.write(JSON.stringify(plain(catalog), null, 2) + "\n");

@@ -45,6 +45,8 @@ chmod +x "$STUB/gh" "$STUB/ssh" "$STUB/gitleaks"
 export GH_STUB_DIR="$WORK/gh"; mkdir -p "$GH_STUB_DIR"
 export PATH="$STUB:$PATH"
 export FORK_TEST_RUNNING=1
+# release.sh reads free space before it starts; the cases see plenty unless one sets less.
+export FORK_FREE_KB=999999999
 
 # A line: an "upstream" tag v1.2.3, the fork's scripts committed on main, an origin to push to.
 LINE="$WORK/line"; ORIGIN="$WORK/origin.git"
@@ -92,6 +94,18 @@ expect "release: --prebuilt with an appended byte" 1 "does not match its .sha256
 mktgz "$P/e" hyperframes-1.2.3-sshlg.1.tgz "1.2.3+sshlg.1" "$COMMIT"; rm "$P/e/hyperframes-1.2.3-sshlg.1.tgz.sha256"
 expect "release: --prebuilt without its .sha256" 1 ".sha256 beside" \
   -- fork/release.sh 1 --prebuilt "$P/e/hyperframes-1.2.3-sshlg.1.tgz"
+# Free space: under the threshold a build is refused with the way out, over it the build starts (a bun stub stops it
+# right after), and a prebuilt tarball never meets the build's threshold, only its own smoke install's.
+expect "release: refuses to build short of disk, names remote-build" 1 "remote-build.sh <host> 1, then publish here with --prebuilt" \
+  -- env FORK_FREE_KB=1048576 fork/release.sh 1
+BUNSTUB="$WORK/bunstub"; mkdir -p "$BUNSTUB"; printf '#!/bin/sh\necho "bun stub" >&2; exit 7\n' > "$BUNSTUB/bun"; chmod +x "$BUNSTUB/bun"
+expect "release: with enough disk the build starts" 7 "bun stub" \
+  -- env PATH="$BUNSTUB:$PATH" FORK_FREE_KB=9437184 fork/release.sh 1 --skip-deps
+expect "release: the build stamp is restored after a failed build" 0 "" -- git diff --quiet -- packages/cli/package.json
+expect "release: --prebuilt skips the build's disk threshold" 1 "this release is hyperframes-1.2.3-sshlg.1.tgz" \
+  -- env FORK_FREE_KB=4194304 fork/release.sh 1 --prebuilt "$P/a2/hyperframes-1.2.3-sshlg.2.tgz"
+expect "release: --prebuilt refused when its smoke install would not fit" 1 "the smoke install of the prebuilt tarball wants" \
+  -- env FORK_FREE_KB=1024 fork/release.sh 1 --prebuilt "$P/a/hyperframes-1.2.3-sshlg.1.tgz"
 gitq tag -a fork-v1.2.3-sshlg.1 -m t
 expect "release: an existing tag is refused" 1 "already exists" -- fork/release.sh 1
 expect "release: a number past the next is a gap" 1 "leaves a gap: the next on v1.2.3 is 2" -- fork/release.sh 3
@@ -166,6 +180,22 @@ if printf '%s' "$VTF" | node -e '
   process.exit(ok?0:1) })' && [ -s "$FILES/posters/title-a.png" ] && [ -f "$FILES/recipes/presenter-over-diagram/index.html" ]; then
   ok "visual-types --files: frames and recipes inside the archive, an unreachable frame listed"
 else fail "visual-types --files: frames and recipes inside the archive, an unreachable frame listed" "$(printf '%s' "$VTF" | head -c 300)"; fi
+# An item no type names gets no frame; dashes between words leave every string; the mirror keeps the registry's layout.
+printf '{"name":"odd","type":"hyperframes:component","title":"Odd \xe2\x80\x94 thing","description":"one - two -- three","tags":["nothing-known"],"files":[{"path":"o.html"},{"path":"big.mp4","url":"https://cdn/x.mp4"}],"preview":{"poster":"file://%s/frames/w.png"}}\n' "$WORK" > "$VT/registry/components/odd/registry-item.json"
+printf '<div></div>\n' > "$VT/registry/components/odd/o.html"
+printf '{"name":"t","items":[]}\n' > "$VT/registry/registry.json"
+FILES2="$WORK/vt-files2"; MIR="$WORK/vt-mirror"
+VTM="$(node fork/visual-types.mjs --root "$VT" --release 1.2.3-sshlg.1 --files "$FILES2" --registry-mirror "$MIR" 2>&1)"
+if printf '%s' "$VTM" | node -e '
+  let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ const c=JSON.parse(s); const t=Object.fromEntries(c.types.map(x=>[x.id,x]));
+  const m=c.registry_mirror;
+  const ok = c.files.posters_fetched===1 && !s.includes("\u2014") && !/\S --? \S/.test(s)
+    && m.asset==="registry-1.2.3-sshlg.1.tar.gz" && m.items===3 && m.files===2 && m.hosted_elsewhere.join()==="odd/big.mp4"
+    && t["kinetic-typography"].items[0].mirror_dir==="blocks/title-a/";
+  process.exit(ok?0:1) })' && [ ! -e "$FILES2/posters/odd.png" ] && [ -f "$MIR/registry.json" ] \
+  && [ -f "$MIR/components/odd/o.html" ] && [ -f "$MIR/blocks/title-a/registry-item.json" ] && [ ! -e "$MIR/components/odd/big.mp4" ]; then
+  ok "visual-types: frames only for typed items, no dash between words, the registry mirrored in its layout"
+else fail "visual-types: frames only for typed items, no dash between words, the registry mirrored in its layout" "$(printf '%s' "$VTM" | head -c 300)"; fi
 node fork/style-preset.mjs new plain --name demo --root "$VT" > "$WORK/preset.json"
 expect "style-preset: a preset from a theme pack is whole" 0 "whole (3 tokens)" -- node fork/style-preset.mjs check "$WORK/preset.json" --root "$VT"
 node -e 'const fs=require("fs");const p=JSON.parse(fs.readFileSync(process.argv[1]));p.frame_preset="plain";p.transitions=["wipe-a"];p.captions="title-a";delete p.tokens["--fg"];p.tokens["--dur-beat"]="slow";fs.writeFileSync(process.argv[2],JSON.stringify(p))' "$WORK/preset.json" "$WORK/bad.json"
