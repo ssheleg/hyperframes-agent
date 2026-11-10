@@ -52,8 +52,11 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      dash lesson; thread `fef32c41`).
    - Done and closed: Asset Foundry's separation (`337a610e`, 0.3.46 on Studio, Appvillis copies removed from the
      personal instance).
-   - Human gates outside this line: the Frame Agent copy's OpenRouter key from the personal account until an
-     Appvillis provisioning key exists, and Appvillis accounts for six provider keys of the Foundry copy.
+   - Human gates outside this line: the organization has no OpenRouter account of its own (checked 2026-11-10:
+     Observatory's door holds four provisioning keys, all personal, and every key of the organization's copies is
+     issued from one of them, with its own ceiling). The copies run on those keys; moving them needs the account
+     created and paid by a person, then its provisioning key stashed in the door and the copies' keys reissued from
+     it. The six provider keys of the Foundry copy wait on the same kind of accounts.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
