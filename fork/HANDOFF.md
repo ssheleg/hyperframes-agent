@@ -7,6 +7,9 @@ publish tarball releases that consumers pin.
 
 ## Now (2026-11-10)
 
+- Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
+  (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
+  was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
 - `main` = upstream `v0.9.31` (merge `49b04e523`, clean) plus the two patches and `fork/`. Latest releases
   `fork-v0.9.31-sshlg.1` and, in the copy, `fork-v0.9.31-appvillis.1` (tables below). `fork/status.sh` reads both
   lines and names the next step.
@@ -19,8 +22,9 @@ publish tarball releases that consumers pin.
 - Every release carries `visual-types-<label>.json`, `visual-types-files-<label>.tar.gz` (preview frames and the
   line's recipes, since `.3` on v0.9.21) and `registry-<label>.tar.gz` (the registry mirror for runs without the
   network, since `fork-v0.9.26-sshlg.1`); README "Visual types and style presets". Asked by the operator through
-  go-to-market-strategy (board `b948516e`), used by Frame Agent's format gate (their BL-283, BL-296) and Foundry's
-  `format_choice`. Catalogue strings carry no dash between words (Frame Agent's ask, `61d40364`).
+  go-to-market-strategy (board `b948516e`), used by Frame Agent's format gate (their BL-283, BL-296). Foundry's `format_choice` does not read it:
+  it offers its own `registry/video/video_formats.yaml` and filters by Frame Agent's workflow catalog (B-357,
+  `foundry/video/tools/video_formats.py`; checked 2026-11-11). Catalogue strings carry no dash between words (Frame Agent's ask, `61d40364`).
 - Release notes and the copy's `line.env` list only the patches the line still carries (`carried_patches()`,
   `0ddb8b320`); the notes of `fork-v0.9.26-sshlg.1` were corrected after publication.
 - The estate's migration as it applies here: [`migration.md`](migration.md). The line against its agent type in the
