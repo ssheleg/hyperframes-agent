@@ -8,7 +8,7 @@ publish tarball releases that consumers pin.
 ## Now (2026-11-10)
 
 - `main` = upstream `v0.9.30` (merge `498945c4e`, clean) plus the two patches and `fork/`. Latest releases
-  `fork-v0.9.30-sshlg.1` and, in the copy, `fork-v0.9.26-appvillis.1` (tables below). `fork/status.sh` reads both
+  `fork-v0.9.30-sshlg.1` and, in the copy, `fork-v0.9.30-appvillis.1` (tables below). `fork/status.sh` reads both
   lines and names the next step.
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
@@ -129,6 +129,7 @@ copy"). Earlier details per release: [`HISTORY.md`](HISTORY.md).
 
 | Release                     | Export commit | sha256                                                             |
 | --------------------------- | ------------- | ------------------------------------------------------------------ |
+| `fork-v0.9.30-appvillis.1`  | `050e476`     | `cb3a84bd6053072d1ca990e9761f084f5f49e02142708a1d3d3bb558ff1851b0` |
 | `fork-v0.9.26-appvillis.1`  | `8773554`     | `59aec71b5e2a0eafe9ca5a7ec02b99cffdaa0e8c882d23f9cce184b065113d16` |
 | `fork-v0.9.21-appvillis.3`  | `82f90fa`     | `5a9b3993f8e52cf0c2fb704f9b7ce577fc684a9a3586f5802d7ae397370cc587` |
 | `fork-v0.9.21-appvillis.2`  | `78ed6be`     | `8e017ee893c1408af06e599ea31b4b0d1b2fa49e7410c707225b8d131c7f8ddb` |
