@@ -72,6 +72,7 @@ import {
 } from "@hyperframes/core";
 import { readMasterFxChain, resolveAudioGroups } from "@hyperframes/core/audio-groups";
 import { applyAudioFxChain, AudioFxRenderError } from "./audioFxRender.js";
+import { mediaIdPathSegment } from "../utils/mediaPathSegment.js";
 import type { AudioVolumeKeyframe } from "./audioMixer.types.js";
 import { createStagingDir } from "@hyperframes/core/atomic-file";
 
@@ -776,7 +777,8 @@ async function extractAudioSegment(
     }
   }
   const ffmpegStart = ffmpegSeekSeconds(metadata ?? {}, mediaStart);
-  const inputSeek = ffmpegStart >= (metadata?.latestStreamLeadSeconds ?? 0);
+  const inputSeek =
+    ffmpegStart >= (metadata?.latestStreamLeadSeconds ?? 0) && !metadata?.misstatedByteRate;
   const start = formatFilterNumber(ffmpegStart);
   const timestampTrim = inputSeek
     ? null
@@ -1572,7 +1574,7 @@ export async function processCompositionAudio(
 
           let audioSrcPath = srcPath;
           if (element.type === "video") {
-            const extractedPath = join(workDir, `${element.id}-extracted.wav`);
+            const extractedPath = join(workDir, `${mediaIdPathSegment(element.id)}-extracted.wav`);
             const extractResult = await extractAudioSegment(
               srcPath,
               extractedPath,
@@ -1602,7 +1604,7 @@ export async function processCompositionAudio(
             }
             audioSrcPath = extractedPath;
           } else {
-            const trimmedPath = join(workDir, `${element.id}-trimmed.wav`);
+            const trimmedPath = join(workDir, `${mediaIdPathSegment(element.id)}-trimmed.wav`);
             const prepResult = await extractAudioSegment(
               srcPath,
               trimmedPath,
@@ -1671,7 +1673,7 @@ export async function processCompositionAudio(
             const fxResult = await applyAudioFxChain(
               audioSrcPath,
               chain,
-              join(workDir, `${element.id}-fx.wav`),
+              join(workDir, `${mediaIdPathSegment(element.id)}-fx.wav`),
               {
                 trackId: element.id,
                 signal: effectiveSignal,

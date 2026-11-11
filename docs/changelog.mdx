@@ -9,6 +9,77 @@ Recent HyperFrames releases, including user-facing features, fixes, and migratio
 {/* New release entries are prepended by `bun run changelog:draft <version> --write`. */}
 
 <Update
+  label="HyperFrames v0.9.33"
+  description="Released - 2026-11-11"
+  tags={["Release", "Engine", "Share", "Parsers,lint,producer,cli"]}
+>
+Clips that start partway into a voice recording now keep their sound to the end, even when the WAV file misreports its own byte rate. Variable-bound media also renders at the right length and loudness.
+
+## Fixes
+
+- **Engine:** A clip that starts partway into a WAV whose header gives the wrong byte rate now plays the right sound to its end, instead of going quiet early or staying silent ([7ae1ae649](https://github.com/heygen-com/hyperframes/commit/7ae1ae64942f036a18c546bef024121d8df76ef2), [#7541](https://github.com/heygen-com/hyperframes/pull/7541)).
+- **Share:** When you reach the hourly limit on review versions, the message now explains that limit ([8a15d9fee](https://github.com/heygen-com/hyperframes/commit/8a15d9feedc62dc9695246dceda9271a6d0a08e9), [#7539](https://github.com/heygen-com/hyperframes/pull/7539)).
+- **Projects:** A composition can only look up files inside its own project folder ([5a88c9938](https://github.com/heygen-com/hyperframes/commit/5a88c9938edaf464f7953e762bb40f604623f1b1), [#7534](https://github.com/heygen-com/hyperframes/pull/7534)).
+- **Capture:** A wrong captioning region or model name is reported before captioning starts ([bcc1437d7](https://github.com/heygen-com/hyperframes/commit/bcc1437d77f592d33b794b5544ae98bb3647c6ad), [#7533](https://github.com/heygen-com/hyperframes/pull/7533)).
+- **Producer:** A video or sound set through a variable now renders at its clip's length and loudness ([789d28121](https://github.com/heygen-com/hyperframes/commit/789d28121183f72976834d3693329e956f88de88), [#7529](https://github.com/heygen-com/hyperframes/pull/7529)).
+
+## Docs & Examples
+
+- **Variables:** Say what can be a variable, including a video or sound per account ([28d69d9a9](https://github.com/heygen-com/hyperframes/commit/28d69d9a94c13b2b39e99d207c2ee595b59781c9), [#7530](https://github.com/heygen-com/hyperframes/pull/7530)).
+
+## Internal
+
+- **CLI:** Give each test file its own home so renders never wait on another file's lock ([2b86c49dc](https://github.com/heygen-com/hyperframes/commit/2b86c49dc2cb067051eca1ccf9d0b1d22054719a), [#7526](https://github.com/heygen-com/hyperframes/pull/7526)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.32...v0.9.33).
+</Update>
+
+<Update
+  label="HyperFrames v0.9.32"
+  description="Released - 2026-11-11"
+  tags={["Release", "Share", "Studio", "Inspector"]}
+>
+Long films that are slow to open now render instead of failing before their first frame. The CLI, Studio and the renderer also stop a project folder from choosing what they run or serve.
+
+## Features
+
+- SDR MP4 renders can keep full colour detail with `--chroma-subsampling 444`, for masters that will be re-encoded; the default is unchanged ([1a9fb8acb](https://github.com/heygen-com/hyperframes/commit/1a9fb8acb65d044e1732381fad953b69c3604648), [#5820](https://github.com/heygen-com/hyperframes/pull/5820)).
+- **Producer:** The render stream's complete event names the producer version that rendered it ([7afa05a78](https://github.com/heygen-com/hyperframes/commit/7afa05a782c452ca76af22bdde12d4cddaf64c60), [#7515](https://github.com/heygen-com/hyperframes/pull/7515)).
+
+## Fixes
+
+- **Share:** Guide recovery when an export replay is refused ([941049a84](https://github.com/heygen-com/hyperframes/commit/941049a84470caf3358962577e4c1faeecdfc95d), [#7531](https://github.com/heygen-com/hyperframes/pull/7531)).
+- **Studio:** The composition hover preview runs walled off from Studio's own page, so a composition's scripts cannot reach into Studio ([0c229a26c](https://github.com/heygen-com/hyperframes/commit/0c229a26c9e1ad91a3b1df3b24100be6f10ae3db), [#7522](https://github.com/heygen-com/hyperframes/pull/7522)).
+- **Studio:** Pressing Enter or Escape while an input method is still composing text no longer commits it, and Escape then leaving a text field no longer saves the cancelled edit ([ff285d3f2](https://github.com/heygen-com/hyperframes/commit/ff285d3f2b3a2199e8068f02c192140ed72d2015), [#6011](https://github.com/heygen-com/hyperframes/pull/6011)).
+- **Share:** A share or export killed while taking its lock no longer leaves a lock that later attempts cannot clear, on file systems without hard links ([b37e4b026](https://github.com/heygen-com/hyperframes/commit/b37e4b026f0cd725ed7588d6648263d5cda1e046), [#7516](https://github.com/heygen-com/hyperframes/pull/7516)).
+- **Producer:** Long films that are slow to open no longer fail before their first frame: the wait for the first frame now follows how long the browser took to start, up to 15 minutes ([7ff8ece46](https://github.com/heygen-com/hyperframes/commit/7ff8ece461e87282e17f3da14f0b83d0cbe9d38f), [#7517](https://github.com/heygen-com/hyperframes/pull/7517)).
+- **Lint:** Flag a script that calls gsap before GSAP loads, and say so when a render fails on it ([124591a9d](https://github.com/heygen-com/hyperframes/commit/124591a9d5d54fb90ab9ab832ced2b3af1527d11), [#7514](https://github.com/heygen-com/hyperframes/pull/7514)).
+- **Producer,engine:** Harden render paths, render slots and local listeners ([60fb9d2c5](https://github.com/heygen-com/hyperframes/commit/60fb9d2c5e0c213787888300dd98b8cb05fc2b31), [#7508](https://github.com/heygen-com/hyperframes/pull/7508)).
+- **Studio Server:** Harden preview paths, cache folders and local servers ([b8bb49190](https://github.com/heygen-com/hyperframes/commit/b8bb4919003fd5082a0db481271db4baf7701b30), [#7510](https://github.com/heygen-com/hyperframes/pull/7510)).
+- **CLI:** Keep project folders from choosing the programs and config the CLI runs ([84c7d02a1](https://github.com/heygen-com/hyperframes/commit/84c7d02a190f79420cd8c5d112033706fb0a8efc), [#7511](https://github.com/heygen-com/hyperframes/pull/7511)).
+- **CLI:** Harden lambda destroy, snapshot media, upgrade and project file serving ([c96ff540c](https://github.com/heygen-com/hyperframes/commit/c96ff540c4d696929774aee35ab62830caa7146c), [#7509](https://github.com/heygen-com/hyperframes/pull/7509)).
+
+## Performance
+
+- **Docs:** Load showcase film tiles only when they are near the screen ([fd0c2337c](https://github.com/heygen-com/hyperframes/commit/fd0c2337c5f85cf2c2850a41feeb150a7ef27fe6), [#7507](https://github.com/heygen-com/hyperframes/pull/7507)).
+
+## Docs & Examples
+
+- List the hub's /blog, /vs and /tools sitemaps in robots.txt ([499a17e67](https://github.com/heygen-com/hyperframes/commit/499a17e67139b6ce692481b41c51a397dd274f45), [#7527](https://github.com/heygen-com/hyperframes/pull/7527)).
+- **README:** Show the GitHub rank and skills downloads badges ([717d3d02c](https://github.com/heygen-com/hyperframes/commit/717d3d02cd819a5b2064d54c623ab7e3856af1c4), [#7519](https://github.com/heygen-com/hyperframes/pull/7519)).
+
+## Catalog
+
+- Harden docs snippets, SVG sanitizer, lint regexes, GSAP writers and registry pins ([24508ce2d](https://github.com/heygen-com/hyperframes/commit/24508ce2da7182b2c7b5ca368062c18fb85c489b), [#7512](https://github.com/heygen-com/hyperframes/pull/7512)).
+
+## Internal
+
+- **Inspector:** Decode file URLs in HTTP contract fixtures ([e7a323ade](https://github.com/heygen-com/hyperframes/commit/e7a323adefeeea0e5b7478a7bf51c31bc290c759), [#6010](https://github.com/heygen-com/hyperframes/pull/6010)).
+
+[View the full commit range](https://github.com/heygen-com/hyperframes/compare/v0.9.31...v0.9.32).
+</Update>
+
+<Update
   label="HyperFrames v0.9.31"
   description="Released - 2026-11-10"
   tags={["Release", "Core", "Studio", "Publish"]}

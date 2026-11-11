@@ -56,6 +56,7 @@ import {
   emitRootCompositionVariableStyles,
   readDeclaredDefaults,
   parseHostVariableValues,
+  boundMediaSrc,
   headStyleRuns,
   isAlwaysAppliedStyle,
   dedupeFontFaceRules,
@@ -71,11 +72,13 @@ import {
 } from "@hyperframes/parsers/sub-composition-validity";
 import {
   isUnresolvedAssetPlaceholder,
+  namesAnotherNetworkRoot,
   readProjectFile,
   readTextFile,
+  resolveCompositionSrc,
 } from "@hyperframes/parsers/asset-resolution";
 import { extractMediaMetadata, extractAudioMetadata } from "../utils/ffprobe.js";
-import { isPathInside, resolveCompositionSrc, toExternalAssetKey } from "../utils/paths.js";
+import { isPathInside, toExternalAssetKey } from "../utils/paths.js";
 import { collectHiddenVideoIds, collectRenderMedia } from "./renderMediaCollector.js";
 import {
   type VideoElement,
@@ -110,7 +113,7 @@ import { assertAssetMediaTypeProfile } from "./assetMediaType.js";
 import { withMediaProbeSlot } from "../utils/mediaProbeConcurrency.js";
 
 function logRemoteDownloadTelemetry(event: UrlDownloadTelemetry): void {
-  defaultLogger.info("[Compiler] Remote asset download integrity", { ...event });
+  defaultLogger.debug("[Compiler] Remote asset download integrity", { ...event });
 }
 
 export interface CompiledComposition {
@@ -537,6 +540,9 @@ async function resolveMediaDuration(
     if (!filePath.startsWith("/")) filePath = join(baseDir, filePath);
     // ffprobe reads only the header of a remote source, so it is probed in place.
     filePath = urlByAbsentLocalPath?.get(filePath) ?? filePath;
+    if (!isHttpUrl(filePath) && namesAnotherNetworkRoot(baseDir, filePath)) {
+      return { duration: null, resolvedPath: filePath };
+    }
   }
 
   if (!isHttpUrl(filePath) && !existsSync(filePath)) {
@@ -1339,7 +1345,7 @@ export async function inlineExternalScripts(html: string): Promise<string> {
       }
       inlineScript.textContent = `/* inlined: ${src} */\n${safeText}\n//# sourceURL=${new URL(src).href}\n`;
       el.replaceWith(inlineScript);
-      defaultLogger.info(`[Compiler] Inlined CDN script: ${src}`);
+      defaultLogger.debug(`[Compiler] Inlined CDN script: ${src}`);
     } else {
       // A verified mismatch must never fall back to an executable external tag:
       // browser support for integrity metadata (including casing) can differ.
@@ -1422,7 +1428,7 @@ export function collectExternalAssets(
   }
 
   if (externalAssets.size > 0) {
-    defaultLogger.info(
+    defaultLogger.debug(
       `[Compiler] Found ${externalAssets.size} asset(s) outside project directory, will copy to render output`,
     );
   }
@@ -1506,7 +1512,7 @@ async function downloadAndRewriteUrls(
     if (extraRewrite) result = extraRewrite(result, url, relPath);
   }
 
-  defaultLogger.info(`[Compiler] ${logLabel} ${urlToLocal.size} to ${REMOTE_MEDIA_SUBDIR}/`);
+  defaultLogger.debug(`[Compiler] ${logLabel} ${urlToLocal.size} to ${REMOTE_MEDIA_SUBDIR}/`);
   return { html: result, remoteMediaAssets };
 }
 
@@ -1761,7 +1767,7 @@ async function inlineExternalFontStylesheets(html: string): Promise<string> {
     const identity = safeDownloadUrlIdentity(href);
     const inlineStyle = `<style>/* Inlined external font stylesheet */\n${fontFaceBlocks.join("\n")}\n</style>`;
     result = result.replace(fullMatch, inlineStyle);
-    defaultLogger.info("[Compiler] Inlined external @font-face rule(s)", {
+    defaultLogger.debug("[Compiler] Inlined external @font-face rule(s)", {
       count: fontFaceBlocks.length,
       urlFingerprint: identity.urlFingerprint,
       host: identity.host,
@@ -1931,7 +1937,7 @@ async function embedLocalFontFaces(html: string, projectDir: string): Promise<st
             const font = await readLocalFont(absPath);
             if (font.kind === "file-backed") {
               fileBackedAbsolutePaths.add(absPath);
-              defaultLogger.info(
+              defaultLogger.debug(
                 `[Compiler] Kept large local font file-backed: ${localPath} (> ${(MAX_LOCAL_FONT_DATA_URI_BYTES / 1024 / 1024).toFixed(1)} MB)`,
               );
               embeddedPaths.add(localPath);
@@ -1939,7 +1945,7 @@ async function embedLocalFontFaces(html: string, projectDir: string): Promise<st
             }
             dataUri = await toDataUri(font.buffer, ext, { compressToWoff2: false });
             dataUriByAbsolutePath.set(absPath, dataUri);
-            defaultLogger.info(
+            defaultLogger.debug(
               `[Compiler] Embedded local font file: ${localPath} (${(font.buffer.length / 1024).toFixed(0)} KB → data URI)`,
             );
           }
@@ -2033,14 +2039,17 @@ function rewriteUnresolvableGsapToCdn(
   compSrcPath?: string,
 ): string {
   let gsapDist: string | undefined;
-  const exists = (path: string) => existsSync(resolve(projectDir, path));
+  const exists = (path: string) => {
+    const file = resolve(projectDir, path);
+    return !namesAnotherNetworkRoot(projectDir, file) && existsSync(file);
+  };
   return html.replace(
     /(<script\b[^>]*\bsrc=["'])([^"']*gsap[^"']*\/dist\/([^"']+))(["'][^>]*>)/gi,
     (full, prefix, src, file, suffix) => {
       if (/^https?:\/\//i.test(src)) return full;
       if (exists(compSrcPath ? rewriteAssetPath(compSrcPath, src, exists) : src)) return full;
       gsapDist ??= renderGsapDist();
-      defaultLogger.info(`[Compiler] Rewriting missing gsap script: ${src} → ${gsapDist}${file}`);
+      defaultLogger.debug(`[Compiler] Rewriting missing gsap script: ${src} → ${gsapDist}${file}`);
       return `${prefix}${gsapDist}${file}${suffix}`;
     },
   );
@@ -2079,6 +2088,29 @@ function rebaseDirectEntryAssetPaths(html: string, projectDir: string, htmlPath:
 }
 
 /**
+ * Point each `data-var-src` video/audio at the clip its variable names, so the length and sound read below
+ * are the bound clip's. Media under a per-instance `data-variable-values` host keeps the browser's answer.
+ */
+function bindVariableMediaSources(html: string, variables: Record<string, unknown>): string {
+  if (!html.includes("data-var-src")) return html;
+  const { document } = parseHTML(html);
+  const declared: Record<string, unknown> = {};
+  for (const el of document.querySelectorAll("[data-composition-variables]")) {
+    Object.assign(declared, readDeclaredDefaults(el));
+  }
+  const values = { ...declared, ...variables };
+  let changed = false;
+  for (const el of document.querySelectorAll("video[data-var-src], audio[data-var-src]")) {
+    if (el.closest("[data-variable-values]")) continue;
+    const src = boundMediaSrc(el, values);
+    if (src === null || el.getAttribute("src") === src) continue;
+    el.setAttribute("src", src);
+    changed = true;
+  }
+  return changed ? document.toString() : html;
+}
+
+/**
  * Compile an HTML composition project into a single self-contained HTML string
  * with all media metadata resolved.
  */
@@ -2090,9 +2122,9 @@ export async function compileForRender(
   options: CompileForRenderOptions = {},
 ): Promise<CompiledComposition> {
   const entryHtml = rebaseDirectEntryAssetPaths(readTextFile(htmlPath), projectDir, htmlPath);
-  const rawHtml = normalizeCompositionSrcs(
-    rewriteUnresolvableGsapToCdn(entryHtml, projectDir),
-    projectDir,
+  const rawHtml = bindVariableMediaSources(
+    normalizeCompositionSrcs(rewriteUnresolvableGsapToCdn(entryHtml, projectDir), projectDir),
+    options.variables ?? {},
   );
 
   // Pre-flight: every data-composition-src reference must resolve to a
@@ -2240,7 +2272,7 @@ export async function compileForRender(
     timeoutMs: options.ffmpegProcessTimeout,
   });
   if (preparedHeifImages.length > 0) {
-    defaultLogger.info(`[Compiler] Converted ${preparedHeifImages.length} HEIC image(s) to JPEG`);
+    defaultLogger.debug(`[Compiler] Converted ${preparedHeifImages.length} HEIC image(s) to JPEG`);
   }
 
   const gifSourceAssets = new Map<string, string>(remoteImageAssets);
@@ -2256,7 +2288,7 @@ export async function compileForRender(
     timeoutMs: options.ffmpegProcessTimeout,
   });
   if (preparedGifs.length > 0) {
-    defaultLogger.info(`[Compiler] Prepared ${preparedGifs.length} animated GIF input(s) as WebM`);
+    defaultLogger.debug(`[Compiler] Prepared ${preparedGifs.length} animated GIF input(s) as WebM`);
   }
 
   const embeddedHtml = await embedLocalFontFaces(htmlWithPreparedGifs, projectDir);
@@ -2301,7 +2333,7 @@ export async function compileForRender(
   for (const video of videos) {
     if (isHttpUrl(video.src)) continue;
     const videoPath = resolve(projectDir, video.src);
-    if (advised.has(videoPath)) continue;
+    if (advised.has(videoPath) || namesAnotherNetworkRoot(projectDir, videoPath)) continue;
     advised.add(videoPath);
     const reencode = `ffmpeg -i "${video.src}" -c:v libx264 -r 30 -g 30 -keyint_min 30 -movflags +faststart -c:a copy output.mp4`;
     (async () => {

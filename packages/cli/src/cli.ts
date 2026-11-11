@@ -32,6 +32,7 @@ for (const stream of [process.stdout, process.stderr]) {
 // We emit the worker entry next to cli.js (see tsup.config.ts) and tell
 // the pool where to find it via the published env-var override.
 import "./utils/hideChildConsoles.js";
+import "./utils/windowsExeSearch.js";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -143,6 +144,7 @@ const commandLoaders = {
   present: () => import("./commands/present.js").then((m) => m.default),
   preview: () =>
     assertStudioWorkspaceBuilt().then(() => import("./commands/preview.js").then((m) => m.default)),
+  share: () => import("./commands/share.js").then((m) => m.default),
   publish: () => import("./commands/publish.js").then((m) => m.default),
   open: () => import("./commands/open.js").then((m) => m.default),
   "catch-up": () => import("./commands/catch-up.js").then((m) => m.default),
@@ -326,12 +328,13 @@ if (
       .catch(() => {});
   }
 
-  // Skills freshness nudge: stderr only, so it also runs under --json, which agents pass.
-  import("./utils/skillsUpdateCheck.js")
-    .then((mod) => {
-      _printSkillsUpdateNotice = mod.printSkillsUpdateNotice;
-    })
-    .catch(() => {});
+  // Machine-readable commands should not include unrelated update notices.
+  if (!hasJsonFlag)
+    import("./utils/skillsUpdateCheck.js")
+      .then((mod) => {
+        _printSkillsUpdateNotice = mod.printSkillsUpdateNotice;
+      })
+      .catch(() => {});
 
   // The notices read the caches; a detached child refreshes them for the next run.
   import("./utils/backgroundChecks.js").then((mod) => mod.launchBackgroundChecks()).catch(() => {});
