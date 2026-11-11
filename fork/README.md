@@ -30,18 +30,28 @@ release of the line and of the copy, the copy's base and any active workflow, an
 `appvillis-com/appvillis-hyperframes-agent` (Appvillis HyperFrames Agent; named `hyperframes-agent` until 2026-11-04, when the operator asked every agent going to Appvillis to carry the prefix, board thread `0f7e45aa`) is a private copy of this line for the team (operator, 2026-10-30, project board
 thread `7913a557`); this repository stays where it is. The copy is not a fork (a fork of a public repository cannot be
 private) and carries no upstream history (upstream commit `24965372d` names a person's address). After each release
-of this line:
+of this line.
 
-1. `fork/export.sh <copy-checkout> --push` writes the line's tree into the copy as one commit on its `main`, with a
+A second copy, `passioncode-ai/passioncode-hyperframes-agent` (PassionCode HyperFrames Agent), was made on 2026-11-11 for
+the organization PassionCode.ai: the operator asked for each organization's content farm to run on its own, with the
+same update path (board thread `2f651c5c`, request `e2c76d3a`; Asset Foundry `docs/ORG-FARMS.md`). It follows the
+organization's repository standard (README, `AGENTS.md`, `CLAUDE.md`, agent-sync, backlog sources) except the licence:
+the code is HeyGen's under Apache-2.0 and keeps it, as the organization's licensing rule says of third-party code, so the
+organization's AGPL `LICENSE`, `COMMERCIAL-LICENSE.md` and `CLA.md` are not added. Each copy is refreshed the same way
+after each release of this line:
+
+1. `fork/export.sh <copy-checkout> --org <appvillis|passioncode> --push` (`--org` defaults to `appvillis`) writes the line's tree into the copy as one commit on its `main`, with a
    `Source-Revision: line@<sha12>` line naming the line commit it was built from. It refuses while the copy has a commit
    by anyone but the export's author since the last export or an open pull request. A team change goes back to the line
    first, in a commit whose message carries `Backports: <copy-sha>`; then the export goes through. No
-   workflows, no file an LFS rule covers, no maintenance notes of this line; `fork/org/` supplies the copy's README,
-   HANDOFF, NOTICE, `.gitleaks.toml` and the headers of `CLAUDE.md`, `AGENTS.md` and `README.md`.
+   workflows, no file an LFS rule covers, no maintenance notes of this line; `fork/org/<org>/` supplies the copy's README,
+   HANDOFF and the headers of `CLAUDE.md`, `AGENTS.md` and `README.md` (and, for PassionCode, `files/` with the
+   coordination config and backlog sources, and a `.gitignore` line that lets the config travel); `fork/org/` the
+   `NOTICE` and `.gitleaks.toml` every copy shares. The first export into an empty repository makes its first commit.
 2. The export checks itself: with `ORG_TRANSFER_AUDIT` and `ORG_TRANSFER_MARKERS` naming the shared transfer audit and
    its marker file, it audits the exported tree (allow list `fork/org/audit-allow-literals.txt`) and runs gitleaks before
    it commits, and audits the copy with its history before `--push`; anything but `ready` refuses.
-3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-appvillis.<n>` (it reads the base and
+3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-<org>.<n>` (it reads the base and
    the patch tests from the copy's `fork/line.env`).
 
 ## Versions and tags

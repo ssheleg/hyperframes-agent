@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "repository": "https://github.com/passioncode-ai/passioncode-hyperframes-agent",
+  "sources": [
+    {"path": "fork/HANDOFF.md", "goal": "reliable-work", "kind": "context"}
+  ]
+}

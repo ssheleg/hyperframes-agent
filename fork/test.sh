@@ -58,7 +58,7 @@ git init -q -b main "$LINE"
   printf '{"name":"@hyperframes/cli","version":"1.2.3"}\n' > packages/cli/package.json
   printf 'upstream\n' > README.md; printf 'claude\n' > CLAUDE.md; printf 'agents\n' > AGENTS.md
   gitq add -A; gitq commit -q -m base; gitq tag v1.2.3
-  cp "$FORK"/*.sh "$FORK"/*.mjs fork/; cp "$FORK"/org/* fork/org/
+  cp "$FORK"/*.sh "$FORK"/*.mjs fork/; cp -R "$FORK"/org/. fork/org/
   gitq add -A; gitq commit -q -m "fork scripts"
   git remote add origin "$ORIGIN"; git push -q origin main
 )
@@ -271,6 +271,33 @@ case "$CALL" in
     else fail "export: gitleaks scans the stage as \".\" from inside it" "ran in the line's root: $CALL"; fi ;;
   *) fail "export: gitleaks scans the stage as \".\" from inside it" "call: ${CALL:-none}" ;;
 esac
+
+# --- export.sh: the PassionCode copy, first export into an empty repository ------------------------------------------
+expect "export: an unknown organization is refused" 2 "unknown organization" -- fork/export.sh "$COPY" --org nope
+PC_ORIGIN="$WORK/passioncode-ai/passioncode-hyperframes-agent.git"; PC="$WORK/pc-copy"
+mkdir -p "$WORK/passioncode-ai"; git init -q --bare "$PC_ORIGIN"
+git clone -q "$PC_ORIGIN" "$PC" 2>/dev/null
+expect "export: the Appvillis copy's checkout is refused for --org passioncode" 1 "is not a checkout of passioncode-ai" \
+  -- fork/export.sh "$COPY" --org passioncode
+# Upstream ignores .claude/; the copy's coordination config must still travel.
+printf '.claude/*\n' > .gitignore; gitq add .gitignore; gitq commit -q -m "chore: ignore .claude"
+expect "export: a refused first export leaves the empty copy empty" 1 "nothing committed" \
+  -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$PC" --org passioncode
+expect "export: the refused first export left no file and no commit" 0 "" \
+  -- test -z "$(git -C "$PC" status --porcelain)$(git -C "$PC" rev-parse -q --verify HEAD)"
+expect "export: the first export into an empty repository commits and pushes" 0 "pushed passioncode-ai/passioncode-hyperframes-agent main" \
+  -- fork/export.sh "$PC" --org passioncode --push
+expect "export: the PassionCode copy's export author" 0 "passioncode-hyperframes-agent@users.noreply.github.com" \
+  -- git -C "$PC" log -1 --format=%ae
+expect "export: CLAUDE.md imports AGENTS.md on its first line" 0 "" -- test "$(git -C "$PC" show HEAD:CLAUDE.md | head -n1)" = "@AGENTS.md"
+expect "export: AGENTS.md opens with the organization's Read first block" 0 "knowledge/roadmap.md" -- git -C "$PC" show HEAD:AGENTS.md
+expect "export: README.md's first heading is the copy's name" 0 "# PassionCode HyperFrames Agent" -- git -C "$PC" show HEAD:README.md
+expect "export: the coordination config is committed despite upstream's .claude/ rule" 0 '"leaseBackend": "git"' \
+  -- git -C "$PC" show HEAD:.claude/agent-sync.json
+expect "export: the backlog source declaration is committed" 0 "passioncode-ai/passioncode-hyperframes-agent" \
+  -- git -C "$PC" show HEAD:docs/backlog-sources.json
+expect "export: the copy's release script tags with its organization's label" 0 "passioncode" -- git -C "$PC" show HEAD:fork/release.sh
+expect "export: a second export with nothing new commits nothing" 0 "already holds this tree" -- fork/export.sh "$PC" --org passioncode
 
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS failed"; exit 1; fi

@@ -1,0 +1,3 @@
+
+# PassionCode copy: lets the coordination config travel; upstream ignores .claude/.
+!.claude/agent-sync.json
