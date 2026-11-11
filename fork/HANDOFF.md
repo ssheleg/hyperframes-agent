@@ -21,6 +21,11 @@ publish tarball releases that consumers pin.
   F7, F8, F9 and F11 on it and nothing else (checked 2026-11-11 against its `HEAD` `aed606a`). The transfer audit marks
   `personal_repo_link` (8, review only): the links to `passioncode-ai/fabric-workspace` that the standard's _Read first_
   block requires. GitHub Actions are switched off in that repository.
+- Add, never replace (operator, 2026-11-11, board thread `2f651c5c`, message `7e3ea2fb`): shipped recipes are locked
+  in `fork/shipped.lock.json` and `fork/release.sh` refuses a changed or removed one (`fork/check-add-only.mjs`,
+  `9f00634f7`); the rule is in `AGENTS.md` and `CLAUDE.md` and in both copies (exports `b04a8ab` Appvillis, `b8a9b4f`
+  PassionCode, pushed 2026-11-11). Both copies' `main` is now ahead of their `.1` releases on the same base by this rule
+  and the export tooling only; the next release of each carries it.
 - The PassionCode copy builds in the `passioncode` space on the second machine. The organization allows no deploy keys,
   so that space reads no GitHub: its clone `~/DATA/_worktrees/hyperframes-agent-passioncode` fetches from a bare mirror
   beside it (`hyperframes-agent-passioncode.git`), which `fork/remote-build.sh` fills from here when `FORK_REMOTE_SEED`
