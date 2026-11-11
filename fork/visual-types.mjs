@@ -13,7 +13,7 @@
 // tree gives the same bytes. With --files <dir> it also fetches every item's preview frame into <dir>/posters/ and
 // copies the recipes into <dir>/recipes/, and names each as a path inside the release's files archive
 // (`visual-types-files-<label>.tar.gz`), so a caller shows frames and uses recipes without the network (frame-agent,
-// board message 7c794df6). A frame that cannot be fetched keeps only its URL and is listed in `files.posters_missing`.
+// board message 7c794df6). The line's checks of a rendered video (`checks`, fork/pacing-check.mjs) go to <dir>/checks/. A frame that cannot be fetched keeps only its URL and is listed in `files.posters_missing`.
 // Frames are fetched only for items a type lists: an item no type names is counted in totals.untyped and has no frame.
 // With --registry-mirror <dir> it copies the registry into <dir> in the layout the HTTPS registry serves
 // (registry.json, then <type-dir>/<name>/registry-item.json and every file beside it), names each item's directory as
@@ -416,7 +416,49 @@ const RECIPES = [
       "freeze-frame-dressing",
     ],
   },
+  {
+    id: "short-continuous",
+    label: "Short that never stalls",
+    shows:
+      "a vertical short (Shorts, TikTok, Reels, up to 3 minutes) cut on the voice: each scene starts on its line and overlaps the next, the picture always moves, words land one by one, a music bed under the voice and a whoosh on every cut, the hook on screen in the first 2 s",
+    dir: "short-continuous",
+    needs:
+      "the project's own voice, music bed and two whoosh takes in assets/ (never synthesised tones), cue times from the voice's transcript, and checks/pacing-check.mjs on the render before delivery",
+    pairs_with: ["whip-pan", "whip-pan-cut", "kinetic-type", "cut-the-curve"],
+  },
 ];
+// The line's checks of a rendered video, run by the agent that delivers it (board request a4d1b095, 2026-11-11).
+const CHECKS = [
+  {
+    id: "pacing",
+    label: "Pacing of a short video",
+    file: "pacing-check.mjs",
+    checks:
+      "a rendered short (up to 3 minutes) has sound, no silence longer than 0.8 s, silence under 8% of the length, and no picture standing still longer than 1 s (ffmpeg silencedetect and freezedetect)",
+    run: "node checks/pacing-check.mjs <video> --json",
+    needs: "Node and ffmpeg with ffprobe; exit 0 pass, 1 fail with reasons, 2 unreadable",
+    report: "hyperframes-pacing/1",
+  },
+];
+function checks() {
+  return CHECKS.filter((c) => exists(path.join(ROOT, "fork", c.file))).map((c) => {
+    const out = {
+      id: c.id,
+      label: c.label,
+      checks: c.checks,
+      source: `fork/${c.file}`,
+      run: c.run,
+      needs: c.needs,
+      report: c.report,
+    };
+    if (POSTERS) {
+      fs.mkdirSync(path.join(POSTERS, "checks"), { recursive: true });
+      fs.copyFileSync(path.join(ROOT, "fork", c.file), path.join(POSTERS, "checks", c.file));
+      out.file = `checks/${c.file}`;
+    }
+    return out;
+  });
+}
 function recipes() {
   return RECIPES.filter((r) => exists(path.join(ROOT, "fork", "recipes", r.dir, "index.html"))).map(
     (r) => {
@@ -498,6 +540,7 @@ const catalog = {
   types,
   outside_registry: OUTSIDE,
   compositions: recipes(),
+  checks: checks(),
   styles: {
     token_contract: { file: "themes/CONTRACT.md", tokens: themeTokens() },
     theme_packs: themePacks(),

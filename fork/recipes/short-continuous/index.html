@@ -1,0 +1,176 @@
+<!doctype html>
+<!--
+  Recipe: a short (Shorts, TikTok, Reels, up to 3 minutes) that never stalls (board request a4d1b095, 2026-11-11).
+  The operator's word on a 45 s short with 34% silence and a picture stopping every second: no pauses between scenes,
+  music and sounds always, a picture that always moves, and a check before delivery.
+
+  How this composition keeps the pace:
+  - The voice is the clock. CUES lists the second each voice line starts; a scene begins on its line and the next
+    scene takes over on the next line, with a 0.25 s overlap, never after the animation has finished.
+  - The picture never stands still: every scene pushes in slowly over its whole length, its words land one by one
+    and a bar sweeps under them, so no 1 s of the frame is frozen.
+  - A music bed runs under the whole film (around 0.14 under a voice) and a whoosh marks each cut, alternating two
+    takes, its peak one frame after the cut.
+  - The first words land at 0 s: the hook is on screen in the first 2 s.
+
+  Use it as a project's root composition (index.html). Put the project's own sound in assets/: voice.mp3 (the
+  voice-over), bed.mp3 (a track from the person or `/media-use` bgm, entered at its strongest bar) and whoosh-a.mp3,
+  whoosh-b.mp3 (two takes). Never synthesised tones. Set CUES from the voice-over's word timings
+  (`npx hyperframes transcribe assets/voice.mp3`), the lines in LINES, and DURATION to the voice's end plus about
+  0.5 s. Then render and check before delivery:
+
+    npx hyperframes render -o out.mp4
+    node checks/pacing-check.mjs out.mp4 --json     # from the release's visual-types-files archive
+
+  A video that fails (silence over 0.8 s or over 8% of the length, a picture still over 1 s, no sound) goes back to
+  be fixed, it is not delivered. The palette comes from the project's style preset tokens (fork/style-preset.mjs css).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: transparent;
+        overflow: hidden;
+      }
+      #sc-root {
+        position: relative;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: var(--bg, #0f1116);
+        font-family: var(--font-display, Inter, "Helvetica Neue", Arial, sans-serif);
+        color: var(--fg, #f5f6f8);
+      }
+      .sc-scene {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        overflow: hidden;
+      }
+      /* The ground of a scene moves for the whole scene: a slow push-in, so the frame is never still. */
+      .sc-ground {
+        position: absolute;
+        inset: -8%;
+        background:
+          radial-gradient(60% 40% at 30% 30%, var(--brand, #4f7cff) 0%, transparent 70%),
+          radial-gradient(55% 45% at 75% 75%, var(--accent, #22c3ee) 0%, transparent 70%),
+          var(--surface, #1c2030);
+        opacity: 0.55;
+      }
+      .sc-words {
+        position: absolute;
+        left: 90px;
+        right: 90px;
+        top: 640px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 28px;
+        font-size: 128px;
+        font-weight: 800;
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+      }
+      .sc-word {
+        display: inline-block;
+        opacity: 0;
+      }
+      .sc-bar {
+        position: absolute;
+        left: 90px;
+        top: 1280px;
+        width: 900px;
+        height: 18px;
+        border-radius: 9px;
+        background: var(--accent, #22c3ee);
+        transform-origin: 0 50%;
+        transform: scaleX(0);
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="sc-root"
+      data-composition-id="short-continuous"
+      data-start="0"
+      data-duration="12"
+      data-width="1080"
+      data-height="1920"
+    >
+      <div class="sc-scene" id="sc-s0"><div class="sc-ground"></div><div class="sc-words"></div><div class="sc-bar"></div></div>
+      <div class="sc-scene" id="sc-s1"><div class="sc-ground"></div><div class="sc-words"></div><div class="sc-bar"></div></div>
+      <div class="sc-scene" id="sc-s2"><div class="sc-ground"></div><div class="sc-words"></div><div class="sc-bar"></div></div>
+      <div class="sc-scene" id="sc-s3"><div class="sc-ground"></div><div class="sc-words"></div><div class="sc-bar"></div></div>
+      <audio id="sc-voice" class="clip" src="assets/voice.mp3" data-start="0" data-duration="12" data-track-index="2"></audio>
+      <audio id="sc-bed" class="clip" src="assets/bed.mp3" data-start="0" data-duration="12" data-track-index="3" data-volume="0.14"></audio>
+      <audio id="sc-whoosh-1" class="clip" src="assets/whoosh-a.mp3" data-start="2.96" data-duration="0.5" data-track-index="4" data-volume="0.5"></audio>
+      <audio id="sc-whoosh-2" class="clip" src="assets/whoosh-b.mp3" data-start="5.96" data-duration="0.5" data-track-index="4" data-volume="0.5"></audio>
+      <audio id="sc-whoosh-3" class="clip" src="assets/whoosh-a.mp3" data-start="8.96" data-duration="0.5" data-track-index="4" data-volume="0.5"></audio>
+      <div
+        id="sc-drv"
+        class="clip"
+        data-start="0"
+        data-duration="12"
+        data-track-index="0"
+        style="position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none"
+      ></div>
+    </div>
+    <script>
+      (function () {
+        window.__timelines = window.__timelines || {};
+        // Seconds: when each voice line starts. A whoosh's data-start above is its cue minus 0.04 s, so its peak
+        // lands one frame after the cut (most whoosh files peak a little after their start).
+        var CUES = [0, 3, 6, 9];
+        var LINES = ["Stop losing viewers", "between scenes", "Keep the voice going", "and the picture moving"];
+        var DURATION = 12;
+        var OVERLAP = 0.25;
+        var tl = gsap.timeline({ paused: true });
+
+        CUES.forEach(function (cue, i) {
+          var id = "#sc-s" + i;
+          var scene = document.querySelector(id);
+          var words = scene.querySelector(".sc-words");
+          LINES[i].split(" ").forEach(function (w) {
+            var span = document.createElement("span");
+            span.className = "sc-word";
+            span.textContent = w;
+            words.appendChild(span);
+          });
+          var start = i === 0 ? 0 : cue - OVERLAP;
+          var end = i + 1 < CUES.length ? CUES[i + 1] : DURATION;
+          // In: a fast slide from below over the outgoing scene, no gap; the first scene is on screen at 0 s.
+          if (i === 0) tl.set(id, { opacity: 1 }, 0);
+          else tl.fromTo(id, { opacity: 0, yPercent: 12 }, { opacity: 1, yPercent: 0, duration: OVERLAP, ease: "power3.out" }, start);
+          // Motion for the whole scene: the ground pushes in and drifts, never stopping until the next cut.
+          tl.fromTo(
+            id + " .sc-ground",
+            { scale: 1, xPercent: -2, rotation: -1 },
+            { scale: 1.12, xPercent: 2, rotation: 1, duration: end - start, ease: "none" },
+            start,
+          );
+          // Words land one by one on the line, then breathe until the cut.
+          tl.fromTo(
+            id + " .sc-word",
+            { opacity: 0, y: 60, scale: 0.92 },
+            { opacity: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.12, ease: "back.out(2)" },
+            Math.max(0, cue),
+          );
+          tl.to(id + " .sc-words", { scale: 1.04, duration: end - cue, ease: "none" }, cue);
+          tl.to(id + " .sc-bar", { scaleX: 1, duration: Math.min(1.6, end - cue), ease: "power2.out" }, cue + 0.3);
+          // Out: the outgoing scene leaves while the next one arrives.
+          if (i + 1 < CUES.length) tl.to(id, { opacity: 0, yPercent: -10, duration: OVERLAP, ease: "power2.in" }, end - OVERLAP);
+        });
+        tl.to("#sc-drv", { opacity: 0, duration: 0.01 }, DURATION - 0.01);
+        window.__timelines["short-continuous"] = tl;
+      })();
+    </script>
+  </body>
+</html>

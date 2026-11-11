@@ -5,6 +5,11 @@
       "since": "2026-11-08",
       "base": "v0.9.21",
       "sha256": "860f7ca9bddde103d5f1889e464315d6240336268f54c17a5f036a23a8e27cfd"
+    },
+    "short-continuous": {
+      "since": "2026-11-11",
+      "base": "v0.9.35",
+      "sha256": "83827a4c2692d29c1239a155315603d0c6cf46ff545204adb4f9169ee6f4afd1"
     }
   }
 }

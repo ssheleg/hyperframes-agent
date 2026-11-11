@@ -25,6 +25,9 @@ was built from in a `Source-Revision:` line.
 (`LINE_TESTS`) and the patches (`LINE_PATCHES`); `release.sh` reads it. Every release also carries
 `visual-types-<base>-passioncode.<n>.json`, the engine's catalogue of visual types, registry items and style tokens
 (`node fork/visual-types.mjs`), and `fork/style-preset.mjs` checks a project's style preset against the token contract.
+`fork/pacing-check.mjs` (also `checks/pacing-check.mjs` in the release's files archive) checks a rendered short: it
+fails one with no sound, a silence over 0.8 s, silence over 8% of the length or a picture still over 1 s. The recipe
+`fork/recipes/short-continuous/` is a vertical short cut on the voice that passes it.
 
 ## Versions, tags and assets
 

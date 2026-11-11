@@ -254,8 +254,8 @@ node fork/visual-types.mjs --base "$BASE" --release "$LABEL" --commit "$COMMIT" 
 # A run that fetched no frame at all had no network: upstream's registry links some frames that answer 403, never all.
 node -e 'const c=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!c.types.length || !c.totals.items || !c.files.posters_fetched || !c.registry_mirror.files) process.exit(1)' "$OUT/$CATALOG" \
   || { echo "the catalogue of visual types is empty, fetched no preview frame or mirrored no registry file" >&2; exit 1; }
-mkdir -p "$CATALOG_DIR/posters" "$CATALOG_DIR/recipes"
-fork/pack.sh "$CATALOG_DIR" "$OUT/$CATALOG_FILES" posters recipes
+mkdir -p "$CATALOG_DIR/posters" "$CATALOG_DIR/recipes" "$CATALOG_DIR/checks"
+fork/pack.sh "$CATALOG_DIR" "$OUT/$CATALOG_FILES" posters recipes checks
 fork/pack.sh "$MIRROR_DIR" "$OUT/$REGISTRY_MIRROR" registry
 log "catalogue $OUT/$CATALOG, $OUT/$CATALOG_FILES and $OUT/$REGISTRY_MIRROR ($(node -p 'const c=require(process.argv[1]); c.files.posters_fetched+" frames, "+c.files.posters_missing.length+" not fetchable, "+c.compositions.length+" recipes, "+c.registry_mirror.items+" registry items"' "$OUT/$CATALOG"))"
 

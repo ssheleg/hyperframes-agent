@@ -120,7 +120,8 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
   between words (an em dash, `--` or a spaced hyphen becomes a comma): the registry's own descriptions carried about a
   hundred, and these texts go in front of people.
 - `visual-types-files-<base>-<line>.<n>.tar.gz`, beside it: the preview frames (`posters/`, JPEG at most 640 px wide
-  when ffmpeg is installed) and the line's composition recipes (`recipes/`). Each item's `poster_file` and each
+  when ffmpeg is installed), the line's composition recipes (`recipes/`) and its checks of a rendered video
+  (`checks/`, since `fork-v0.9.35-sshlg.2`). Each item's `poster_file` and each
   recipe's `file` are paths inside it, so a caller shows them without the network. `files.posters_missing` lists the
   frames upstream's registry links but does not serve (64 of 178 answered 403 on 2026-11-08). The release refuses when
   no frame at all could be fetched. Frames are fetched only for items a type lists; the 38 items no type names are
@@ -134,6 +135,16 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
   block for. `presenter-over-diagram`: a cut-out presenter over a diagram that fills the frame; the presenter shrinks
   into a corner while it plays and leaves by turns (a dissolve, then a reverse grow); nothing covers the face. It is a
   root composition because the runtime seeks media only in the root; `npx hyperframes lint` and `check` pass on it.
+  `short-continuous` (since `v0.9.35`, board request `a4d1b095`): a vertical short cut on the voice. Each scene starts
+  on its voice line and overlaps the next by 0.25 s, the ground pushes in for the whole scene, words land one by one,
+  a music bed runs under the voice and a whoosh marks each cut; the project supplies the voice, the bed and two whoosh
+  takes in `assets/`. Rendered with stand-in sound it passes `lint`, `check` and the pacing check below (silence 0%,
+  longest still 0.57 s); the same film with 1.2 s pauses in the voice and no bed fails it (silence 39%).
+- `fork/pacing-check.mjs` (`checks` in the catalogue, `checks/pacing-check.mjs` in the files archive) measures a
+  rendered short with ffmpeg's `silencedetect` and `freezedetect` and fails it with no audio stream, a silence over
+  0.8 s, silence over 8% of the length or a picture still over 1 s: the operator's limits for shorts (board request
+  `a4d1b095`, 2026-11-11). `--json` prints a `hyperframes-pacing/1` report; exit 0 pass, 1 fail, 2 unreadable. The
+  agent that delivers a short runs it on the render and sends a failing one back instead of delivering it.
 - `fork/style-preset.mjs` keeps a project's taste as a `hyperframes-style-preset/1` file: every contract token
   (`--dur-beat` is the pace), and optionally a frame preset, a caption item, preferred transitions, the text density
   and who decided each field (a person or the agent, with the date). `new <theme-pack>` starts one, `check` says what is

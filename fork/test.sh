@@ -202,6 +202,14 @@ if printf '%s' "$VTF" | node -e '
   process.exit(ok?0:1) })' && [ -s "$FILES/posters/title-a.png" ] && [ -f "$FILES/recipes/presenter-over-diagram/index.html" ]; then
   ok "visual-types --files: frames and recipes inside the archive, an unreachable frame listed"
 else fail "visual-types --files: frames and recipes inside the archive, an unreachable frame listed" "$(printf '%s' "$VTF" | head -c 300)"; fi
+# The line's checks travel in the same archive, named by their path inside it.
+mkdir -p "$VT/fork"; printf '// check\n' > "$VT/fork/pacing-check.mjs"
+VTC="$(node fork/visual-types.mjs --root "$VT" --release 1.2.3-sshlg.1 --files "$WORK/vt-files-c" 2>&1)"
+if printf '%s' "$VTC" | node -e '
+  let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ const c=JSON.parse(s);
+  process.exit(c.checks.length===1 && c.checks[0].id==="pacing" && c.checks[0].file==="checks/pacing-check.mjs" && c.checks[0].report==="hyperframes-pacing/1" ? 0 : 1) })' \
+  && [ -f "$WORK/vt-files-c/checks/pacing-check.mjs" ]; then ok "visual-types --files: the pacing check inside the archive"
+else fail "visual-types --files: the pacing check inside the archive" "$(printf '%s' "$VTC" | head -c 300)"; fi
 # An item no type names gets no frame; dashes between words leave every string; the mirror keeps the registry's layout.
 printf '{"name":"odd","type":"hyperframes:component","title":"Odd \xe2\x80\x94 thing","description":"one - two -- three","tags":["nothing-known"],"files":[{"path":"o.html"},{"path":"big.mp4","url":"https://cdn/x.mp4"}],"preview":{"poster":"file://%s/frames/w.png"}}\n' "$WORK" > "$VT/registry/components/odd/registry-item.json"
 printf '<div></div>\n' > "$VT/registry/components/odd/o.html"
@@ -237,6 +245,26 @@ if [ "$BADRC" = 1 ] && printf '%s' "$BAD" | grep -q "token --fg is missing" && p
   ok "style-preset: names every missing token, a bad pace and a wrong caption item"
 else fail "style-preset: names every missing token, a bad pace and a wrong caption item" "$(printf '%s' "$BAD" | tr '\n' ' ')"; fi
 expect "style-preset: css writes every token in a :root block" 0 "--dur-beat: 0.4s;" -- node fork/style-preset.mjs css "$WORK/preset.json" --root "$VT"
+
+# --- pacing-check.mjs: a short with a gap, a still picture or no sound fails -----------------------------------------
+if command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null; then
+  PV="$WORK/pace"; mkdir -p "$PV"
+  enc() { ffmpeg -v error -y "$@" -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac; }
+  enc -f lavfi -i testsrc2=s=160x284:r=30:d=4 -f lavfi -i sine=f=330:d=4 "$PV/good.mp4"
+  enc -f lavfi -i testsrc2=s=160x284:r=30:d=4 -f lavfi -i "sine=f=330:d=1.5,apad=pad_dur=1.2[a];sine=f=330:d=1.3[b];[a][b]concat=v=0:a=1" "$PV/gap.mp4"
+  enc -f lavfi -i color=c=navy:s=160x284:r=30:d=4 -f lavfi -i sine=f=330:d=4 "$PV/still.mp4"
+  ffmpeg -v error -y -f lavfi -i testsrc2=s=160x284:r=30:d=4 -c:v libx264 -pix_fmt yuv420p "$PV/mute.mp4"
+  expect "pacing-check: a moving picture with continuous sound passes" 0 "pass:" -- node fork/pacing-check.mjs "$PV/good.mp4"
+  expect "pacing-check: a silence over 0.8 s fails" 1 "silence 1.2 s at 1.5 s" -- node fork/pacing-check.mjs "$PV/gap.mp4"
+  expect "pacing-check: a larger --max-gap still fails on the silence share" 1 "of the length (limit 8%)" -- node fork/pacing-check.mjs "$PV/gap.mp4" --max-gap 2
+  expect "pacing-check: a still picture fails" 1 "picture still for 4 s at 0 s" -- node fork/pacing-check.mjs "$PV/still.mp4"
+  expect "pacing-check: no audio stream fails" 1 "no audio stream" -- node fork/pacing-check.mjs "$PV/mute.mp4"
+  expect "pacing-check: the report carries its schema and verdict" 1 '"schema": "hyperframes-pacing/1"' -- node fork/pacing-check.mjs "$PV/gap.mp4" --json
+  expect "pacing-check: a missing file is an error, not a verdict" 2 "no such file" -- node fork/pacing-check.mjs "$PV/none.mp4"
+  expect "pacing-check: a bad threshold is refused" 2 "usage:" -- node fork/pacing-check.mjs "$PV/good.mp4" --max-gap x
+else
+  echo "skip  pacing-check: ffmpeg and ffprobe are not installed"
+fi
 
 # --- workflows-guard.sh ---------------------------------------------------------------------------------------------
 : > "$GH_STUB_DIR/workflows"

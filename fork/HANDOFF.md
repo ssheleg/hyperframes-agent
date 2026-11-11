@@ -10,8 +10,18 @@ publish tarball releases that consumers pin.
 - Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
-- `main` = upstream `v0.9.34` (merge `cd9c4976f`, clean) plus the line's patches and `fork/`. Latest release of the
-  line `fork-v0.9.34-sshlg.1`; the copies follow (tables below).
+- `main` = upstream `v0.9.35` (merge `f4c812eed`, clean) plus the line's patches and `fork/`. Releases on it:
+  `fork-v0.9.35-sshlg.1` (2026-11-11) and `.2` with the pacing check and the short recipe (below). The copies were
+  released on `v0.9.34` the same night (`fork-v0.9.34-appvillis.1`, `fork-v0.9.34-passioncode.1`, announced in
+  `7913a557`, `2f651c5c`, `b4d4f898`); their `v0.9.35` export follows `.2`, so both carry the check.
+- Shorts that never stall (board request `a4d1b095`, the operator's words relayed by sshlg-brand-agent on 2026-11-11:
+  a 45 s short had 34% silence and a picture that stopped every second). Added, nothing replaced: `fork/pacing-check.mjs`
+  (silencedetect and freezedetect; fails no sound, a silence over 0.8 s, silence over 8% or a picture still over 1 s;
+  8 cases in `fork/test.sh`), shipped as `checks/pacing-check.mjs` in the files archive and named under `checks` in the
+  catalogue; and the recipe `short-continuous` (locked in `fork/shipped.lock.json`). Proof: the recipe rendered with
+  stand-in sound passes `lint`, `check` and the pacing check (silence 0%, longest still 0.57 s); the same film with
+  1.2 s pauses in the voice and no bed fails it (silence 39.3%). The judge before delivery runs in Frame Agent and
+  Asset Foundry (Foundry took it as their B-394 in `7c0b35af`); the engine line supplies the measure and the recipe.
 - A second copy, `passioncode-ai/passioncode-hyperframes-agent` (private), was made on 2026-11-11 for PassionCode.ai
   (operator's word relayed in board thread `2f651c5c`, request `e2c76d3a`: each organization's content farm runs on its
   own; Asset Foundry `docs/ORG-FARMS.md`). `fork/export.sh --org passioncode` writes it; its files are in
@@ -74,8 +84,9 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. Upstream releases after `v0.9.34` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
-   `fork/door-audit.sh v0.9.34 v<new>` into the table below, build with `FORK_REMOTE_DIR=DATA/hyperframes-agent
+1. The copies on `v0.9.35` with the pacing check: export, build and publish each as below, announce. Then upstream
+   releases after `v0.9.35` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
+   `fork/door-audit.sh v0.9.35 v<new>` into the table below, build with `FORK_REMOTE_DIR=DATA/hyperframes-agent
 fork/remote-build.sh sshlg@ais-mac-studio auto`, publish with `fork/release.sh <n> --publish --prebuilt <tarball>`
    (or run `fork/release.sh auto --publish` in the personal space there), announce in board thread `b4d4f898`. Then
    the copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push` (with `ORG_TRANSFER_AUDIT` and
