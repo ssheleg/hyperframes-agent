@@ -82,8 +82,8 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
 FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
    publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
 2. Open waits, read at the next board check (no watcher runs between sessions):
-   - org-index: register `passioncode-hyperframes-agent` and a licence class for a third-party fork (request
-     `5e016699`, thread `8e605a4d`).
+   - org-index registered the copy and the `upstream` licence class (`5372095`); asked to mark the copy's missing
+     `contributors` write access as an exception (it is written by the export only; thread `8e605a4d`).
    - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
      `deploy` row for `com.appvillis.frame-agent`), forwarded in `b4d4f898` (`444425a1`).
    - Frame Agent moving its CLI pin from `.2` to `fork-v0.9.26-sshlg.1` and taking `registry-*.tar.gz` (thread
@@ -215,6 +215,15 @@ The PassionCode copy, `passioncode-ai/passioncode-hyperframes-agent` (built in t
 | Release                      | Export commit | sha256                                                             |
 | ---------------------------- | ------------- | ------------------------------------------------------------------ |
 | `fork-v0.9.33-passioncode.1` | `aed606a`     | `63dc14c10ae49155ae80c254a64e67601d2ffa755c87615bbe9583d44357f239` |
+| `fork-v0.9.26-passioncode.1` | `5aa2ce4`     | `eaac524f4c8c2d9b9b7b62a3f2fc56f7b217c4d27c487cabdbebb1b7fcfe5409` |
+
+`fork-v0.9.26-passioncode.1` is a side release, added on 2026-11-11 for the PassionCode Frame Agent, which stays on the
+engine the original Frame Agent pins (0.9.26; its move is Frame Agent's BL-331). Its commit `5aa2ce4` is not on the
+copy's main (main stays on 0.9.33): the line's tree at `c5d7f4c57` (the commit of `fork-v0.9.26-sshlg.1`) exported with
+today's `fork/export.sh` and `fork/org/passioncode` into a scratch clone whose origin held only the copy's root commit,
+built in a separate clone in the `passioncode` space (79 patch tests, smoke), and published from a scratch copy of the
+0.9.26-era `fork/release.sh` changed in two places: it pushes the tag alone and refuses a HEAD that is on main. The
+tooling has no option for this yet; a second side release is the moment to add one (`--side` in export and release).
 
 ## Door audit findings
 
