@@ -60,17 +60,15 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      dash lesson; thread `fef32c41`).
    - Done and closed: Asset Foundry's separation (`337a610e`, 0.3.46 on Studio, Appvillis copies removed from the
      personal instance).
-   - Human gates outside this line: the organization has no OpenRouter account of its own (checked 2026-11-10:
-     Observatory's door holds four provisioning keys, all personal, and every key of the organization's copies is
-     issued from one of them, with its own ceiling). The copies run on those keys; moving them needs the account
-     created and paid by a person, then its provisioning key stashed in the door and the copies' keys reissued from
-     it. The six provider keys of the Foundry copy wait on the same kind of accounts. On 2026-11-11 the operator copied a
-     manager key as the organization's; it sees the same 2200 keys as the personal `sshlg` stash, so it is a second
-     provisioning key of the personal account: stashed as `sshlg-2`, nothing reissued, the gate stays open. A second try
-     the same day (`sshlg-3`) is the same: every one of these keys reports organization `org_3BLd...`, workspace `Default
-Workspace` and one shared balance. The organization holds workspaces `default` and `agents`, none for Appvillis;
-     a separate account means a separate OpenRouter organization with its own billing, its management key created
-     while switched into it.
+   - OpenRouter for the organization (settled 2026-11-11): the operator named the management key he copied as
+     Appvillis's. Every management key the door holds under `sshlg`, `appvillis` and `appvillis-2` reports one
+     OpenRouter organization (`org_3BLd...`, workspace `Default Workspace`, one balance), so that organization is
+     Appvillis and the copies' keys (`appvillis-*`, `copylot-appvillis`, `mobile-publisher-appvillis`,
+     `ania-team-bot`) were issued from it from the start: nothing to reissue. The earlier note here, "four
+     provisioning keys, all personal", was wrong. The label `sshlg` stays because issued keys name it. Open, for the
+     operator: most personal agents' keys are issued from the same organization (`openrouter.py list`, account
+     `sshlg`); the door's other accounts are `acct-personal-os-0xdev`, `acct-sasai-syndica` and
+     `acct-telegram-os-checkmydata`. The six provider keys of the Foundry copy are a separate question.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
