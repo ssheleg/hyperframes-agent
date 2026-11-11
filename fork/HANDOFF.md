@@ -31,6 +31,12 @@ publish tarball releases that consumers pin.
   beside it (`hyperframes-agent-passioncode.git`), which `fork/remote-build.sh` fills from here when `FORK_REMOTE_SEED`
   names it. Bun 1.3.14 was installed in that space for the build (the same version as `appvillis`). `fork/status.sh` reads both
   lines and names the next step.
+- The PassionCode release is also installed in that space for use (the organization's onboarding, asked through its
+  project manager on 2026-11-11): `npm install -g --prefix ~/.local/share/hyperframes` of the release tarball (sha256
+  checked), `~/.local/bin/hyperframes` linked and put on the login PATH in `~/.zprofile`; `hyperframes --version` reads
+  `0.9.33+passioncode.1` and init, lint and render ran there. After each new PassionCode release, install its tarball the
+  same way. The build clone is not the installation. HyperFrames runs no process, so there is no service address; the
+  networked entry for agents is the organization's Frame Agent instance (Frame Agent's item 2 of `e2c76d3a`).
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
   clone `~/DATA/_worktrees/hyperframes-agent-org`, read-only deploy key `gh-appvillis-hyperframes-agent`), published
