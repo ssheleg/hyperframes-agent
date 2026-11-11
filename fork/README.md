@@ -172,7 +172,10 @@ not.
 refused as a gap, and an existing tag as taken.
 On the second machine the personal space publishes too: its GitHub CLI is `~/.local/bin/gh`, a wrapper that reads the
 token from the credential store (call it from a login shell). The copy builds in the organization's space there, from a
-clone reached by its own read-only deploy key (`Host gh-appvillis-hyperframes-agent`).
+clone reached by its own read-only deploy key (`Host gh-appvillis-hyperframes-agent`). The PassionCode copy builds in the `passioncode` space,
+which reads no GitHub (the organization allows no deploy keys): its clone fetches from a bare mirror beside it, and
+`FORK_REMOTE_SEED=<ssh-url of the mirror>` makes `fork/remote-build.sh` push the commit there (fast-forward only)
+before the build.
 
 ## Taking an upstream release
 

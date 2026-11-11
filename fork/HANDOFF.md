@@ -11,7 +11,20 @@ publish tarball releases that consumers pin.
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
 - `main` = upstream `v0.9.33` (merge `ce8c82f87`, clean) plus the line's patches and `fork/`. Latest releases
-  `fork-v0.9.33-sshlg.1` and, in the copy, `fork-v0.9.33-appvillis.1` (tables below), both 2026-11-11. `fork/status.sh` reads both
+  `fork-v0.9.33-sshlg.1` and, in the copies, `fork-v0.9.33-appvillis.1` and `fork-v0.9.33-passioncode.1` (tables
+  below), all 2026-11-11.
+- A second copy, `passioncode-ai/passioncode-hyperframes-agent` (private), was made on 2026-11-11 for PassionCode.ai
+  (operator's word relayed in board thread `2f651c5c`, request `e2c76d3a`: each organization's content farm runs on its
+  own; Asset Foundry `docs/ORG-FARMS.md`). `fork/export.sh --org passioncode` writes it; its files are in
+  `fork/org/passioncode/`. It follows the organization's repository standard except the licence: the code is HeyGen's
+  under Apache-2.0 and keeps it (knowledge base `licensing.md`, third-party code), so org-index `check_format.py` reports
+  F7, F8, F9 and F11 on it and nothing else (checked 2026-11-11 against its `HEAD` `aed606a`). The transfer audit marks
+  `personal_repo_link` (8, review only): the links to `passioncode-ai/fabric-workspace` that the standard's _Read first_
+  block requires. GitHub Actions are switched off in that repository.
+- The PassionCode copy builds in the `passioncode` space on the second machine. The organization allows no deploy keys,
+  so that space reads no GitHub: its clone `~/DATA/_worktrees/hyperframes-agent-passioncode` fetches from a bare mirror
+  beside it (`hyperframes-agent-passioncode.git`), which `fork/remote-build.sh` fills from here when `FORK_REMOTE_SEED`
+  names it. Bun 1.3.14 was installed in that space for the build (the same version as `appvillis`). `fork/status.sh` reads both
   lines and names the next step.
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
@@ -52,8 +65,16 @@ fork/remote-build.sh sshlg@ais-mac-studio auto`, publish with `fork/release.sh <
    (or run `fork/release.sh auto --publish` in the personal space there), announce in board thread `b4d4f898`. Then
    the copy: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-org --push` (with `ORG_TRANSFER_AUDIT` and
    `ORG_TRANSFER_MARKERS`), build it with `FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-org fork/remote-build.sh
-appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuilt`, announce in `7913a557`.
+appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuilt`, announce in `7913a557`. Then the
+   PassionCode copy the same way: `fork/export.sh ~/DATA/_worktrees/hyperframes-agent-passioncode --org passioncode
+--push`, from that checkout `FORK_REMOTE_SEED=passioncode@ais-mac-studio:DATA/_worktrees/hyperframes-agent-passioncode.git
+FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
+   publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
 2. Open waits, read at the next board check (no watcher runs between sessions):
+   - org-index: register `passioncode-hyperframes-agent` and a licence class for a third-party fork (request
+     `5e016699`, thread `8e605a4d`).
+   - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
+     `deploy` row for `com.appvillis.frame-agent`), forwarded in `b4d4f898` (`444425a1`).
    - Frame Agent moving its CLI pin from `.2` to `fork-v0.9.26-sshlg.1` and taking `registry-*.tar.gz` (thread
      `b4d4f898`).
    - The template base's answer to the contribution `7d82ca5b` (success case for remote builds, the catalogue, the
@@ -77,7 +98,12 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
    times. Reporting it to Chromium is an outward send, the operator's.
-4. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
+4. Not blocking, recorded 2026-11-11: no copy carries the 136 files upstream tracks under its own `.gitignore` rules
+   (`git ls-files -ci --exclude-standard`: `docs/contracts/`, `docs/images/`, producer test compositions,
+   `packages/core/src/fonts/fontData.generated.ts`), because the export stages with `git add -A`. Both copies build and
+   pass their smoke without them. Decide whether the export should add exactly the stage's files (`git add -f` on that
+   list, never on the copy's own ignored build output).
+5. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
 
@@ -172,6 +198,12 @@ copy"). Earlier details per release: [`HISTORY.md`](HISTORY.md).
 | `fork-v0.9.5-appvillis.1`   | `c8d1035`     | `811dc2b06a27587887e7d168106ac06098b1712f0961032fdf44f3e01c53c479` |
 | `fork-v0.8.231-appvillis.1` | `746b7fb`     | `b0fb8f0e67215953bf0b4d3d89e3729f1d2115dc75c7b11fdde35403cd2243b5` |
 | `fork-v0.8.221-appvillis.1` | `93c768b`     | `e5cb424361e7c245a60b5f77dc92acf9129502411eba894e5d8ab8ac779dee2b` |
+
+The PassionCode copy, `passioncode-ai/passioncode-hyperframes-agent` (built in the `passioncode` space).
+
+| Release                      | Export commit | sha256                                                             |
+| ---------------------------- | ------------- | ------------------------------------------------------------------ |
+| `fork-v0.9.33-passioncode.1` | `aed606a`     | `63dc14c10ae49155ae80c254a64e67601d2ffa755c87615bbe9583d44357f239` |
 
 ## Door audit findings
 
