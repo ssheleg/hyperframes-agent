@@ -168,6 +168,9 @@ clone reached by its own read-only deploy key (`Host gh-appvillis-hyperframes-ag
 
 1. `git fetch upstream --tags && git push origin upstream/main:refs/heads/upstream`
 2. `git switch main && git merge --no-ff v<new>`
+   A release that adds a workspace package (`v0.9.33` added `packages/share`) fails the commit hook's typecheck until
+   `bun install` links it; that install also rewrites the version fields of upstream's stale `bun.lock`. Restore it
+   (`git checkout -- bun.lock`) before `fork/remote-build.sh`, which refuses a tree with uncommitted changes.
 3. A patch the new release already carries merges as identical text, or conflicts on lines that now say
    the same thing: take upstream's side, then remove the patch's row from the table above. A merge committed by
    hand (after a conflict, or `--no-commit`) runs the pre-commit hook, whose `fallow audit --base origin/main` counts
