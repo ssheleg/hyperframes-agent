@@ -37,6 +37,11 @@ publish tarball releases that consumers pin.
   `0.9.33+passioncode.1` and init, lint and render ran there. After each new PassionCode release, install its tarball the
   same way. The build clone is not the installation. HyperFrames runs no process, so there is no service address; the
   networked entry for agents is the organization's Frame Agent instance (Frame Agent's item 2 of `e2c76d3a`).
+  Parity with the line's machine, checked with `hyperframes doctor` on both (2026-11-11): the same chrome-headless-shell
+  (152.0.7977.30) and ffmpeg 9; the six core skills in `~/.claude/skills` byte-identical to v0.9.33's; no Docker (Frame
+  Agent renders without it). The user fonts on the line's machine (SF Pro Display, Helvetica Light) were not copied: the
+  SF Pro licence covers interface mock-ups for Apple platforms, not an organization's videos. The PassionCode Frame Agent
+  pins `fork-v0.9.26-passioncode.1` on purpose (the original's engine), not the 0.9.33 on PATH.
 - Releases build on the second machine: the line in its personal space (`sshlg`, where `~/.local/bin/gh` reads its
   token from the credential store, so it also publishes), the copy only in the organization's space (`appvillis`,
   clone `~/DATA/_worktrees/hyperframes-agent-org`, read-only deploy key `gh-appvillis-hyperframes-agent`), published
