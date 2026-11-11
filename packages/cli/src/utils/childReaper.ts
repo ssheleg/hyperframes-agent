@@ -46,3 +46,17 @@ export function killWithThisProcess(pid: number, group: boolean): () => void {
   stdin?.write(`+ ${pid} ${group ? "g" : "p"}\n`);
   return () => void stdin?.write(`- ${pid}\n`);
 }
+
+/**
+ * Kills a launched browser's process group if this process ends while the browser still runs, so a CLI killed
+ * outright leaves no Chrome to shut itself down without its parent. Released when the browser exits on its own.
+ */
+export function killBrowserWithThisProcess(
+  browser: { process(): ChildProcess | null },
+  register: (pid: number, group: boolean) => () => void = killWithThisProcess,
+): void {
+  const child = browser.process();
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+  // Puppeteer starts Chrome detached outside Windows, which makes it the leader of its own process group.
+  child.once("exit", register(child.pid, process.platform !== "win32"));
+}

@@ -4,6 +4,7 @@ import { unlinkSync } from "node:fs";
 import { connect, createServer, type Socket } from "node:net";
 import { prelaunchBrowserForCheck } from "./commands/check.js";
 import "./utils/checkBrowser.js";
+import { killBrowserWithThisProcess } from "./utils/childReaper.js";
 import { registerRootExitRequester } from "./utils/commandResult.js";
 import {
   Frame,
@@ -133,4 +134,11 @@ server.on("error", (error: NodeJS.ErrnoException) => {
 });
 
 listen();
-void prelaunchBrowserForCheck(checkArgs).catch(() => undefined);
+// A warm process killed outright (its client went mid-check, or a supervisor's SIGKILL) runs no exit handler, so
+// Puppeteer cannot kill this Chrome; the reaper does, instead of leaving Chrome to shut itself down without a parent.
+void prelaunchBrowserForCheck(checkArgs)
+  .then(async (prelaunched) => {
+    const launched = await prelaunched?.launched;
+    if (launched) killBrowserWithThisProcess(launched.browser);
+  })
+  .catch(() => undefined);
