@@ -2,7 +2,7 @@ import { Hono, type Context, type Next } from "hono";
 import type { StudioApiAdapter } from "./types.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerFileRoutes } from "./routes/files.js";
-import { registerPreviewRoutes } from "./routes/preview.js";
+import { PREVIEW_CAPTURE_PARAM, registerPreviewRoutes } from "./routes/preview.js";
 import { registerLintRoutes } from "./routes/lint.js";
 import { registerRenderRoutes } from "./routes/render.js";
 import { registerImageThumbnailRoutes } from "./routes/imageThumbnail.js";
@@ -25,6 +25,8 @@ import {
   sameOriginPost,
 } from "./helpers/requestIdentity.js";
 import { previewErrorPage } from "./helpers/previewErrorPage.js";
+import type { CaptureSandboxOption } from "./helpers/captureLoads.js";
+import { createFrameTokens, serveTokenPreviewPaths } from "./helpers/opaqueFrameLoads.js";
 
 async function answerRefusedFrameWithPage(c: Context, next: Next) {
   await next();
@@ -43,11 +45,15 @@ const fromAnotherSite = (c: Context) => {
   return site === "cross-site" || site === "same-site";
 };
 
-async function sandboxPreviewOpenedFromAnotherSite(c: Context, next: Next) {
-  await next();
-  c.header("Vary", "Sec-Fetch-Site", { append: true });
-  if (fromAnotherSite(c)) c.header("Content-Security-Policy", "sandbox allow-scripts");
-}
+const isThumbnailCapture = (c: Context) => c.req.query(PREVIEW_CAPTURE_PARAM) !== undefined;
+
+const sandboxPreviewForAnotherSiteOrCapture =
+  (sandboxCaptures: boolean) => async (c: Context, next: Next) => {
+    await next();
+    c.header("Vary", "Sec-Fetch-Site", { append: true });
+    if (fromAnotherSite(c) || (sandboxCaptures && isThumbnailCapture(c)))
+      c.header("Content-Security-Policy", "sandbox allow-scripts");
+  };
 
 async function refuseThumbnailForAnotherSite(c: Context, next: Next) {
   if (fromAnotherSite(c))
@@ -71,13 +77,32 @@ function urlScheme(url: string): string | undefined {
   }
 }
 
-export interface StudioApiOptions {
+export interface StudioApiOptions extends CaptureSandboxOption {
   allowedHosts?: readonly string[];
 }
 
 export function createStudioApi(adapter: StudioApiAdapter, options: StudioApiOptions = {}): Hono {
   const api = new Hono();
-  api.use("/projects/:id/preview/*", sandboxPreviewOpenedFromAnotherSite);
+  const sandboxThumbnailCaptures = options.sandboxThumbnailCaptures ?? false;
+  const frameTokens = createFrameTokens();
+  const resolveProjectId = (id: string) =>
+    Promise.resolve()
+      .then(() => adapter.resolveProject(id))
+      .then(
+        (project) => project?.id,
+        () => undefined,
+      );
+  api.use("/projects/:id/preview/*", serveTokenPreviewPaths(api, frameTokens, resolveProjectId));
+  api.use(
+    "/projects/:id/preview/*",
+    sandboxPreviewForAnotherSiteOrCapture(sandboxThumbnailCaptures),
+  );
+  api.get("/projects/:id/frame-token", async (c) => {
+    if (fromAnotherSite(c)) return c.json({ error: "forbidden: requested by another site" }, 403);
+    const projectId = await resolveProjectId(c.req.param("id"));
+    if (!projectId) return c.json({ error: "not found" }, 404);
+    return c.json({ token: frameTokens.tokenFor(projectId) }, 200, { "Cache-Control": "no-store" });
+  });
   api.use("/projects/:id/thumbnail/*", refuseThumbnailForAnotherSite);
   // This API is unauthenticated and simple cross-origin POSTs need no
   // preflight, so the guard rejects writes the shared predicate refuses.
@@ -151,7 +176,7 @@ export function createStudioApi(adapter: StudioApiAdapter, options: StudioApiOpt
 
   registerProjectRoutes(api, adapter);
   registerFileRoutes(api, adapter);
-  registerPreviewRoutes(api, adapter);
+  registerPreviewRoutes(api, adapter, { sandboxThumbnailCaptures });
   registerLintRoutes(api, adapter);
   registerRenderRoutes(api, adapter);
   registerThumbnailRoutes(api, adapter);
