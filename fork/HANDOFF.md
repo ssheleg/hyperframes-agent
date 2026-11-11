@@ -73,7 +73,19 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      repository with the line's private data: per key and per payer and whose work, today, week, month, all time), and
      the door's owner was asked to take it over (board thread `4f2e6cec`). The six provider keys of the Foundry copy are
      a separate question.
-3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
+3. Hardening for the next fork release (Frame Agent finding, board thread `e8d511d8`, their BL-323, P3): rare
+   `chrome-headless-shell` crash reports on the build machine, `EXC_BAD_ACCESS` at `0xefefefefefefefef` in
+   `CrBrowserMain` after the work is done. Read on `fork-v0.9.26-sshlg.1`: the managed close waits for Chrome's exit
+   (`packages/cli/src/browser/launch.ts`, `closedWithoutKill`), and on any normal Node exit Puppeteer kills Chrome's
+   process group with `SIGKILL` (`@puppeteer/browsers` 3.2.2 `lib/launch.js:186,291`), which leaves no crash report.
+   Chrome runs its own shutdown only on a graceful `browser.close()`, or when the CLI or the warm check helper
+   (`packages/cli/src/warmCheck.ts`) is itself killed with `SIGKILL`: the helper kills itself when its client
+   disconnects mid-check. The likely cause is Chrome 152.0.7977.30's own shutdown (`chromeHostCeiling.ts:26`, same in
+   0.9.31). Frame Agent was asked whether a CLI was being killed at the crash times. Our part: register the warm
+   helper's prelaunched Chrome with `killWithThisProcess` (`packages/cli/src/utils/childReaper.ts`), released on the
+   Chrome process's `exit`, plus a case in `warmCheck.process.test.ts` that kills the helper with `SIGKILL` and
+   expects its Chrome gone at once. It ships with the next release, not as a release of its own.
+4. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
 
