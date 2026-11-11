@@ -41,6 +41,11 @@ and [`fork/HANDOFF.md`](fork/HANDOFF.md) for the current state.
 
 - The repository is an export of the line: change the line, not this copy (see [`fork/README.md`](fork/README.md)).
 - The code is HeyGen's under Apache-2.0 and keeps that licence (knowledge base `licensing.md`, third-party code).
+- Add, never replace (the operator's rule, 2026-11-11): what went out is never changed or deleted. A shipped
+  composition recipe (`fork/recipes/`) and a published release asset stay as they are; a change ships beside them
+  under a new name or release number, and a recipe taken out of use is marked retired with its date and reason in
+  `fork/shipped.lock.json` (`fork/check-add-only.mjs`, run by `fork/release.sh`). Take only an improvement with its
+  proof, recorded with its reason by the line's maintainers.
 
 ## Lifecycle
 

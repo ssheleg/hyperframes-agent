@@ -134,6 +134,23 @@ expect "remote-build: FORK_REMOTE_SEED gets HEAD before the build" 1 "seeded $SE
 expect "remote-build: the seed holds the commit as main" 0 "" -- test "$(git -C "$SEED" rev-parse main)" = "$(git rev-parse HEAD)"
 expect "remote-build: refuses a seed it cannot quote" 2 "will not quote" -- env FORK_REMOTE_DIR=x FORK_REMOTE_SEED='a;b' fork/remote-build.sh host 1
 
+# --- check-add-only.mjs: a shipped recipe is never changed or removed --------------------------------------------------
+mkdir -p fork/recipes/demo; printf '<html>one</html>\n' > fork/recipes/demo/index.html
+expect "add-only: an unlocked recipe is refused" 1 "not locked yet" -- node fork/check-add-only.mjs
+expect "add-only: --lock locks it" 0 "locked demo" -- node fork/check-add-only.mjs --lock demo
+expect "add-only: a locked, unchanged recipe passes" 0 "1 shipped recipe(s) intact" -- node fork/check-add-only.mjs
+expect "add-only: locking it again is refused" 1 "ships under a new name" -- node fork/check-add-only.mjs --lock demo
+printf '<html>two</html>\n' > fork/recipes/demo/index.html
+expect "add-only: a changed shipped recipe is refused" 1 "was changed" -- node fork/check-add-only.mjs
+expect "add-only: release.sh refuses before it builds" 1 "check-add-only.mjs refused" -- fork/release.sh 1
+rm -rf fork/recipes/demo
+expect "add-only: a removed shipped recipe is refused" 1 "was removed" -- node fork/check-add-only.mjs
+node -e 'const f="fork/shipped.lock.json",j=require("fs").readFileSync(f,"utf8"),o=JSON.parse(j);o.recipes.demo.retired={date:"2026-11-11",reason:""};require("fs").writeFileSync(f,JSON.stringify(o))'
+expect "add-only: a retirement needs a reason" 1 "needs a date" -- node fork/check-add-only.mjs
+node -e 'const f="fork/shipped.lock.json",o=JSON.parse(require("fs").readFileSync(f,"utf8"));o.recipes.demo.retired.reason="replaced by demo-2";require("fs").writeFileSync(f,JSON.stringify(o))'
+expect "add-only: a retired recipe may be gone" 0 "intact" -- node fork/check-add-only.mjs
+rm -f fork/shipped.lock.json; rmdir fork/recipes 2>/dev/null
+
 # --- door-audit.sh: test utilities are not shipped code -----------------------------------------------------------
 mkdir -p packages/core/src/__fixtures__ packages/core/src/__test_utils__
 printf 'const a = process.env.SHIPPED_VAR;\n' > packages/core/src/shipped.ts

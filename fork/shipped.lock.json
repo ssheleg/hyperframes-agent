@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "recipes": {
+    "presenter-over-diagram": {
+      "since": "2026-11-08",
+      "base": "v0.9.21",
+      "sha256": "860f7ca9bddde103d5f1889e464315d6240336268f54c17a5f036a23a8e27cfd"
+    }
+  }
+}

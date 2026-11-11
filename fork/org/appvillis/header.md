@@ -11,3 +11,8 @@ for the current state.
 - Releases: `fork/release.sh <n> [--publish]`, tag `fork-v<base>-appvillis.<n>`, a tarball on this repository's GitHub
   Releases, never npm.
 - No GitHub workflow runs here: upstream's workflows target HeyGen's infrastructure and are not exported.
+- Add, never replace (the operator's rule, 2026-11-11): what went out is never changed or deleted. A shipped
+  composition recipe (`fork/recipes/`) and a published release asset stay as they are; a change ships beside them
+  under a new name or release number, and a recipe taken out of use is marked retired with its date and reason in
+  `fork/shipped.lock.json` (`fork/check-add-only.mjs`, run by `fork/release.sh`). Take only an improvement with its
+  proof, recorded with its reason by the line's maintainers.

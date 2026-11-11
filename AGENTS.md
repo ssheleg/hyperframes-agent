@@ -9,6 +9,11 @@ any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDO
 - Releases: `fork/release.sh <n> [--publish]`, tag `fork-v<base>-sshlg.<n>`, a tarball on GitHub Releases, never npm.
   The inherited GitHub workflows are disabled; do not re-enable `Publish to npm`, `Publish catalog` or `Sync skills to ClawHub`.
 - The repository is public: no private agent's name, path, port or data goes into it.
+- Add, never replace (the operator's rule, 2026-11-11): what went out is never changed or deleted. A shipped
+  composition recipe (`fork/recipes/`) and a published release asset stay as they are; a change ships beside them
+  under a new name or release number, and a recipe taken out of use is marked retired with its date and reason in
+  `fork/shipped.lock.json` (`fork/check-add-only.mjs`, run by `fork/release.sh`). Take only an improvement with its
+  proof (a test, a measurement before and after), and record every change with its reason in `fork/HANDOFF.md`.
 - A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`, only on the
   operator's explicit instruction to send it. Upstream requires signed commits: see [`fork/upstream-prs.md`](fork/upstream-prs.md).
 

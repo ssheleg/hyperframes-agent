@@ -54,6 +54,21 @@ after each release of this line:
 3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-<org>.<n>` (it reads the base and
    the patch tests from the copy's `fork/line.env`).
 
+## Add, never replace
+
+The operator's hard rule for every agent of the content farm and all its copies (2026-11-11, project board thread
+`2f651c5c`, message `7e3ea2fb`): what went out is never changed or deleted, so that whoever changes an agent later
+cannot make an earlier result worse.
+
+- A shipped composition recipe (`fork/recipes/<name>/`) is locked in `fork/shipped.lock.json` with the hash of its
+  files, the date and the upstream base it first shipped on. A changed recipe ships beside it under a new name; one
+  taken out of use stays in the lock with `retired: {date, reason}`. `node fork/check-add-only.mjs` checks it and
+  `node fork/check-add-only.mjs --lock <name>` locks a new recipe; `fork/release.sh` runs the check before it builds,
+  in the line and in every copy.
+- A published release asset is never replaced ("Release" above): a fix ships under the next release number.
+- Only an improvement with its proof goes in, and every change is recorded with its reason in `fork/HANDOFF.md`
+  (Patches, Releases, Door audit findings).
+
 ## Versions and tags
 
 | Item        | Form                                                     | Example                           |

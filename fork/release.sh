@@ -94,6 +94,9 @@ else
     exit 1
   }
 fi
+# Add, never replace (the operator's rule, 2026-11-11): a shipped recipe is never changed or removed.
+log "shipped recipes: add only"
+node fork/check-add-only.mjs >&2 || { echo "fork/check-add-only.mjs refused: see fork/README.md, \"Add, never replace\"" >&2; exit 1; }
 # fork/test.sh runs this script on throwaway repositories: it sets FORK_TEST_RUNNING so that run does not recurse.
 # An exported copy carries no fork/test.sh (it is the line's own tooling): there the step is skipped.
 if [ -z "${FORK_TEST_RUNNING:-}" ] && [ -x fork/test.sh ]; then
