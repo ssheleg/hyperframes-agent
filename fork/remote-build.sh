@@ -7,6 +7,9 @@
 #   fork/release.sh <n> --publish --prebuilt fork/out/<tarball>      what this script prints at the end
 #
 # FORK_REMOTE_DIR names the clone on the other machine, relative to its home or absolute (required).
+# FORK_REMOTE_SEED, when set, is a Git URL this script pushes HEAD to (as main, fast-forward only) before the build: a
+# bare mirror on the other machine that the clone's origin names, for a space that cannot read GitHub itself (the
+# PassionCode copy's space: the organization allows no deploy keys).
 # HEAD must be on origin's main already: the other machine builds exactly that commit, which it fetches.
 set -euo pipefail
 
@@ -35,6 +38,12 @@ git fetch -q origin main
 [ "$(git rev-parse origin/main)" = "$COMMIT" ] \
   || { echo "HEAD ${COMMIT:0:12} is not origin/main: push it first (the line is never rewritten, so a fast-forward)" >&2; exit 1; }
 
+SEED="${FORK_REMOTE_SEED:-}"
+if [ -n "$SEED" ]; then
+  [[ "$SEED" =~ ^[A-Za-z0-9@._/:~-]+$ ]] || { echo "FORK_REMOTE_SEED has characters this script will not quote: $SEED" >&2; exit 2; }
+  git push -q "$SEED" "$COMMIT:refs/heads/main" || { echo "could not push ${COMMIT:0:12} to $SEED (fast-forward only)" >&2; exit 1; }
+  log "seeded $SEED with ${COMMIT:0:12}"
+fi
 log "build ${COMMIT:0:12} on $HOST in $REMOTE_DIR"
 # The remote shell is not a login shell: Bun and Homebrew's Node are put on PATH by hand. Its upstream tags (the base
 # the release names) come from its own upstream remote, when it has one.

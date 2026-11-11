@@ -128,6 +128,11 @@ gitq commit -q --allow-empty -m "not pushed"
 expect "remote-build: HEAD must be on origin's main" 1 "push it first" -- env FORK_REMOTE_DIR=x fork/remote-build.sh host 1
 git push -q origin main
 expect "remote-build: reaches ssh only after its checks" 1 "the build on host failed" -- env FORK_REMOTE_DIR=x fork/remote-build.sh host 1
+SEED="$WORK/seed.git"; git init -q --bare "$SEED"
+expect "remote-build: FORK_REMOTE_SEED gets HEAD before the build" 1 "seeded $SEED" \
+  -- env FORK_REMOTE_DIR=x FORK_REMOTE_SEED="$SEED" fork/remote-build.sh host 1
+expect "remote-build: the seed holds the commit as main" 0 "" -- test "$(git -C "$SEED" rev-parse main)" = "$(git rev-parse HEAD)"
+expect "remote-build: refuses a seed it cannot quote" 2 "will not quote" -- env FORK_REMOTE_DIR=x FORK_REMOTE_SEED='a;b' fork/remote-build.sh host 1
 
 # --- door-audit.sh: test utilities are not shipped code -----------------------------------------------------------
 mkdir -p packages/core/src/__fixtures__ packages/core/src/__test_utils__
