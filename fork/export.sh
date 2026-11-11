@@ -108,7 +108,9 @@ log "line at $BASE, commit $(git rev-parse --short HEAD), into $DEST ($ORG)"
 
 STAGE="$(mktemp -d "${TMPDIR:-/tmp}/hf-fork-export.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
-git archive HEAD | tar -x -C "$STAGE"
+# With the LFS filter off: every file it covers is removed below, so its objects (the regression videos) are never
+# written out. Smudged, they filled the stage until the disk ran out on 2026-11-11.
+git -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false archive HEAD | tar -x -C "$STAGE"
 
 # What the copy does not carry: every file an LFS rule covers (pointers without their objects, and regression
 # fixtures upstream keeps as plain blobs under the same rules), upstream's workflows, this line's notes.

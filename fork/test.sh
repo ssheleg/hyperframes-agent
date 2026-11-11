@@ -278,6 +278,10 @@ expect "export: nothing was committed in the copy by the refusals" 0 "" -- test 
 mkdir -p packages/cli/src; printf 'kept\n' > packages/cli/src/kept.ts; gitq add -A; gitq commit -q -m "fix(cli): a patch still carried"
 printf '{"name":"@hyperframes/cli","version":"9.9.9"}\n' > packages/cli/package.json; gitq commit -q -am "fix(cli): a patch later reverted"
 git show v1.2.3:packages/cli/package.json > packages/cli/package.json; gitq commit -q -am "revert the reverted patch"
+# A file under an LFS rule never reaches the filter: a smudge that fails would fail the export.
+printf '*.bin filter=lfs diff=lfs merge=lfs -text\n' > .gitattributes; printf 'video\n' > media.bin
+gitq -c filter.lfs.clean=cat add .gitattributes media.bin; gitq commit -q -m "test: a file under an LFS rule"
+git config filter.lfs.smudge false; git config filter.lfs.process false; git config filter.lfs.required true
 expect "export: a clean line exports one commit with Source-Revision" 0 "committed" -- fork/export.sh "$COPY"
 # Read the way release.sh reads it: sourced.
 git -C "$COPY" show HEAD:fork/line.env > "$WORK/line.env"
@@ -285,6 +289,8 @@ LINE_ENV="$(bash -c '. "$1"; printf "%s" "$LINE_PATCHES"' _ "$WORK/line.env")"
 if printf '%s' "$LINE_ENV" | grep -q "a patch still carried" && ! printf '%s' "$LINE_ENV" | grep -q "later reverted\|revert the reverted"; then
   ok "export: the copy's patch list names what the line still carries, not a reverted patch"
 else fail "export: the copy's patch list names what the line still carries, not a reverted patch" "$LINE_ENV"; fi
+expect "export: a file under an LFS rule stays out of the copy" 0 "" -- test -z "$(git -C "$COPY" ls-tree HEAD media.bin)"
+git config --unset filter.lfs.smudge; git config --unset filter.lfs.process; git config --unset filter.lfs.required
 expect "export: the commit names the line's revision" 0 "Source-Revision: line@$(git rev-parse --short=12 HEAD)" -- git -C "$COPY" log -1 --format=%B
 CALL="$(tail -n1 "$GH_STUB_DIR/gitleaks.calls" 2>/dev/null)"
 case "$CALL" in
