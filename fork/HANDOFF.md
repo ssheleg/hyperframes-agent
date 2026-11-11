@@ -81,7 +81,7 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
    Chrome runs its own shutdown only on a graceful `browser.close()`, or when the CLI or the warm check helper
    (`packages/cli/src/warmCheck.ts`) is itself killed with `SIGKILL`: the helper kills itself when its client
    disconnects mid-check. The likely cause is Chrome 152.0.7977.30's own shutdown (`chromeHostCeiling.ts:26`, same in
-   0.9.31). Frame Agent was asked whether a CLI was being killed at the crash times. Our part: register the warm
+   0.9.31). Frame Agent checked: no CLI was killed at the crash times (reports came mid-stage, its runner's final group `SIGKILL` left none), so it is Chrome's own graceful shutdown; reporting it to Chromium is an outward send, the operator's. Our part: register the warm
    helper's prelaunched Chrome with `killWithThisProcess` (`packages/cli/src/utils/childReaper.ts`), released on the
    Chrome process's `exit`, plus a case in `warmCheck.process.test.ts` that kills the helper with `SIGKILL` and
    expects its Chrome gone at once. It ships with the next release, not as a release of its own.
