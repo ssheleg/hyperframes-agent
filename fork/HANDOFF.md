@@ -68,7 +68,11 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      provisioning keys, all personal", was wrong. The label `sshlg` stays because issued keys name it. Open, for the
      operator: most personal agents' keys are issued from the same organization (`openrouter.py list`, account
      `sshlg`); the door's other accounts are `acct-personal-os-0xdev`, `acct-sasai-syndica` and
-     `acct-telegram-os-checkmydata`. The six provider keys of the Foundry copy are a separate question.
+     `acct-telegram-os-checkmydata`. The operator's decision the same day: keep the keys where they are and keep an
+     account of costs per key. A daily snapshot runs at 06:07 local (launchd `com.sshlg.openrouter-costs`, outside this
+     repository with the line's private data: per key and per payer and whose work, today, week, month, all time), and
+     the door's owner was asked to take it over (board thread `4f2e6cec`). The six provider keys of the Foundry copy are
+     a separate question.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
