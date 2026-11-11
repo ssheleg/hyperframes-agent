@@ -165,6 +165,12 @@ if grep -rIl -e 'ssheleg' -e 'sshlg' "$STAGE"; then
   echo "the files above still name this line" >&2; exit 1
 fi
 
+# An empty repository gets a root commit first, by the export's author and empty, so the transfer audit has a HEAD to
+# read (it runs `git rev-parse HEAD`) and the first export is checked like every other one.
+if [ "$FIRST" = 1 ]; then
+  GIT_AUTHOR_NAME="$EXPORT_NAME" GIT_AUTHOR_EMAIL="$EXPORT_EMAIL" GIT_COMMITTER_NAME="$EXPORT_NAME" GIT_COMMITTER_EMAIL="$EXPORT_EMAIL" \
+    git -C "$DEST" -c commit.gpgsign=false commit -q --no-verify --allow-empty -m "export: start the copy"
+fi
 # Replace the copy's tracked files; ignored ones (node_modules, builds, fork/out) stay.
 git -C "$DEST" ls-files -z | (cd "$DEST" && xargs -0 rm -f)
 cp -R "$STAGE/." "$DEST/"
@@ -173,7 +179,11 @@ if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this t
 # Before the commit: the exported tree (the audit reads the files the index lists) and a secret scan of the same files.
 # A refusal puts the copy back on its own HEAD: nothing was committed, its tree was clean before this run.
 refuse_tree() {
-  if [ "$FIRST" = 1 ]; then git -C "$DEST" read-tree --empty; git -C "$DEST" clean -fdq; else git -C "$DEST" reset -q --hard HEAD; fi
+  # A refused first export leaves the clone as empty as it was: no root commit, no file (-x: upstream tracks files its
+  # own .gitignore names, and those are ignored here).
+  if [ "$FIRST" = 1 ]; then
+    git -C "$DEST" update-ref -d HEAD; git -C "$DEST" read-tree --empty; git -C "$DEST" clean -fdxq
+  else git -C "$DEST" reset -q --hard HEAD; fi
   echo "$1; the copy is back on its HEAD, nothing committed" >&2; exit 1
 }
 log "check the exported tree"

@@ -281,12 +281,19 @@ expect "export: the Appvillis copy's checkout is refused for --org passioncode" 
   -- fork/export.sh "$COPY" --org passioncode
 # Upstream ignores .claude/; the copy's coordination config must still travel.
 printf '.claude/*\n' > .gitignore; gitq add .gitignore; gitq commit -q -m "chore: ignore .claude"
+# Upstream tracks a few files its own .gitignore names; a refused first export removes them from the clone too.
+mkdir -p ignored; printf 'kept\n' > ignored/kept.txt; printf 'ignored/\n' >> .gitignore
+gitq add .gitignore; gitq add -f ignored/kept.txt; gitq commit -q -m "chore: a tracked file under an ignore rule"
+# The shared audit reads `git rev-parse HEAD`: a stand-in that refuses a repository without one.
+printf 'import subprocess,sys\nsubprocess.run(["git","-C",sys.argv[1],"rev-parse","HEAD"],check=True,capture_output=True)\nprint(sys.argv[1].rsplit("/",1)[-1]+": ready")\n' > "$WORK/audit-head.py"
 expect "export: a refused first export leaves the empty copy empty" 1 "nothing committed" \
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$PC" --org passioncode
 expect "export: the refused first export left no file and no commit" 0 "" \
   -- test -z "$(git -C "$PC" status --porcelain)$(git -C "$PC" rev-parse -q --verify HEAD)"
 expect "export: the first export into an empty repository commits and pushes" 0 "pushed passioncode-ai/passioncode-hyperframes-agent main" \
-  -- fork/export.sh "$PC" --org passioncode --push
+  -- env ORG_TRANSFER_AUDIT="$WORK/audit-head.py" fork/export.sh "$PC" --org passioncode --push
+expect "export: the first export sits on an empty root commit by the export's author" 0 "export: start the copy" \
+  -- git -C "$PC" log --format=%s
 expect "export: the PassionCode copy's export author" 0 "passioncode-hyperframes-agent@users.noreply.github.com" \
   -- git -C "$PC" log -1 --format=%ae
 expect "export: CLAUDE.md imports AGENTS.md on its first line" 0 "" -- test "$(git -C "$PC" show HEAD:CLAUDE.md | head -n1)" = "@AGENTS.md"
