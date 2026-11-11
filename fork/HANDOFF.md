@@ -66,7 +66,11 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      created and paid by a person, then its provisioning key stashed in the door and the copies' keys reissued from
      it. The six provider keys of the Foundry copy wait on the same kind of accounts. On 2026-11-11 the operator copied a
      manager key as the organization's; it sees the same 2200 keys as the personal `sshlg` stash, so it is a second
-     provisioning key of the personal account: stashed as `sshlg-2`, nothing reissued, the gate stays open.
+     provisioning key of the personal account: stashed as `sshlg-2`, nothing reissued, the gate stays open. A second try
+     the same day (`sshlg-3`) is the same: every one of these keys reports organization `org_3BLd...`, workspace `Default
+Workspace` and one shared balance. The organization holds workspaces `default` and `agents`, none for Appvillis;
+     a separate account means a separate OpenRouter organization with its own billing, its management key created
+     while switched into it.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
