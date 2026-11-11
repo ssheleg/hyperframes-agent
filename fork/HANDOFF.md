@@ -64,7 +64,9 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
      Observatory's door holds four provisioning keys, all personal, and every key of the organization's copies is
      issued from one of them, with its own ceiling). The copies run on those keys; moving them needs the account
      created and paid by a person, then its provisioning key stashed in the door and the copies' keys reissued from
-     it. The six provider keys of the Foundry copy wait on the same kind of accounts.
+     it. The six provider keys of the Foundry copy wait on the same kind of accounts. On 2026-11-11 the operator copied a
+     manager key as the organization's; it sees the same 2200 keys as the personal `sshlg` stash, so it is a second
+     provisioning key of the personal account: stashed as `sshlg-2`, nothing reissued, the gate stays open.
 3. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
