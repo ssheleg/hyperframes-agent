@@ -11,9 +11,11 @@ publish tarball releases that consumers pin.
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
 - `main` = upstream `v0.9.35` (merge `f4c812eed`, clean) plus the line's patches and `fork/`. Releases on it:
-  `fork-v0.9.35-sshlg.1` (2026-11-11) and `.2` with the pacing check and the short recipe (below). The copies were
-  released on `v0.9.34` the same night (`fork-v0.9.34-appvillis.1`, `fork-v0.9.34-passioncode.1`, announced in
-  `7913a557`, `2f651c5c`, `b4d4f898`); their `v0.9.35` export follows `.2`, so both carry the check.
+  `fork-v0.9.35-sshlg.1` and `.2` (the pacing check and the short recipe, below), both 2026-11-11. The copies follow on
+  the same base with the check: `fork-v0.9.35-appvillis.1` (copy `3edf347`) and `fork-v0.9.35-passioncode.1` (copy
+  `a942018`, also installed for use in the `passioncode` space: `hyperframes --version` reads `0.9.35+passioncode.1`).
+  Their `v0.9.34` releases came out the same night. Announced in `7913a557`, `2f651c5c` and `b4d4f898` (with the door
+  audit). `fork/status.sh` reads no step left.
 - Shorts that never stall (board request `a4d1b095`, the operator's words relayed by sshlg-brand-agent on 2026-11-11:
   a 45 s short had 34% silence and a picture that stopped every second). Added, nothing replaced: `fork/pacing-check.mjs`
   (silencedetect and freezedetect; fails no sound, a silence over 0.8 s, silence over 8% or a picture still over 1 s;
@@ -72,7 +74,8 @@ publish tarball releases that consumers pin.
   the catalogue's files archive and registry mirror of both `v0.9.26` releases were repacked and replaced on
   2026-11-09.
 - The line's template repository: `passioncode-ai/template-hyperframes-agent` (private, template flag), rendered from
-  the agents base's `media-production` 1.13.0, variant `engine-line` (board request `08dcfc03`). When the line learns
+  the agents base's `media-production` 1.17.0 (rendered by the base on 2026-11-11 after it took this line's
+  contribution `1e4cbd20`), variant `engine-line` (board request `08dcfc03`). When the line learns
   something new, add it to the base through its gate first, then render again (the base's
   `playbooks/make-template-repo.md`, section 6); never edit that repository by hand.
 - The line's own scripts have tests: `fork/test.sh` (51 cases, no network), run first by `fork/release.sh`.
@@ -84,8 +87,7 @@ publish tarball releases that consumers pin.
 
 ## Next task
 
-1. The copies on `v0.9.35` with the pacing check: export, build and publish each as below, announce. Then upstream
-   releases after `v0.9.35` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
+1. Upstream releases after `v0.9.35` (`fork/status.sh`): merge the newest (README, "Taking an upstream release"),
    `fork/door-audit.sh v0.9.35 v<new>` into the table below, build with `FORK_REMOTE_DIR=DATA/hyperframes-agent
 fork/remote-build.sh sshlg@ais-mac-studio auto`, publish with `fork/release.sh <n> --publish --prebuilt <tarball>`
    (or run `fork/release.sh auto --publish` in the personal space there), announce in board thread `b4d4f898`. Then
@@ -97,6 +99,11 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
 FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
    publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
 2. Open waits, read at the next board check (no watcher runs between sessions):
+   - Board request `a4d1b095` (shorts that never stall) is done and answered in its thread (`6019ef97`), but its
+     state reads `in_progress`: the responder attempt's 60 s lease lapsed during the release build, and complete,
+     claim, reconcile and responder_replace all refuse it. When the board moves it to `outcome_unknown`, settle it with
+     `com.reconcile` (completed, observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`). Renew (`com.renew`) during a
+     long build next time.
    - org-index registered the copy and the `upstream` licence class (`5372095`); asked to mark the copy's missing
      `contributors` write access as an exception (it is written by the export only; thread `8e605a4d`).
    - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
