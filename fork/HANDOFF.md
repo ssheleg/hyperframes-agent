@@ -116,7 +116,9 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      recipe `short-continuous` for its short template, Inter instead of SF Pro in the organizations' compositions.
      Kira told (`ab23dec8`). Asset Foundry agreed (`b0c8ea72`, their B-402, 0.3.64): a short with no audio stream
      fails when the order made its sound; for `video-authored` films Frame Agent builds, this engine check stays the only
-     judge. Waiting for Frame Agent's answer.
+     judge. Frame Agent accepted all four (`ce383f17`, 2026-11-12): pins today after reading the door audits, the
+     pacing check run beside its own `dead_air` on a live order, the recipe by 2026-11-13, Inter as a rule with a lint
+     check; told the newest pin is `.38` and of #7579 (`b4d4f898`). Waiting for its result with commits.
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
