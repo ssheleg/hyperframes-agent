@@ -104,6 +104,11 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      `com.reconcile` (completed, observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`). Renew (`com.renew`) during a
      long build next time. `com.responder_replace` answers `invalid_arguments` to every form, even with the slot
      stale; reported to the Fabric project as a finding (thread `e43efbf6`, message `98eac80d`), waiting for its answer.
+   - Frame Agent's tasks after the `v0.9.36` releases (thread `b4d4f898`, message `f8142c35`, 2026-11-12): pins of
+     its three instances to `fork-v0.9.36-*`, `checks/pacing-check.mjs` as its judge before a short (BL-328), the
+     recipe `short-continuous` for its short template, Inter instead of SF Pro in the organizations' compositions.
+     Kira told (`ab23dec8`). Asset Foundry asked to fail a short with no audio stream like this check does
+     (`f2c97116` in `7c0b35af`). Waiting for both answers.
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
