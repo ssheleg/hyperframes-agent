@@ -10,11 +10,12 @@ publish tarball releases that consumers pin.
 - Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
-- `main` = upstream `v0.9.36` (merge of the tag on 2026-11-12, clean) plus the line's patches and `fork/`. Latest
-  releases: `fork-v0.9.36-sshlg.1` (`0b62f5a88`), `fork-v0.9.36-appvillis.1` (copy `6ba5754`) and
-  `fork-v0.9.36-passioncode.1` (copy `726ef9f`, also installed for use in the `passioncode` space). All three carry the
+- `main` = upstream `v0.9.37` (merge of the tag on 2026-11-12, clean) plus the line's patches and `fork/`. Latest
+  releases: `fork-v0.9.37-sshlg.1` (`b69c57b02`), `fork-v0.9.37-appvillis.1` (copy `717c83e`) and
+  `fork-v0.9.37-passioncode.1` (copy `44c7f4d`, also installed for use in the `passioncode` space). All three carry the
   pacing check and the short recipe (since `fork-v0.9.35-sshlg.2`). Announced in `b4d4f898`, `7913a557` and `2f651c5c`.
-  The night of 2026-11-11 also shipped `fork-v0.9.34-*` and `fork-v0.9.35-*` of both copies.
+  The nights of 2026-11-11 and 12 also shipped `fork-v0.9.34-*` to `fork-v0.9.36-*`. A watch pass runs every 10 minutes
+  while the operator's session lives (Claude Code cron, session-only): upstream releases, the board, a push.
 - Shorts that never stall (board request `a4d1b095`, the operator's words relayed by sshlg-brand-agent on 2026-11-11:
   a 45 s short had 34% silence and a picture that stopped every second). Added, nothing replaced: `fork/pacing-check.mjs`
   (silencedetect and freezedetect; fails no sound, a silence over 0.8 s, silence over 8% or a picture still over 1 s;
