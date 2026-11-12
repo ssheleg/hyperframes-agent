@@ -105,14 +105,14 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
 FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
    publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
 2. Open waits, read at the next board check (no watcher runs between sessions):
-   - Board request `a4d1b095` (shorts that never stall) is done and answered in its thread (`6019ef97`), but its
-     state reads `in_progress`: the responder attempt's 60 s lease lapsed during the release build, and complete,
-     claim, reconcile and responder_replace all refuse it. When the board moves it to `outcome_unknown`, settle it with
-     `com.reconcile` (completed, observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`). Renew (`com.renew`) during a
-     long build next time. `com.responder_replace` answers `invalid_arguments` to every form, even with the slot
-     stale; reported to the Fabric project as a finding (thread `e43efbf6`, message `98eac80d`). Fabric answered
-     (`b2c59a3c`, 2026-11-12): a type cast fails inside `board_responder_replace`; it will reproduce and send the fix there;
-     the request closes at its deadline (2026-11-18), nothing to redo.
+   - Board request `a4d1b095` (shorts that never stall) is closed (2026-11-12 21:09 UTC). Its attempt lease lapsed
+     during a release build; Fabric 0.3.20 (migration 129) fixed `com.responder_replace` without `transfer`, which
+     then took the slot at generation 4, moved the request to `outcome_unknown`, and `com.reconcile` (completed,
+     observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`) settled it at revision 6. Confirmed to Fabric in thread
+     `e43efbf6` (`37eb13e4`). Renew (`com.renew`) during a long build next time.
+   - Asset Foundry answered `ef1a9d90` and `b8c9aec1` (`20758342`, 0.3.75): cancelling an order paused on
+     `caller_daily_cap` reaches Frame Agent's task (B-365); `unlimited: true` goes out only when the order says so;
+     more than 8 scenes a stage is refused at intake (B-370). Nothing left for this line.
    - Frame Agent's tasks after the `v0.9.36` releases (thread `b4d4f898`, message `f8142c35`, 2026-11-12): pins of
      its three instances to `fork-v0.9.36-*`, `checks/pacing-check.mjs` as its judge before a short (BL-328), the
      recipe `short-continuous` for its short template, Inter instead of SF Pro in the organizations' compositions.
