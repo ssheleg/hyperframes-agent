@@ -103,7 +103,16 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      state reads `in_progress`: the responder attempt's 60 s lease lapsed during the release build, and complete,
      claim, reconcile and responder_replace all refuse it. When the board moves it to `outcome_unknown`, settle it with
      `com.reconcile` (completed, observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`). Renew (`com.renew`) during a
-     long build next time.
+     long build next time. `com.responder_replace` answers `invalid_arguments` to every form, even with the slot
+     stale; reported to the Fabric project as a finding (thread `e43efbf6`, message `98eac80d`), waiting for its answer.
+   - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
+     `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
+     system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
+   - The content agents' practices (thread `525ddbc8`, answered `3a582a4c`): lessons recorded for the classes this
+     line is a source of (`org-copy-word-list-and-own-gate`, `stop-process-group-not-name`,
+     `no-truncating-pipe-on-state-change`, `pin-digest-not-tag`, `dispatched-session-needs-own-board-client`,
+     `voiced-film-no-dead-air`); the key for practice 4 was not named there, so it may be renamed when its owner
+     answers.
    - org-index registered the copy and the `upstream` licence class (`5372095`); asked to mark the copy's missing
      `contributors` write access as an exception (it is written by the export only; thread `8e605a4d`).
    - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
@@ -131,7 +140,7 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
    times. Reporting it to Chromium is an outward send, the operator's.
-4. Not blocking, recorded 2026-11-11: no copy carries the 136 files upstream tracks under its own `.gitignore` rules
+4. Not blocking, recorded 2026-11-11, still true on 2026-11-12 (both copies: 0 of 136 tracked): no copy carries the 136 files upstream tracks under its own `.gitignore` rules
    (`git ls-files -ci --exclude-standard`: `docs/contracts/`, `docs/images/`, producer test compositions,
    `packages/core/src/fonts/fontData.generated.ts`), because the export stages with `git add -A`. Both copies build and
    pass their smoke without them. Decide whether the export should add exactly the stage's files (`git add -f` on that
