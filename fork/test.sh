@@ -346,6 +346,7 @@ expect "export: a refused first export leaves the empty copy empty" 1 "nothing c
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$PC" --org passioncode
 expect "export: the refused first export left no file and no commit" 0 "" \
   -- test -z "$(git -C "$PC" status --porcelain)$(git -C "$PC" rev-parse -q --verify HEAD)"
+mkdir -p "$PC/ignored"; printf 'build output\n' > "$PC/ignored/built.txt"
 expect "export: the first export into an empty repository commits and pushes" 0 "pushed passioncode-ai/passioncode-hyperframes-agent main" \
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-head.py" fork/export.sh "$PC" --org passioncode --push
 expect "export: the first export sits on an empty root commit by the export's author" 0 "export: start the copy" \
@@ -360,6 +361,10 @@ expect "export: the coordination config is committed despite upstream's .claude/
 expect "export: the backlog source declaration is committed" 0 "passioncode-ai/passioncode-hyperframes-agent" \
   -- git -C "$PC" show HEAD:docs/backlog-sources.json
 expect "export: the copy's release script tags with its organization's label" 0 "passioncode" -- git -C "$PC" show HEAD:fork/release.sh
+expect "export: a file upstream tracks under its own ignore rule is tracked in the copy" 0 "ignored/kept.txt" \
+  -- git -C "$PC" ls-tree -r --name-only HEAD ignored
+expect "export: a file the copy's build leaves under an ignore rule stays untracked" 0 "" \
+  -- test -z "$(git -C "$PC" ls-tree -r --name-only HEAD ignored/built.txt)"
 expect "export: a second export with nothing new commits nothing" 0 "already holds this tree" -- fork/export.sh "$PC" --org passioncode
 
 echo

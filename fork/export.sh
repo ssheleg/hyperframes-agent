@@ -177,6 +177,11 @@ fi
 git -C "$DEST" ls-files -z | (cd "$DEST" && xargs -0 rm -f)
 cp -R "$STAGE/." "$DEST/"
 git -C "$DEST" add -A
+# Upstream tracks some files its own .gitignore names (136 on v0.9.38: docs/contracts/, producer test compositions,
+# the generated font data). `add -A` leaves them out, so they are added by name: exactly the line's tracked ignored
+# files the stage holds, never the copy's own ignored build output.
+git ls-files -z -ci --exclude-standard | (cd "$STAGE" && xargs -0 -I{} sh -c 'test -f "$1" && printf "%s\0" "$1"' _ {}) \
+  | xargs -0 -r git -C "$DEST" add -f --
 if git -C "$DEST" diff --cached --quiet; then log "the copy already holds this tree"; exit 0; fi
 # Before the commit: the exported tree (the audit reads the files the index lists) and a secret scan of the same files.
 # A refusal puts the copy back on its own HEAD: nothing was committed, its tree was clean before this run.

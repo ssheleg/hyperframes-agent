@@ -154,11 +154,11 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
    times. Reporting it to Chromium is an outward send, the operator's.
-4. Not blocking, recorded 2026-11-11, still true on 2026-11-12 (both copies: 0 of 136 tracked): no copy carries the 136 files upstream tracks under its own `.gitignore` rules
-   (`git ls-files -ci --exclude-standard`: `docs/contracts/`, `docs/images/`, producer test compositions,
-   `packages/core/src/fonts/fontData.generated.ts`), because the export stages with `git add -A`. Both copies build and
-   pass their smoke without them. Decide whether the export should add exactly the stage's files (`git add -f` on that
-   list, never on the copy's own ignored build output).
+4. Done 2026-11-12: `fork/export.sh` adds by name the files upstream tracks under its own `.gitignore` rules (136 on
+   `v0.9.38`: producer and studio test compositions, `docs/contracts/`, registry example assets, the generated font
+   data), exactly the line's tracked ignored files the stage holds and never the copy's own ignored build output
+   (two cases in `fork/test.sh`). Checked before: none names the line, none holds a consumer address, none is under an
+   LFS rule. The copies take them with their next export (the next upstream release); no extra release was made.
 5. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
