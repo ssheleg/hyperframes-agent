@@ -103,12 +103,15 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      claim, reconcile and responder_replace all refuse it. When the board moves it to `outcome_unknown`, settle it with
      `com.reconcile` (completed, observed: `fork-v0.9.35-sshlg.2`, commit `edda74a51`). Renew (`com.renew`) during a
      long build next time. `com.responder_replace` answers `invalid_arguments` to every form, even with the slot
-     stale; reported to the Fabric project as a finding (thread `e43efbf6`, message `98eac80d`), waiting for its answer.
+     stale; reported to the Fabric project as a finding (thread `e43efbf6`, message `98eac80d`). Fabric answered
+     (`b2c59a3c`, 2026-11-12): a type cast fails inside `board_responder_replace`; it will reproduce and send the fix there;
+     the request closes at its deadline (2026-11-18), nothing to redo.
    - Frame Agent's tasks after the `v0.9.36` releases (thread `b4d4f898`, message `f8142c35`, 2026-11-12): pins of
      its three instances to `fork-v0.9.36-*`, `checks/pacing-check.mjs` as its judge before a short (BL-328), the
      recipe `short-continuous` for its short template, Inter instead of SF Pro in the organizations' compositions.
-     Kira told (`ab23dec8`). Asset Foundry asked to fail a short with no audio stream like this check does
-     (`f2c97116` in `7c0b35af`). Waiting for both answers.
+     Kira told (`ab23dec8`). Asset Foundry agreed (`b0c8ea72`, their B-402, 0.3.64): a short with no audio stream
+     fails when the order made its sound; for `video-authored` films Frame Agent builds, this engine check stays the only
+     judge. Waiting for Frame Agent's answer.
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
@@ -117,8 +120,8 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      `no-truncating-pipe-on-state-change`, `pin-digest-not-tag`, `dispatched-session-needs-own-board-client`,
      `voiced-film-no-dead-air`); the key for practice 4 was not named there, so it may be renamed when its owner
      answers.
-   - org-index registered the copy and the `upstream` licence class (`5372095`); asked to mark the copy's missing
-     `contributors` write access as an exception (it is written by the export only; thread `8e605a4d`).
+   - org-index: the PassionCode copy's missing `contributors` write access is an exception (`team_write_exempt`,
+     org-index `d43e7b1`, answered `dd90101d`); the copy has 0 findings there. Done.
    - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
      `deploy` row for `com.appvillis.frame-agent`), forwarded in `b4d4f898` (`444425a1`).
    - Frame Agent moving its CLI pin from `.2` to `fork-v0.9.26-sshlg.1` and taking `registry-*.tar.gz` (thread
