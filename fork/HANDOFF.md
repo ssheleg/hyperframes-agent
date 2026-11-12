@@ -10,16 +10,18 @@ publish tarball releases that consumers pin.
 - Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
-- `main` = upstream `v0.9.38` (merge of the tag on 2026-11-12, clean) plus the line's patches and `fork/`. Latest
-  releases: `fork-v0.9.38-sshlg.1` (`9fba1ec43`), `fork-v0.9.38-appvillis.1` (copy `a43d95f`) and
-  `fork-v0.9.38-passioncode.1` (copy `412b00d`, also installed for use in the `passioncode` space). All three carry the
-  pacing check and the short recipe (since `fork-v0.9.35-sshlg.2`). Announced in `b4d4f898`, `7913a557` and `2f651c5c`.
-  The nights of 2026-11-11 and 12 also shipped `fork-v0.9.34-*` to `fork-v0.9.37-*`. A watch pass runs every 10 minutes
-  while the operator's session lives (Claude Code cron, session-only): upstream releases, the board, a push.
+- `main` = upstream `v0.9.39` (merge of the tag on 2026-11-12, clean) plus the line's patches and `fork/`. Latest
+  releases: `fork-v0.9.39-sshlg.1` (`90bef0ba5`), `fork-v0.9.39-appvillis.1` (copy `34e8431`) and
+  `fork-v0.9.39-passioncode.1` (copy `0ae2b22`, also installed for use in the `passioncode` space). All three carry the
+  pacing check and the short recipe (since `fork-v0.9.35-sshlg.2`); the copies carry upstream's tracked ignored files
+  since these releases. Announced in `b4d4f898`, `7913a557` and `2f651c5c`. The nights of 2026-11-11 and 12 also
+  shipped `fork-v0.9.34-*` to `fork-v0.9.38-*`. A watch pass runs every 10 minutes while the operator's session lives
+  (Claude Code cron, session-only): upstream releases, the board, a push.
 - Release smoke under a full disk (2026-11-12): the PassionCode publish of `v0.9.38` first refused with 0.8 GB free in
   `TMPDIR` (the smoke wants 2 GB); old artifacts in each checkout's `fork/out` (gitignored) and the npm cache were cleared.
   The shared `~/.npm` cache then answered `EEXIST` on rename; `npm_config_cache=<a fresh dir> fork/release.sh ...` passed.
-  Use a private npm cache for release smokes on this machine.
+  Use a private npm cache for release smokes on this machine. The Appvillis publish of `v0.9.39` refused the
+  same way (1.9 GB free); keep only the current version's artifacts in each checkout's `fork/out` before a cycle.
 - Shorts that never stall (board request `a4d1b095`, the operator's words relayed by sshlg-brand-agent on 2026-11-11:
   a 45 s short had 34% silence and a picture that stopped every second). Added, nothing replaced: `fork/pacing-check.mjs`
   (silencedetect and freezedetect; fails no sound, a silence over 0.8 s, silence over 8% or a picture still over 1 s;
