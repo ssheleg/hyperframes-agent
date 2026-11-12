@@ -122,7 +122,10 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      `fork-v0.9.36-sshlg.1` (frame-agent `22653a5`, live order `01M77SRCYWPZS6A3DNM7SRMD6N` delivered on `preview`, then
      `default`); the copies rebuild on theirs. On that order this line's pacing check failed the film (silence 26.2%,
      a still of 1.97 s) where Frame Agent's own `dead_air` let it through, so Frame Agent makes these limits its default
-     for voiced shorts (their BL-343). Recipe and Inter in their gate (BL-341). Waiting for those and the move to `.38`.
+     for voiced shorts (their BL-343). All four closed (`a627b197`, 2026-11-12): all three instances on `fork-v0.9.36-*`
+     (doctor and selfcheck PASS), shorts judged by these limits by default (PR #413), the recipe and Inter in every
+     instance (PR #412); writing the `hyperframes-pacing/1` report into the manifest is their BL-344. Their move to
+     `.38` is theirs to schedule (#7579 told in `1b331d7a`).
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
