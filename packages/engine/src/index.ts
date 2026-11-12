@@ -85,6 +85,8 @@ export {
 export {
   getCgroupMemoryLimitMb,
   getSystemTotalMb,
+  hostCpuCount,
+  usableCpuCount,
   isLowMemorySystem,
   LOW_MEMORY_TOTAL_MB_THRESHOLD,
 } from "./services/systemMemory.js";
@@ -510,7 +512,9 @@ export {
   queryVideoElementBounds,
   queryElementStacking,
   measureVideoShownBoxes,
+  measureVideoShownBoxRanges,
   type ShownBox,
+  type ShownBoxRange,
   type VideoElementBounds,
   type ElementStackingInfo,
 } from "./services/videoFrameInjector.js";
