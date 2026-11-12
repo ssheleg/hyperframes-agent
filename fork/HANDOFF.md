@@ -118,7 +118,11 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      fails when the order made its sound; for `video-authored` films Frame Agent builds, this engine check stays the only
      judge. Frame Agent accepted all four (`ce383f17`, 2026-11-12): pins today after reading the door audits, the
      pacing check run beside its own `dead_air` on a live order, the recipe by 2026-11-13, Inter as a rule with a lint
-     check; told the newest pin is `.38` and of #7579 (`b4d4f898`). Waiting for its result with commits.
+     check; told the newest pin is `.38` and of #7579 (`b4d4f898`). First result (`d7013380`): the original pins
+     `fork-v0.9.36-sshlg.1` (frame-agent `22653a5`, live order `01M77SRCYWPZS6A3DNM7SRMD6N` delivered on `preview`, then
+     `default`); the copies rebuild on theirs. On that order this line's pacing check failed the film (silence 26.2%,
+     a still of 1.97 s) where Frame Agent's own `dead_air` let it through, so Frame Agent makes these limits its default
+     for voiced shorts (their BL-343). Recipe and Inter in their gate (BL-341). Waiting for those and the move to `.38`.
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
