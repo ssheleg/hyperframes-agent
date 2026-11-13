@@ -110,10 +110,10 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
    `700240de`, format 3, done) on this line at `141ddcb6c` (upstream `v0.9.40`), template `media-production`, variant
    `engine-line`: 13 decisions, 11 confirmed, 1 candidate, 1 optimize; **no blocking gap**. The candidate went to the
    base as feedback `fb-20261113-162e1c` (the copy export carries upstream's tracked ignored files). The optimisation is
-   the next task here: declare `fork/metrics.json` (`agent-metrics/1`): outcome, hours from an upstream release to all
+   done (2026-11-13): `fork/metrics.json` declared (`agent-metrics/1`): outcome, hours from an upstream release to all
    three releases published (every upstream release of a month); quality, releases a consumer had to pin back (all
-   releases); reliability, release runs that ended published without a hand fix (all runs); baseline from
-   `fork/HISTORY.md` and the release tags before the next change. From now on each release is audited before
+   releases); reliability, release runs that ended published without a hand fix (all runs); baselines measured on
+   2026-11-13 from the release dates (median 0.95 h, n = 8; 0 of 25; 23 of 25). Add each release's values at its end. From now on each release is audited before
    `--publish` (`python3 tools/audit.py start ~/DATA/hyperframes-agent` in `~/DATA/fabric-agents-database`, judged by its
    `playbooks/audit-agent.md`, the upstream engine skipped as vendored), and a release whose audit names a blocking gap
    does not ship. The North Star sections the line serves (5, 10, 11, 12) are named in `AGENTS.md` (`ffd1fc562`); a

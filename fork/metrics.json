@@ -1,0 +1,90 @@
+{
+  "schema": "agent-metrics/1",
+  "subject": "the engine line and its organization copies",
+  "checked": "2026-11-13",
+  "about": "What the line exists to move: every consumer can stand on upstream's newest release soon after it ships, with no defect the door audit, the patch tests or the smoke install would have caught. Declared after the architect's audit of 2026-11-13 (optimisation of its metrics area). A changed meaning is the next version; an ended metric is marked retired, never removed (fork/README.md, \"Add, never replace\").",
+  "metrics": [
+    {
+      "id": "upstream_to_all_released_hours",
+      "version": 1,
+      "family": "outcome",
+      "means": "Hours from an upstream release's publication to the moment the line and every organization copy have each published a release on that base or a newer one.",
+      "unit": "hours",
+      "direction": "down",
+      "population": {
+        "unit": "upstream release",
+        "filter": "Every upstream release published in the window; a release the line skipped counts until the first of our releases on a newer base."
+      },
+      "window": { "kind": "calendar", "unit": "month" },
+      "source": {
+        "kind": "custom",
+        "ref": "publishedAt of the upstream release and of our releases (gh release list on the three repositories); the median over the population"
+      },
+      "baseline": {
+        "value": 0.95,
+        "stat": "median",
+        "n": 8,
+        "window": "upstream v0.9.33 to v0.9.40, 2026-11-11 to 2026-11-12",
+        "values": [6.7, 5.9, 1.1, 1.1, 0.8, 0.8, 0.5, 0.5],
+        "measured": "2026-11-13"
+      },
+      "target": {
+        "value": 1.0,
+        "stat": "median",
+        "note": "keep the remote-build cycle under an hour; the first two values waited for a person's session"
+      },
+      "owner": "the line's maintainers"
+    },
+    {
+      "id": "consumer_pin_back_share",
+      "version": 1,
+      "family": "quality",
+      "means": "Share of our releases a consumer had to move its pin back from, or refused at its own door audit, for a defect our door audit, patch tests or smoke install should have caught.",
+      "unit": "share",
+      "direction": "down",
+      "population": {
+        "unit": "release",
+        "filter": "Every release of the line and of each copy published in the window."
+      },
+      "window": { "kind": "calendar", "unit": "month" },
+      "source": {
+        "kind": "custom",
+        "ref": "consumers' replies on the project board's release threads, recorded in fork/HANDOFF.md"
+      },
+      "baseline": {
+        "value": 0.0,
+        "n": 25,
+        "window": "fork-v0.9.33-* to fork-v0.9.40-*, 2026-11-11 to 2026-11-12",
+        "measured": "2026-11-13"
+      },
+      "target": { "value": 0.0 },
+      "owner": "the line's maintainers"
+    },
+    {
+      "id": "release_without_hand_fix_share",
+      "version": 1,
+      "family": "reliability",
+      "means": "Share of release runs (build, publish, smoke, re-download check) that ended published by the scripts alone, with no step done by hand.",
+      "unit": "share",
+      "direction": "up",
+      "population": {
+        "unit": "release",
+        "filter": "Every release of the line and of each copy published in the window."
+      },
+      "window": { "kind": "calendar", "unit": "month" },
+      "source": {
+        "kind": "custom",
+        "ref": "the release logs and fork/HANDOFF.md (a hand fix is recorded there with its cause)"
+      },
+      "baseline": {
+        "value": 0.92,
+        "n": 25,
+        "window": "fork-v0.9.33-* to fork-v0.9.40-*, 2026-11-11 to 2026-11-12",
+        "note": "two hand fixes, both a full disk on the release machine: the second copy's v0.9.38 publish and the first copy's v0.9.39 publish",
+        "measured": "2026-11-13"
+      },
+      "target": { "value": 1.0 },
+      "owner": "the line's maintainers"
+    }
+  ]
+}

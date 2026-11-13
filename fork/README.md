@@ -69,6 +69,14 @@ cannot make an earlier result worse.
 - Only an improvement with its proof goes in, and every change is recorded with its reason in `fork/HANDOFF.md`
   (Patches, Releases, Door audit findings).
 
+## Metrics
+
+[`metrics.json`](metrics.json) (`agent-metrics/1`) names what the line exists to move, each with its population, window,
+source and a measured baseline: hours from an upstream release to the line and every copy released on it (outcome,
+median 0.95 h over upstream `v0.9.33` to `v0.9.40`, n = 8), the share of our releases a consumer had to pin back
+(quality, 0 of 25) and the share of release runs that needed no hand fix (reliability, 23 of 25). Declared after the
+architect's audit of 2026-11-13; a changed meaning is the next version, an ended metric is marked retired.
+
 ## Versions and tags
 
 | Item        | Form                                                     | Example                           |
