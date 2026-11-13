@@ -14,6 +14,12 @@ any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDO
   under a new name or release number, and a recipe taken out of use is marked retired with its date and reason in
   `fork/shipped.lock.json` (`fork/check-add-only.mjs`, run by `fork/release.sh`). Take only an improvement with its
   proof (a test, a measurement before and after), and record every change with its reason in `fork/HANDOFF.md`.
+- North Star (PassionCode's organization model; the operator's rule, 2026-11-13): this line serves section 5 (service
+  agents: the media engine a video agent calls, its source apart from each instance), section 10 (deployment: installed
+  from a release tarball, rebuilt from a tag), section 11 (security and isolation: one copy per organization, a door audit
+  for a consumer that confines the engine) and section 12 (an organization at work: the row "Content: media"). A release,
+  or a gap closed or opened against them, is reported on the project board with its evidence. Before an agent built on
+  this engine changes, the agents database's architect is consulted, and each release is audited by it.
 - A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`, only on the
   operator's explicit instruction to send it. Upstream requires signed commits: see [`fork/upstream-prs.md`](fork/upstream-prs.md).
 
