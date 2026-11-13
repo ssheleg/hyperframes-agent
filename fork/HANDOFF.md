@@ -173,6 +173,12 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      repository with the line's private data: per key and per payer and whose work, today, week, month, all time), and
      the door's owner was asked to take it over (board thread `4f2e6cec`). The six provider keys of the Foundry copy are
      a separate question.
+   - Agents close questions themselves (operator's standing rule, 2026-11-13, fabric-workspace `knowledge/authority.md`
+     `4e2a1491`, relayed in board thread `fb997465`, message `0b55d1d3`). Checked the same day: no open question to the
+     operator (`fabric_whoami`: questions open 0, board requests queued 0). What this file still names as the
+     operator's is a human gate, a send to people outside the estate: the Chromium report in item 4 (it blocks
+     nothing; the crashes were Chrome's own shutdown, so it is not filed) and the upstream PRs in item 6. The
+     OpenRouter point above was decided by the operator the same day; nothing in it waits.
 4. Shipped in `fork-v0.9.33-sshlg.1` and `fork-v0.9.33-appvillis.1` (`8661c94cb`): the warm check's prelaunched Chrome is registered with the
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
