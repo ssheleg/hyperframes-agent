@@ -105,7 +105,15 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
 --push`, from that checkout `FORK_REMOTE_SEED=passioncode@ais-mac-studio:DATA/_worktrees/hyperframes-agent-passioncode.git
 FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
    publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
-2. Open waits, read at the next board check (no watcher runs between sessions):
+2. The architect's audit (operator's rule, 2026-11-13, board thread `fb997465`, announcement `c98896d6`, answered
+   `e1032265`): run the agents database's audit of this line on 2026-11-13 (`python3 tools/audit.py start
+~/DATA/hyperframes-agent` in `~/DATA/fabric-agents-database`, judged by its `playbooks/audit-agent.md`; the line's own
+   decisions live in `fork/`, the engine is upstream's), keep the verdict in this repository, and from then on audit each
+   release before `--publish`: a release whose audit names a blocking gap does not ship. `audit.py scan` on `679583b30`
+   ranks `media-production` first (17.7). The North Star sections the line serves (5, 10, 11, 12) are named in
+   `AGENTS.md` (`ffd1fc562`); a release, or a gap closed or opened against them, is reported to the coordinator on the
+   board with its evidence.
+3. Open waits, read at the next board check (no watcher runs between sessions):
    - Board request `a4d1b095` (shorts that never stall) is closed (2026-11-12 21:09 UTC). Its attempt lease lapsed
      during a release build; Fabric 0.3.20 (migration 129) fixed `com.responder_replace` without `transfer`, which
      then took the slot at generation 4, moved the request to `outcome_unknown`, and `com.reconcile` (completed,
@@ -159,16 +167,16 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      repository with the line's private data: per key and per payer and whose work, today, week, month, all time), and
      the door's owner was asked to take it over (board thread `4f2e6cec`). The six provider keys of the Foundry copy are
      a separate question.
-3. Shipped in `fork-v0.9.33-sshlg.1` and `fork-v0.9.33-appvillis.1` (`8661c94cb`): the warm check's prelaunched Chrome is registered with the
+4. Shipped in `fork-v0.9.33-sshlg.1` and `fork-v0.9.33-appvillis.1` (`8661c94cb`): the warm check's prelaunched Chrome is registered with the
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
    times. Reporting it to Chromium is an outward send, the operator's.
-4. Done 2026-11-12: `fork/export.sh` adds by name the files upstream tracks under its own `.gitignore` rules (136 on
+5. Done 2026-11-12: `fork/export.sh` adds by name the files upstream tracks under its own `.gitignore` rules (136 on
    `v0.9.38`: producer and studio test compositions, `docs/contracts/`, registry example assets, the generated font
    data), exactly the line's tracked ignored files the stage holds and never the copy's own ignored build output
    (two cases in `fork/test.sh`). Checked before: none names the line, none holds a consumer address, none is under an
    LFS rule. The copies take them with their next export (the next upstream release); no extra release was made.
-5. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
+6. On the operator's send instruction only: the two upstream PRs in [`upstream-prs.md`](upstream-prs.md).
 
 Before acting on this section, check it against Git: a tag it names as future may already exist.
 
