@@ -106,13 +106,18 @@ appvillis@ais-mac-studio auto` from the copy's checkout, publish with `--prebuil
 FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.sh passioncode@ais-mac-studio auto`,
    publish with `--prebuilt`, announce in `2f651c5c` and `b4d4f898`.
 2. The architect's audit (operator's rule, 2026-11-13, board thread `fb997465`, announcement `c98896d6`, answered
-   `e1032265`): run the agents database's audit of this line on 2026-11-13 (`python3 tools/audit.py start
-~/DATA/hyperframes-agent` in `~/DATA/fabric-agents-database`, judged by its `playbooks/audit-agent.md`; the line's own
-   decisions live in `fork/`, the engine is upstream's), keep the verdict in this repository, and from then on audit each
-   release before `--publish`: a release whose audit names a blocking gap does not ship. `audit.py scan` on `679583b30`
-   ranks `media-production` first (17.7). The North Star sections the line serves (5, 10, 11, 12) are named in
-   `AGENTS.md` (`ffd1fc562`); a release, or a gap closed or opened against them, is reported to the coordinator on the
-   board with its evidence.
+   `e1032265`). First verdict, 2026-11-13: audit `2026-11-13-5dd226906db5` of the agents database (its `main`
+   `700240de`, format 3, done) on this line at `141ddcb6c` (upstream `v0.9.40`), template `media-production`, variant
+   `engine-line`: 13 decisions, 11 confirmed, 1 candidate, 1 optimize; **no blocking gap**. The candidate went to the
+   base as feedback `fb-20261113-162e1c` (the copy export carries upstream's tracked ignored files). The optimisation is
+   the next task here: declare `fork/metrics.json` (`agent-metrics/1`): outcome, hours from an upstream release to all
+   three releases published (every upstream release of a month); quality, releases a consumer had to pin back (all
+   releases); reliability, release runs that ended published without a hand fix (all runs); baseline from
+   `fork/HISTORY.md` and the release tags before the next change. From now on each release is audited before
+   `--publish` (`python3 tools/audit.py start ~/DATA/hyperframes-agent` in `~/DATA/fabric-agents-database`, judged by its
+   `playbooks/audit-agent.md`, the upstream engine skipped as vendored), and a release whose audit names a blocking gap
+   does not ship. The North Star sections the line serves (5, 10, 11, 12) are named in `AGENTS.md` (`ffd1fc562`); a
+   release, or a gap closed or opened against them, is reported to the coordinator on the board with its evidence.
 3. Open waits, read at the next board check (no watcher runs between sessions):
    - Board request `a4d1b095` (shorts that never stall) is closed (2026-11-12 21:09 UTC). Its attempt lease lapsed
      during a release build; Fabric 0.3.20 (migration 129) fixed `com.responder_replace` without `transfer`, which
