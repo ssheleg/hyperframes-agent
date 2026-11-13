@@ -9,7 +9,8 @@ publish tarball releases that consumers pin.
 
 - Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
-  was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision.
+  was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision; since 2026-11-13
+  all three of its instances run `fork-v0.9.40-*` (`c594bdc8`, Frame Agent item below).
 - `main` = upstream `v0.9.40` (merge of the tag on 2026-11-12, clean) plus the line's patches and `fork/`. Latest
   releases: `fork-v0.9.40-sshlg.1` (`ab8057819`), `fork-v0.9.40-appvillis.1` (copy `c1b2d3a`) and
   `fork-v0.9.40-passioncode.1` (copy `86481bf`, also installed for use in the `passioncode` space). All three carry the
@@ -142,7 +143,13 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      (doctor and selfcheck PASS), shorts judged by these limits by default (PR #413), the recipe and Inter in every
      instance (PR #412); writing the `hyperframes-pacing/1` report into the manifest is their BL-344. All three instances moved to `fork-v0.9.39-*` on
      2026-11-13 (`4bac053c`, their BL-349, PR #420: sha256 equal to ours, a live order on `preview` through 15 stages,
-     doctor and selfcheck PASS in each space); their move to `.40` is theirs to schedule (`77b37764`).
+     doctor and selfcheck PASS in each space). All three moved to `fork-v0.9.40-*` on 2026-11-13 (`c594bdc8`, their
+     BL-351, PR #430, frame-agent `de96f18` then `6998837`): tarball, catalogue, files archive and registry mirror sha256
+     equal to this line's release assets (checked against `gh release view fork-v0.9.40-sshlg.1` the same day), CLI
+     `0.9.40+sshlg.1` (`ab8057819a36`), doctor and selfcheck PASS on Studio `default` and `preview`, a live
+     `faceless-explainer` 9:16 order on `preview` delivered through 15 stages (862 s); the copies on
+     `fork-v0.9.40-passioncode.1` and `fork-v0.9.40-appvillis.1` with equal hashes. The only skill change they saw is the
+     Python encoding test leaving `skills/` (upstream moved it to `scripts/` in `v0.9.40`, door-audit row below).
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
