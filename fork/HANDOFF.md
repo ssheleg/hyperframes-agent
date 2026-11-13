@@ -128,7 +128,7 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      for voiced shorts (their BL-343). All four closed (`a627b197`, 2026-11-12): all three instances on `fork-v0.9.36-*`
      (doctor and selfcheck PASS), shorts judged by these limits by default (PR #413), the recipe and Inter in every
      instance (PR #412); writing the `hyperframes-pacing/1` report into the manifest is their BL-344. Their move to
-     `.38` is theirs to schedule (#7579 told in `1b331d7a`).
+     `.40` is theirs to schedule (#7579 told in `1b331d7a`, `.40` announced in `77b37764`).
    - Kira's item 5 (thread `eff0d7cc`, answered `b639a534`): the PassionCode tarball for BL-331 is
      `fork-v0.9.35-passioncode.1`; Inter is embedded in the engine and renders in the `passioncode` space without a
      system install (checked 2026-11-12). Frame Agent's own compositions that name SF Pro are its owner's to switch.
@@ -139,12 +139,11 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      answers.
    - org-index: the PassionCode copy's missing `contributors` write access is an exception (`team_write_exempt`,
      org-index `d43e7b1`, answered `dd90101d`); the copy has 0 findings there. Done.
-   - Frame Agent: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent pinning `fork-v0.9.33-passioncode.1`, and the
-     `deploy` row for `com.appvillis.frame-agent`), forwarded in `b4d4f898` (`444425a1`).
-   - Frame Agent moving its CLI pin from `.2` to `fork-v0.9.26-sshlg.1` and taking `registry-*.tar.gz` (thread
-     `b4d4f898`).
-   - The template base's answer to the contribution `7d82ca5b` (success case for remote builds, the catalogue, the
-     dash lesson; thread `fef32c41`).
+   - Settled, checked against the board on 2026-11-13: items 2 and 3 of `e2c76d3a` (a PassionCode Frame Agent and the
+     Appvillis one run, pinned to `fork-v0.9.36-passioncode.1` and `fork-v0.9.36-appvillis.1`, `a627b197`); Frame
+     Agent's old CLI pin move (`.2` to `fork-v0.9.26-sshlg.1`) is superseded by its `.36` pins; the template base took
+     the contribution `7d82ca5b` on 2026-11-10 (`7798979c`, success case `cs-20261110-e05459`, the other two points
+     already in its catalogue).
    - Done and closed: Asset Foundry's separation (`337a610e`, 0.3.46 on Studio, Appvillis copies removed from the
      personal instance).
    - OpenRouter for the organization (settled 2026-11-11): the operator named the management key he copied as
