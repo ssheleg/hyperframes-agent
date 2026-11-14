@@ -81,9 +81,12 @@ publish tarball releases that consumers pin.
 - Release archives are packed by `fork/pack.sh` (no AppleDouble twins, owner root; Frame Agent's finding `fe979e90`);
   the catalogue's files archive and registry mirror of both `v0.9.26` releases were repacked and replaced on
   2026-11-09.
-- The line's template repository: `passioncode-ai/template-hyperframes-agent` (private, template flag), rendered from
-  the agents base's `media-production` 1.17.0 (rendered by the base on 2026-11-11 after it took this line's
-  contribution `1e4cbd20`), variant `engine-line` (board request `08dcfc03`). When the line learns
+- The line's template repository: `passioncode-ai/template-hyperframes-agent` (private, template flag), variant
+  `engine-line` (board request `08dcfc03`). Last rendered 2026-11-14 at `69b883ab7041` from the agents base's
+  `media-production` 1.21.1 (base `17ad8e5`, `tools/template_repo.py` 1.4.0, rule R34), on the base's request
+  `f6961f04` (its RO-283); the base entered the index row `84939a14e650` (`752bf71`, message `631ef374`), `check` OK,
+  `stale` no longer names it. The base said `media-production` gets a new version the same day, so its daily review
+  will ask for another render: answer it the same way (`playbooks/make-template-repo.md`, section 6). When the line learns
   something new, add it to the base through its gate first, then render again (the base's
   `playbooks/make-template-repo.md`, section 6); never edit that repository by hand.
 - The line's own scripts have tests: `fork/test.sh` (51 cases, no network), run first by `fork/release.sh`.
@@ -186,6 +189,11 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
      operator's is a human gate, a send to people outside the estate: the Chromium report in item 4 (it blocks
      nothing; the crashes were Chrome's own shutdown, so it is not filed) and the upstream PRs in item 6. The
      OpenRouter point above was decided by the operator the same day; nothing in it waits.
+   - The dashboard badges rule (operator, 2026-11-13, board thread `fb997465`, announcement `9a4bb42d`: a spend badge, a
+     version badge and a "Changes" screen on every agent dashboard, the same in MCP): this line is not affected. It runs
+     no service and registers no dashboard; it ships release tarballs, and its version history for a person is the
+     release notes and the "Releases" table below. Answered in that thread on 2026-11-14. Frame Agent, which runs the
+     engine as a service, carries the rule for its own dashboard.
 4. Shipped in `fork-v0.9.33-sshlg.1` and `fork-v0.9.33-appvillis.1` (`8661c94cb`): the warm check's prelaunched Chrome is registered with the
    child reaper (row "Warm check Chrome" under Patches). Frame Agent's crash reports (board thread `e8d511d8`, their
    BL-323) turned out to be Chrome 152.0.7977.30's own graceful shutdown, not this path: no CLI was killed at the crash
