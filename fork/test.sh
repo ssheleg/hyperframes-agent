@@ -367,6 +367,24 @@ expect "export: a file the copy's build leaves under an ignore rule stays untrac
   -- test -z "$(git -C "$PC" ls-tree -r --name-only HEAD ignored/built.txt)"
 expect "export: a second export with nothing new commits nothing" 0 "already holds this tree" -- fork/export.sh "$PC" --org passioncode
 
+# --- deliver.mjs: the caption, the idempotent key and the refusals, never the network --------------------------------
+DV="$WORK/deliver"; mkdir -p "$DV"; printf 'x' > "$DV/clip.mp4"; printf 'x' > "$DV/notes.docx"
+printf '{"name":"warm-paper","tokens":{}}' > "$DV/preset.json"
+NOCFG=(env FORK_DELIVER_CONFIG="$DV/none.json" FORK_DELIVER_CHAT= FORK_DELIVER_MCP= FORK_DELIVER_HEADER_CMD=)
+expect "deliver: the caption names style, settings, file and run" 0 "Прогон: r-1" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --style bold --settings v3 --run r-1 --dry-run
+expect "deliver: a preset gives the style and a content-addressed settings version" 0 "Настройки: warm-paper@" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --preset "$DV/preset.json" --run r-1 --dry-run
+K1="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run --json | grep idempotency_key)"
+K2="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run --json | grep idempotency_key)"
+K3="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-2 --dry-run --json | grep idempotency_key)"
+if [ -n "$K1" ] && [ "$K1" = "$K2" ] && [ "$K1" != "$K3" ]; then ok "deliver: the same run and bytes keep one send key"
+else fail "deliver: the same run and bytes keep one send key" "$K1 / $K2 / $K3"; fi
+expect "deliver: no configuration sends nothing" 3 "not configured" -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1
+expect "deliver: a type the gateway does not take is refused" 2 "takes no .docx" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/notes.docx" --run r-1 --dry-run
+expect "deliver: a missing file is refused" 2 "no such file" -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/none.mp4" --dry-run
+
 echo
 if [ "$FAILS" -gt 0 ]; then echo "$FAILS failed"; exit 1; fi
 echo "all passed"

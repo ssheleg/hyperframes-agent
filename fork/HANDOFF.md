@@ -7,6 +7,15 @@ publish tarball releases that consumers pin.
 
 ## Now (2026-11-11)
 
+- Generations to the channel (operator, 2026-11-15, this repository's session: «пометь вот канал ... в него скидывай все
+  что генерируется и делай подпись стиль + версия настроек + название файла + ид прогона»). `fork/deliver.mjs` sends a
+  generated file through the operator's Telegram gateway with that four-line caption (README, "Delivery of
+  generations"; six cases in `fork/test.sh`). The gateway grant `hyperframes-agent` (send and post, that one channel,
+  without per-message approval, token in the gateway machine's vault and bound to the gateway's address) was issued
+  the same day; the channel's id and the header command live only in `~/.config/hyperframes-agent/deliver.json`.
+  Proof: the catalogue's `shimmer-sweep` poster of `fork-v0.9.40-sshlg.1` delivered as message 3 and read back from the
+  channel with its caption. Frame Agent and Asset Foundry make most generations; the same order went to them on the
+  board (see the open waits).
 - Reach from Asset Foundry (checked 2026-11-11): Foundry calls Frame Agent at its default origin, Frame Agent
   (`default` and `preview`) reports engine `fork 0.9.26-sshlg.1`, status `ready`, no degradation; its last Foundry job
   was delivered 2026-11-10 22:49 UTC. Frame Agent's pin moves to a newer release by its own decision; since 2026-11-13
@@ -89,7 +98,7 @@ publish tarball releases that consumers pin.
   will ask for another render: answer it the same way (`playbooks/make-template-repo.md`, section 6). When the line learns
   something new, add it to the base through its gate first, then render again (the base's
   `playbooks/make-template-repo.md`, section 6); never edit that repository by hand.
-- The line's own scripts have tests: `fork/test.sh` (51 cases, no network), run first by `fork/release.sh`.
+- The line's own scripts have tests: `fork/test.sh` (95 cases, no network), run first by `fork/release.sh`.
 - Upstream added the workflow `motion-blur-nightly.yml` in `v0.9.27..v0.9.30`; it became active on this repository
   with the merge push and was disabled by hand at once, with no run (2026-11-10). `fork/release.sh --publish` runs
   `fork/workflows-guard.sh` after its push, which disables any active workflow and cancels its runs; between a merge
@@ -123,6 +132,9 @@ FORK_REMOTE_DIR=DATA/_worktrees/hyperframes-agent-passioncode fork/remote-build.
    does not ship. The North Star sections the line serves (5, 10, 11, 12) are named in `AGENTS.md` (`ffd1fc562`); a
    release, or a gap closed or opened against them, is reported to the coordinator on the board with its evidence.
 3. Open waits, read at the next board check (no watcher runs between sessions):
+   - Generations channel (2026-11-15): the operator's order relayed to Frame Agent and Asset Foundry in board thread
+     `3653cb1a` (message `2ad415cc`): every render or delivery to the channel with the four-line caption, and their
+     own gateway grants widened to it (send, post) without a new token. Read their answers at the next board check.
    - Board request `a4d1b095` (shorts that never stall) is closed (2026-11-12 21:09 UTC). Its attempt lease lapsed
      during a release build; Fabric 0.3.20 (migration 129) fixed `com.responder_replace` without `transfer`, which
      then took the slot at generation 4, moved the request to `outcome_unknown`, and `com.reconcile` (completed,

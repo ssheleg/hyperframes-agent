@@ -159,6 +159,22 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
   missing or wrong, `css` writes the `:root` block a composition loads. The preset lives with the project's consumer
   (a video service's project profile); the engine only reads it.
 
+## Delivery of generations
+
+Every file the line generates (a recipe's proof render, a preview frame, a check's sample) goes to the operator's
+generations channel in Telegram (operator, 2026-11-15), captioned in four lines: style, settings version, file name
+and run id. `node fork/deliver.mjs <file> --style <name> --settings <version> --run <id>` sends it; `--preset
+<preset.json>` takes the style from a `hyperframes-style-preset/1` file and makes the settings version
+`<name>@<sha256, 8 hex>` of that file, so a changed preset reads as a new version. The run id defaults to `HF_RUN_ID`,
+then to one made from the UTC time; the same run and the same bytes keep one send key, so a retry never posts twice.
+
+It sends only through the operator's own Telegram gateway (a Fabric service over MCP), never another Telegram client.
+Where it goes is private and stays out of this repository: `~/.config/hyperframes-agent/deliver.json` (or
+`FORK_DELIVER_CONFIG`) holds `chat_id`, `mcp_url` and `header_command`, a vault header helper whose output the script
+reads and never prints. Without it the script sends nothing and exits 3, so a render never fails on delivery. `--dry-run`
+prints the caption; exit 0 delivered, 1 the gateway refused, 2 bad input (a type the gateway does not take, a file over
+25 MB).
+
 ## Patches on the line
 
 | Patch                                                                              | Upstream                                | Drop when                      |
