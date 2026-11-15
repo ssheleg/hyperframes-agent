@@ -162,18 +162,33 @@ person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
 ## Delivery of generations
 
 Every file the line generates (a recipe's proof render, a preview frame, a check's sample) goes to the operator's
-generations channel in Telegram (operator, 2026-11-15), captioned in four lines: style, settings version, file name
-and run id. `node fork/deliver.mjs <file> --style <name> --settings <version> --run <id>` sends it; `--preset
-<preset.json>` takes the style from a `hyperframes-style-preset/1` file and makes the settings version
-`<name>@<sha256, 8 hex>` of that file, so a changed preset reads as a new version. The run id defaults to `HF_RUN_ID`,
-then to one made from the UTC time; the same run and the same bytes keep one send key, so a retry never posts twice.
+generations channel in Telegram as its own message (operator, 2026-11-15), in the one format every agent, organization
+and machine uses (the agents database's pattern `media-feed` 1.0.0, decision D-47):
 
-It sends only through the operator's own Telegram gateway (a Fabric service over MCP), never another Telegram client.
-Where it goes is private and stays out of this repository: `~/.config/hyperframes-agent/deliver.json` (or
-`FORK_DELIVER_CONFIG`) holds `chat_id`, `mcp_url` and `header_command`, a vault header helper whose output the script
-reads and never prints. Without it the script sends nothing and exits 3, so a render never fails on delivery. `--dry-run`
-prints the caption; exit 0 delivered, 1 the gateway refused, 2 bad input (a type the gateway does not take, a file over
-25 MB).
+```
+Стиль: <style>[, <format>]
+Настройки: <settings version>, hyperframes-agent <release>
+Файл: <file name>
+Прогон: <run id>
+Источник: <machine> · <organization or personal> · <service id>
+```
+
+`node fork/deliver.mjs <file> --style <name> --settings <version> --run <id>` posts it (`--format`, `--release`
+optional; the release defaults to the newest fork tag this checkout holds). `--preset <preset.json>` takes the style from
+a `hyperframes-style-preset/1` file and makes the settings version `<name>@<sha256, 8 hex>` of that file, so a changed
+preset reads as a new version. The run id defaults to `HF_RUN_ID`, then to one made from the UTC time; the same run and
+the same bytes keep one send key, so a retry never posts twice. The source comes from the deployment
+(`MEDIA_FEED_MACHINE`, `MEDIA_FEED_ORG`, `MEDIA_FEED_SERVICE`, or `source` in the config) and is never guessed: a missing
+one reads «не задано» and is named in the warnings. A file over the limit (the channel's 50 000 000 bytes, the gateway's
+25 MiB for a file sent as content, or a lower `upload_limit`) goes as the caption alone with a line naming its size.
+Values lose any em dash and line break.
+
+It posts only through the operator's own Telegram gateway (a Fabric service over MCP), from the gateway account the
+deployment names, never another Telegram client. Where it goes is private and stays out of this repository:
+`~/.config/hyperframes-agent/deliver.json` (or `FORK_DELIVER_CONFIG`) holds `chat_id`, `account`, `mcp_url` and
+`header_command`, a vault header helper whose output the script reads and never prints. Without it the script posts
+nothing and exits 3. A caller never fails its work on the exit code: 0 posted (or printed with `--dry-run`), 1 the
+gateway refused, 2 bad input (a type the gateway does not take).
 
 ## Patches on the line
 

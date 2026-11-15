@@ -367,14 +367,25 @@ expect "export: a file the copy's build leaves under an ignore rule stays untrac
   -- test -z "$(git -C "$PC" ls-tree -r --name-only HEAD ignored/built.txt)"
 expect "export: a second export with nothing new commits nothing" 0 "already holds this tree" -- fork/export.sh "$PC" --org passioncode
 
-# --- deliver.mjs: the caption, the idempotent key and the refusals, never the network --------------------------------
-DV="$WORK/deliver"; mkdir -p "$DV"; printf 'x' > "$DV/clip.mp4"; printf 'x' > "$DV/notes.docx"
+# --- deliver.mjs: the media-feed caption, the send key and the refusals, never the network ------------------------
+DV="$WORK/deliver"; mkdir -p "$DV"; printf 'xxxxxxxxxx' > "$DV/clip.mp4"; printf 'x' > "$DV/notes.docx"
 printf '{"name":"warm-paper","tokens":{}}' > "$DV/preset.json"
-NOCFG=(env FORK_DELIVER_CONFIG="$DV/none.json" FORK_DELIVER_CHAT= FORK_DELIVER_MCP= FORK_DELIVER_HEADER_CMD=)
+printf '{"upload_limit": 5, "source": {"machine": "m1", "organization": "personal", "service": "line"}}' > "$DV/small.json"
+NOCFG=(env FORK_DELIVER_CONFIG="$DV/none.json" FORK_DELIVER_CHAT= FORK_DELIVER_ACCOUNT= FORK_DELIVER_MCP= FORK_DELIVER_HEADER_CMD= MEDIA_FEED_MACHINE= MEDIA_FEED_ORG= MEDIA_FEED_SERVICE=)
 expect "deliver: the caption names style, settings, file and run" 0 "Прогон: r-1" \
-  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --style bold --settings v3 --run r-1 --dry-run
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --style bold --settings v3 --run r-1 --release 9.9 --dry-run
+expect "deliver: settings carry the agent and its release" 0 "Настройки: v3, hyperframes-agent 9.9" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --style bold --settings v3 --run r-1 --release 9.9 --dry-run
 expect "deliver: a preset gives the style and a content-addressed settings version" 0 "Настройки: warm-paper@" \
   -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --preset "$DV/preset.json" --run r-1 --dry-run
+expect "deliver: an unset source is never guessed" 0 "Источник: не задано · не задано · не задано" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run
+expect "deliver: the source comes from the deployment" 0 "Источник: studio · appvillis · frame" \
+  -- "${NOCFG[@]}" MEDIA_FEED_MACHINE=studio MEDIA_FEED_ORG=appvillis MEDIA_FEED_SERVICE=frame node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run
+expect "deliver: a value's em dash and line break never reach the caption" 0 "Стиль: a - b c" \
+  -- "${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --style "$(printf 'a \342\200\224 b\nc')" --run r-1 --dry-run
+expect "deliver: a file over the limit goes as the caption with its size" 0 "файл не отправлен, только подпись" \
+  -- env FORK_DELIVER_CONFIG="$DV/small.json" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run
 K1="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run --json | grep idempotency_key)"
 K2="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-1 --dry-run --json | grep idempotency_key)"
 K3="$("${NOCFG[@]}" node fork/deliver.mjs "$DV/clip.mp4" --run r-2 --dry-run --json | grep idempotency_key)"

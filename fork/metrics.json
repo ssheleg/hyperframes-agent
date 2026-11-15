@@ -42,6 +42,15 @@
           "values": [46.4, 33.0, 28.2, 20.5, 17.1, 13.2, 7.4, 5.1, 3.9, 2.3],
           "measured": "2026-11-15",
           "note": "nine releases waited with no session to take them; v0.9.50 itself took 2.3 h"
+        },
+        {
+          "window": "upstream v0.9.51 to v0.9.52, 2026-11-15",
+          "stat": "median",
+          "value": 1.3,
+          "n": 2,
+          "values": [1.5, 1.0],
+          "measured": "2026-11-15",
+          "note": "taken in the same session as v0.9.50"
         }
       ],
       "owner": "the line's maintainers"
