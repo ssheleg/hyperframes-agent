@@ -240,6 +240,12 @@ before the build.
    upstream's own findings in the new tag as ours. If every finding it names is present verbatim in the tag
    (`git show v<new>:<path>`), and `bun run build`, `bun run lint` and the hook's typecheck commands pass, commit the
    merge with `--no-verify` and say why in its message, as plain `git merge --no-ff` would have committed it.
+   Before pushing the merge, look for workflows it adds (`git diff --name-status v<old> v<new> -- .github/workflows`).
+   One with a `push` trigger whose branches and paths the merge itself changes would run at the push, before
+   `fork/workflows-guard.sh` can disable it (`v0.9.50` added `publish-mcp-registry.yml`, triggered by `server.json` on
+   `main`). Then push with Actions off and disable it after:
+   `gh api -X PUT repos/ssheleg/hyperframes-agent/actions/permissions -F enabled=false`, push,
+   `... -F enabled=true -f allowed_actions=all`, `fork/workflows-guard.sh`. No run starts (checked 2026-11-15).
 4. `git diff --stat v<new> main -- . ':!fork'` shows exactly what the line still carries. `git log v<new>..main` is
    not that list: a patch upstream took under another commit (a squash merge) stays in the log but no longer
    changes anything.
