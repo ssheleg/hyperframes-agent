@@ -22,7 +22,12 @@ publish tarball releases that consumers pin.
   `passioncode-ai/template-hyperframes-agent` `4c8c28e`, `media-production` 1.24.2 from the base at `9c2207b`,
   `tools/template_repo.py` 1.4.1; `check` OK with 550 tests (run under Python 3.12 with pytest: the system Python 3.9 has
   no pytest and `check` fails there). The index row `84939a14e650` lives in the base's repository, so the base enters it
-  (`template_repo.py index --add`), as it did for the previous render.
+  (`template_repo.py index --add`), as it did for the previous render. Done: the base entered it at `01575662` from a
+  clone at `4c8c28e`, and `stale` no longer names `84939a14e650` (message `58d8bf6a`, 2026-11-16).
+- Generations channel, no duplicates (2026-11-16, thread `232c496b`): Frame Agent set its caller `foundry` to `none`
+  (its BL-399), so Foundry's own orders are posted once, by Asset Foundry's feed; Foundry confirmed it (`2a0892e2`, their
+  B-501). Nothing to change in this line: `fork/deliver.mjs` is run by hand by this line's sessions; no Foundry or
+  Frame Agent path calls it.
 - Generations to the channel (operator, 2026-11-15, this repository's session: «пометь вот канал ... в него скидывай все
   что генерируется и делай подпись стиль + версия настроек + название файла + ид прогона»; the same day in Asset
   Foundry's session, relayed on the board in `b5f393c3`, thread `232c496b`: the source machine and organization too, and
