@@ -8,6 +8,12 @@ publish tarball releases that consumers pin.
 ## Now (2026-11-11)
 
 - Upstream `v0.9.50` taken on 2026-11-15 (merge `e9a4357ff`, clean; ten upstream releases had waited since 2026-11-13 with no session to take them): `fork-v0.9.50-sshlg.1` (built on the Studio, published from there because this MacBook had 2 GB free), `fork-v0.9.50-appvillis.1` (copy `67cc733`) and `fork-v0.9.50-passioncode.1` (copy `8e7a219`, also installed for use in the `passioncode` space: `hyperframes --version` reads `0.9.50+passioncode.1`). Then `v0.9.52` the same night (merge `4bda67cac`, clean, no new workflow): `fork-v0.9.52-sshlg.1`, `fork-v0.9.52-appvillis.1` (copy `8eee98f`) and `fork-v0.9.52-passioncode.1` (copy `07bb2c3`, installed in the `passioncode` space, `0.9.52+passioncode.1`); last published 03:51 UTC, upstream's newest at that time. The architect's audit of `e9a4357ff` (`audits/2026-11-15-5dd226906db5` in the agents database, `audit.py check` OK) found 13 confirmed, the earlier candidate and one optimisation (P2): take upstream releases with a durable watcher, board task `51f83c68`; left in the base's checkout for its review (board thread `327019ed`).
+- Branching pipeline pattern does not apply here (decided 2026-11-16, board request `cfb02380`, thread `81248193`: move
+  "this agent's step pipeline" to the agents database pattern `pipeline-branching` 1.0.0). The line is an engine with no
+  step pipeline of its own: it has no steps with settings, no versions of steps and no runs to branch, and the base files
+  it as the media template's variant `engine-line` ("not an agent, a library line", [agent-type-plan.md](agent-type-plan.md)).
+  Recipes are add-only templates, not pipeline steps. The authoring pipeline that a branch per step serves runs in the
+  video agent that calls this engine, so the pattern belongs there; nothing is vendored into this public repository.
 - Generations to the channel (operator, 2026-11-15, this repository's session: «пометь вот канал ... в него скидывай все
   что генерируется и делай подпись стиль + версия настроек + название файла + ид прогона»; the same day in Asset
   Foundry's session, relayed on the board in `b5f393c3`, thread `232c496b`: the source machine and organization too, and
