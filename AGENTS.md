@@ -20,6 +20,13 @@ any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDO
   for a consumer that confines the engine) and section 12 (an organization at work: the row "Content: media"). A release,
   or a gap closed or opened against them, is reported on the project board with its evidence. Before an agent built on
   this engine changes, the agents database's architect is consulted, and each release is audited by it.
+- Telegram has two channels, chosen by who reads it (the operator's rule, 2026-11-15; the agents database's R33 O9,
+  decision D-50). To the operator himself (a result, a release link, a failure, a question): his own notification
+  channel, never the Telegram gateway, which acts as an account and would make it a message from him to himself. To
+  anyone else, or acting as an account (a channel, a group, a team chat, another person, a bot): the gateway, under
+  this line's own grant, never the notification channel. The line's only sender today is `fork/deliver.mjs`, which posts
+  generations to a channel through the gateway (README, "Delivery of generations"); its scripts notify the operator of
+  nothing. A copy for an organization reports to its own administrator through that organization's channel.
 - A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`, only on the
   operator's explicit instruction to send it. Upstream requires signed commits: see [`fork/upstream-prs.md`](fork/upstream-prs.md).
 
