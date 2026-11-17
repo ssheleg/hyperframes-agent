@@ -22,8 +22,8 @@ active workflow and cancels its runs, and `fork/release.sh --publish` runs it ri
 also names added workflow files). `fork/workflows-guard.sh --check` only reports, exiting 1 when one is active.
 
 `fork/status.sh` reads both lines at once: the base of `main`, upstream releases not merged yet, the latest
-release of the line and of the copy, the copy's base and any active workflow, and names the next step of this file
-(exit 10 when one is due, 0 when nothing is).
+release of the line and of the copy, the copy's base, how far each copy is behind `main` (`fork/copy-lag.sh`, below)
+and any active workflow, and names the next step of this file (exit 10 when one is due, 0 when nothing is).
 
 ## The team copy
 
@@ -53,6 +53,21 @@ after each release of this line:
    it commits, and audits the copy with its history before `--push`; anything but `ready` refuses.
 3. In the copy's checkout, `fork/release.sh <n> --publish` releases `fork-v<base>-<org>.<n>` (it reads the base and
    the patch tests from the copy's `fork/line.env`).
+4. Within a day: every copy follows `main` within a day of a change that travels to it, a release of the line
+   included (the agents database's decision D-58, `org-copy-export` 1.2.0 and `media-production` 1.25.0, board request
+   `9636bd15`). `fork/copy-lag.sh <org> <source-sha> [--json]` reads the copy's lag from the `Source-Revision` of its
+   last export: the commits on `main`'s first-parent chain since that revision that change a file the export carries
+   (not this line's notes and maintenance scripts, the workflows, the root `AGENTS.md`, `CLAUDE.md` and `README.md` the
+   copy rebuilds from the base, or the other organization's folder), timed from the first of them. `ok` up to 24 hours,
+   `warn` after 24 hours or when the revision is not on `main`, `fail` after 72 hours, `unknown` (never `ok`) when no
+   revision can be read; `--json` gives one `copies` object of counts only, for a health report. `fork/status.sh`
+   prints it for each copy and names the export as the next step once a copy is past a day.
+
+The template receipt. `template-receipt.json` at the root says which template of the agents database this line is built
+to (`media-production`, variant `engine-line`, `org: personal`, `role: source`); the base's rollout check reads it
+(its rule R32). `fork/export.sh` writes each copy its own receipt instead: the same template and version, `role: copy`,
+the organization's key as the base names it (`org-a` for Appvillis, `passioncode`) and `source: line@<sha12>`. Raise
+`version` when the line takes a newer version of the template.
 
 ## Add, never replace
 

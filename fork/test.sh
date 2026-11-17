@@ -297,6 +297,7 @@ expect "export: a commit named in Backports passes; an open pull request refuses
 printf 'ssheleg\n' > stray.txt; gitq add stray.txt; gitq commit -q -m "a stray name"
 expect "export: refuses a tree that names this line" 1 "still name this line" -- fork/export.sh "$COPY"
 git rm -q stray.txt; gitq commit -q -m "remove the stray name"
+cp "$FORK/../template-receipt.json" template-receipt.json; gitq add template-receipt.json; gitq commit -q -m "the line's template receipt"
 printf 'import sys\nprint(sys.argv[1].rsplit("/",1)[-1]+": fix_tree")\n' > "$WORK/audit-fix.py"
 expect "export: a transfer audit that is not ready refuses before the commit" 1 "nothing committed" \
   -- env ORG_TRANSFER_AUDIT="$WORK/audit-fix.py" fork/export.sh "$COPY"
@@ -311,6 +312,12 @@ printf '*.bin filter=lfs diff=lfs merge=lfs -text\n' > .gitattributes; printf 'v
 gitq -c filter.lfs.clean=cat add .gitattributes media.bin; gitq commit -q -m "test: a file under an LFS rule"
 git config filter.lfs.smudge false; git config filter.lfs.process false; git config filter.lfs.required true
 expect "export: a clean line exports one commit with Source-Revision" 0 "committed" -- fork/export.sh "$COPY"
+RECEIPT="$(git -C "$COPY" show HEAD:template-receipt.json)"
+if printf '%s' "$RECEIPT" | node -e '
+  const r = JSON.parse(require("fs").readFileSync(0, "utf8"));
+  process.exit(r.role === "copy" && r.org === "org-a" && r.template === "media-production" && r.source === process.argv[1] ? 0 : 1);
+' "line@$(git rev-parse --short=12 HEAD)"; then ok "export: the copy carries its own receipt (role copy, org-a, its line revision)"
+else fail "export: the copy carries its own receipt (role copy, org-a, its line revision)" "$RECEIPT"; fi
 # Read the way release.sh reads it: sourced.
 git -C "$COPY" show HEAD:fork/line.env > "$WORK/line.env"
 LINE_ENV="$(bash -c '. "$1"; printf "%s" "$LINE_PATCHES"' _ "$WORK/line.env")"
@@ -363,6 +370,37 @@ expect "export: the backlog source declaration is committed" 0 "passioncode-ai/p
 expect "export: the copy's release script tags with its organization's label" 0 "passioncode" -- git -C "$PC" show HEAD:fork/release.sh
 expect "export: a file upstream tracks under its own ignore rule is tracked in the copy" 0 "ignored/kept.txt" \
   -- git -C "$PC" ls-tree -r --name-only HEAD ignored
+expect "export: the PassionCode copy's receipt names its organization" 0 '"org": "passioncode"' -- git -C "$PC" show HEAD:template-receipt.json
+expect "export: the copy does not carry the lag check" 0 "" -- test -z "$(git -C "$PC" ls-tree HEAD fork/copy-lag.sh)"
+
+# --- copy-lag.sh: how far a copy is behind main ----------------------------------------------------------------------
+# In a clone of the line, so the commits below never reach the line the other cases read.
+LAG="$WORK/lag-line"; git clone -q "$LINE" "$LAG"
+(
+  cd "$LAG" || exit 1
+  BEFORE="$FAILS"
+  SRC="$(git rev-parse --short=12 HEAD)"
+  expect "copy-lag: a copy on main is ok" 0 "ok, line@$SRC, nothing that travels is missing" -- fork/copy-lag.sh appvillis "$SRC"
+  printf 'line note\n' >> fork/HANDOFF.md; gitq add fork/HANDOFF.md; gitq commit -q -m "docs(fork): a line note"
+  mkdir -p fork/org/passioncode; printf 'pc only\n' > fork/org/passioncode/extra.md
+  gitq add fork/org/passioncode/extra.md; gitq commit -q -m "the other organization's file"
+  expect "copy-lag: the line's own notes and the other organization's folder do not count" 0 "nothing that travels" -- fork/copy-lag.sh appvillis "$SRC"
+  expect "copy-lag: the organization's own folder counts" 0 "1 commit(s) of main missing" -- fork/copy-lag.sh passioncode "$SRC"
+  mkdir -p packages/cli/src; printf 'fix\n' > packages/cli/src/lag.ts; gitq add packages/cli/src/lag.ts; gitq commit -q -m "fix(cli): a change that travels"
+  T="$(git log -1 --format=%ct)"
+  expect "copy-lag: missing for less than a day is ok, with the export due" 0 "export due within 24 h" -- fork/copy-lag.sh appvillis "$SRC" --now "$((T + 3600))"
+  expect "copy-lag: missing for more than a day warns" 1 "warn, line@$SRC, 1 commit(s)" -- fork/copy-lag.sh appvillis "$SRC" --now "$((T + 25 * 3600))"
+  expect "copy-lag: missing for more than three days fails" 1 "fail," -- fork/copy-lag.sh appvillis "$SRC" --now "$((T + 73 * 3600))"
+  expect "copy-lag: --json gives counts only" 1 '{"check":"copies","org":"appvillis","state":"warn","source":"'"$SRC"'","behind":1,"lagHours":25}' \
+    -- fork/copy-lag.sh appvillis "$SRC" --json --now "$((T + 25 * 3600))"
+  expect "copy-lag: no source revision is unknown, never ok" 1 "unknown, no Source-Revision" -- fork/copy-lag.sh appvillis ""
+  expect "copy-lag: a revision this line lacks is unknown" 1 "unknown, line@0123456789ab is not a commit" -- fork/copy-lag.sh appvillis 0123456789ab
+  git checkout -q -b lag-side; gitq commit -q --allow-empty -m "off main"; OFF="$(git rev-parse --short=12 HEAD)"; git checkout -q main
+  expect "copy-lag: a revision off main warns" 1 "is not on main" -- fork/copy-lag.sh appvillis "$OFF"
+  expect "copy-lag: an unknown organization is refused" 2 "unknown organization" -- fork/copy-lag.sh nope "$SRC"
+  exit "$((FAILS - BEFORE))"
+) || FAILS=$((FAILS + $?))
+cd "$LINE" || exit 1
 expect "export: a file the copy's build leaves under an ignore rule stays untracked" 0 "" \
   -- test -z "$(git -C "$PC" ls-tree -r --name-only HEAD ignored/built.txt)"
 expect "export: a second export with nothing new commits nothing" 0 "already holds this tree" -- fork/export.sh "$PC" --org passioncode

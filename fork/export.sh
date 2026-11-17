@@ -116,7 +116,7 @@ git -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false ar
 # fixtures upstream keeps as plain blobs under the same rules), upstream's workflows, this line's notes.
 git ls-files | git check-attr --stdin filter | awk -F': filter: ' '$2 == "lfs" { print $1 }' \
   | while IFS= read -r f; do rm -f "$STAGE/$f"; done
-rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/agent-type-plan.md" "$STAGE/fork/test.sh" "$STAGE/fork/HISTORY.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh"
+rm -rf "$STAGE/.github/workflows" "$STAGE/fork/upstream-prs.md" "$STAGE/fork/migration.md" "$STAGE/fork/agent-type-plan.md" "$STAGE/fork/test.sh" "$STAGE/fork/HISTORY.md" "$STAGE/fork/signed-branch.py" "$STAGE/fork/export.sh" "$STAGE/fork/status.sh" "$STAGE/fork/copy-lag.sh"
 # Nor LFS rules: with them, `git add` in the copy would turn a file into a pointer whose object goes to the
 # organisation's LFS store.
 find "$STAGE" -name .gitattributes -type f -exec sed -i.bak '/filter=lfs/d' {} +
@@ -152,6 +152,21 @@ BASE="$BASE" TODAY="$TODAY" PATCHES="$PATCHES" node -e '
     .replaceAll("@DATE@", process.env.TODAY).replaceAll("@PATCHES@", process.env.PATCHES));
 ' "$ORG_DIR/HANDOFF.md" "$STAGE/fork/HANDOFF.md"
 rm -rf "$STAGE/fork/org"
+# The copy carries its own template receipt, never the line's: the agents database reads a copy by it (its rule R32;
+# the media template's playbook, section 7 step 8). Same template and version, role copy, the organization's key as the
+# base names it, and the line revision the copy is built from.
+case "$ORG" in appvillis) RECEIPT_ORG=org-a ;; *) RECEIPT_ORG="$ORG" ;; esac
+if [ -f "$STAGE/template-receipt.json" ]; then
+  RECEIPT_ORG="$RECEIPT_ORG" SOURCE_REVISION="line@$(git rev-parse --short=12 HEAD)" node -e '
+    const fs = require("fs");
+    const file = process.argv[1];
+    const r = JSON.parse(fs.readFileSync(file, "utf8"));
+    const copy = { template: r.template, version: r.version, variants: r.variants, org: process.env.RECEIPT_ORG,
+      role: "copy", vendored: r.vendored ?? null, source: process.env.SOURCE_REVISION,
+      note: "An organization copy of the engine line, rebuilt from the line by its export; changes go back to the line." };
+    fs.writeFileSync(file, JSON.stringify(copy, null, 2) + "\n");
+  ' "$STAGE/template-receipt.json"
+fi
 sed -i.bak -e "s#ssheleg/hyperframes-agent#$COPY_REPO#g" -e "s/sshlg/$LABEL/g" "$STAGE/fork/release.sh"
 rm -f "$STAGE/fork/release.sh.bak"
 {

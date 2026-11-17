@@ -1,0 +1,9 @@
+{
+  "template": "media-production",
+  "version": "1.25.0",
+  "variants": ["engine-line"],
+  "org": "personal",
+  "role": "source",
+  "vendored": null,
+  "note": "The engine line: a library line, not an agent. fork/export.sh writes each organization's copy its own receipt (role copy, its org key, the line revision it was built from); fork/copy-lag.sh reads how far each copy is behind."
+}

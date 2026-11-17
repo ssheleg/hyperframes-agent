@@ -30,11 +30,18 @@ for entry in $COPIES; do
   tag="$(gh release list --repo "$repo" --limit 1 --json tagName --jq '.[0].tagName // ""')"
   copy_base="$(gh api "repos/$repo/contents/fork/line.env" --jq .content 2>/dev/null | base64 -d | sed -n 's/^LINE_BASE=//p')"
   echo "copy   $repo: tree at ${copy_base:-nothing}, latest release ${tag:-none}"
+  # The line revision of the copy's last export, and how long main has had something the copy lacks (fork/copy-lag.sh).
+  source_rev="$(gh api "repos/$repo/commits?sha=main&per_page=30" \
+    --jq '[.[] | .commit.message | capture("Source-Revision: line@(?<s>[0-9a-f]+)")? | .s] | first // ""' 2>/dev/null || true)"
+  lag_rc=0; lag="$(fork/copy-lag.sh "$org" "$source_rev")" || lag_rc=$?
+  echo "       $lag"
   [ -z "$COPY_NEXT" ] || continue
   if [ "$copy_base" != "$BASE" ]; then
     COPY_NEXT="refresh the $org copy: fork/README.md, \"The team copy\" (fork/export.sh --org $org)"
   elif [ -z "$tag" ] || [ "${tag#fork-}" = "${tag#fork-"$BASE"-}" ]; then
     COPY_NEXT="release the $org copy on $BASE: fork/release.sh 1 --publish in its checkout"
+  elif [ "$lag_rc" != 0 ]; then
+    COPY_NEXT="export main to the $org copy, it is behind by more than a day: fork/README.md, \"The team copy\" (fork/export.sh --org $org --push)"
   fi
 done
 echo "upstream: newest release $NEWEST${NEWER:+; not merged: $NEWER}"

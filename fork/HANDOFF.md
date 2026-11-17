@@ -7,6 +7,19 @@ publish tarball releases that consumers pin.
 
 ## Now (2026-11-11)
 
+- Copies follow main within a day, with a receipt (2026-11-18, board request `9636bd15`, thread `1c53279e`, from
+  frame-agent on the operator's order to improve the media agents and their organization copies in step; the base's
+  answer `35544db2`: `media-production` 1.25.0, `org-copy-export` 1.2.0, D-58). Added: `template-receipt.json`
+  (`media-production` 1.25.0, `engine-line`, `org: personal`, `role: source`; closes the base's RO-554 by its own check),
+  a receipt per copy written by `fork/export.sh` (`role: copy`, `org-a` or `passioncode`, `source: line@<sha12>`; the
+  copies' rows RO-557 and RO-559 close on the next export), and `fork/copy-lag.sh` with its line in `fork/status.sh`
+  (README, "The team copy", step 4). Tests: 13 new cases in `fork/test.sh`, all 114 pass. Read live on 2026-11-17 at
+  23:50 UTC: both copies `warn`, on `line@4bda67cac4f2`, missing `e2f22d939` (`fork/deliver.mjs`, 2026-11-15) for 67 h,
+  and this change once pushed. Open: the export of both copies (`fork/export.sh <checkout> --org <org> --push`, then a
+  copy release if wanted) was not run by the board-started run that made this change: it pushes to the organizations'
+  repositories and the run had no person in it; the next session the operator is in runs it (the machine had 1.8 GB
+  free, the export stage is small since LFS files stay out). No schedule runs the export yet; `fork/status.sh` names it
+  as the next step whenever a copy is past a day.
 - Upstream `v0.9.50` taken on 2026-11-15 (merge `e9a4357ff`, clean; ten upstream releases had waited since 2026-11-13 with no session to take them): `fork-v0.9.50-sshlg.1` (built on the Studio, published from there because this MacBook had 2 GB free), `fork-v0.9.50-appvillis.1` (copy `67cc733`) and `fork-v0.9.50-passioncode.1` (copy `8e7a219`, also installed for use in the `passioncode` space: `hyperframes --version` reads `0.9.50+passioncode.1`). Then `v0.9.52` the same night (merge `4bda67cac`, clean, no new workflow): `fork-v0.9.52-sshlg.1`, `fork-v0.9.52-appvillis.1` (copy `8eee98f`) and `fork-v0.9.52-passioncode.1` (copy `07bb2c3`, installed in the `passioncode` space, `0.9.52+passioncode.1`); last published 03:51 UTC, upstream's newest at that time. The architect's audit of `e9a4357ff` (`audits/2026-11-15-5dd226906db5` in the agents database, `audit.py check` OK) found 13 confirmed, the earlier candidate and one optimisation (P2): take upstream releases with a durable watcher, board task `51f83c68`; left in the base's checkout for its review (board thread `327019ed`).
 - Branching pipeline pattern does not apply here (decided 2026-11-16, board request `cfb02380`, thread `81248193`: move
   "this agent's step pipeline" to the agents database pattern `pipeline-branching` 1.0.0). The line is an engine with no
