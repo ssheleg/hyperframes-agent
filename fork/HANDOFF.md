@@ -10,8 +10,8 @@ publish tarball releases that consumers pin.
 - R33 O10 and O11 carried (2026-11-18, board requests `8fd0f78f`, thread `c68e7026`, and `e9da1da5`, thread `9ce74f78`:
   the agents database's decisions D-56, a wait is improvement time, and D-61, etalons live on PassionCode.ai; the
   operator's words of 2026-11-16 and 2026-11-17 relayed there). Both rules are in `AGENTS.md` and `CLAUDE.md`; the copies
-  take them at the next export, which prepends their header to the line's `AGENTS.md` (`fork/export.sh`). Open: the
-  export of both copies (the same open step as the receipt item below) and moving `template-receipt.json` from 1.25.0 to
+  take them at the next export, which prepends their header to the line's `AGENTS.md` (`fork/export.sh`). Both copies
+  took them at the export of 2026-11-18 (the receipt item below). Open: moving `template-receipt.json` from 1.25.0 to
   the template's current version when its other rows are taken.
   The same commit fixes a red `bun run lint` left by the O12 change (`99d47be15`): its Work loop lines put
   `skills/hyperframes/SKILL.md` at 7993 B over the 7488 B budget of `scripts/check-core-skills.mjs`, which blocked every
@@ -38,11 +38,17 @@ publish tarball releases that consumers pin.
   copies' rows RO-557 and RO-559 close on the next export), and `fork/copy-lag.sh` with its line in `fork/status.sh`
   (README, "The team copy", step 4). Tests: 13 new cases in `fork/test.sh`, all 114 pass. Read live on 2026-11-17 at
   23:50 UTC: both copies `warn`, on `line@4bda67cac4f2`, missing `e2f22d939` (`fork/deliver.mjs`, 2026-11-15) for 67 h,
-  and this change once pushed. Open: the export of both copies (`fork/export.sh <checkout> --org <org> --push`, then a
-  copy release if wanted) was not run by the board-started run that made this change: it pushes to the organizations'
-  repositories and the run had no person in it; the next session the operator is in runs it (the machine had 1.8 GB
-  free, the export stage is small since LFS files stay out). No schedule runs the export yet; `fork/status.sh` names it
-  as the next step whenever a copy is past a day.
+  and this change once pushed. Exported 2026-11-18 by the next board-started run of the same request (the operator's
+  standing rule that organization copies are deployed without waiting; both copy repositories are private, the push is
+  fast-forward only behind the transfer audit and gitleaks): both copies were `fail` at 89 h before it, and after it
+  read `ok` on `line@f861969a4950` (`fork/copy-lag.sh <org> f861969a4950`), each with its own receipt (`org-a` or
+  `passioncode`, `role: copy`): Appvillis copy `00ba125`, PassionCode copy `e5a0d25`. This
+  brings the copies O10, O11, O12 and the receipt as well. No copy release was made: the instances keep
+  `fork-v0.9.52-<org>.1` until the next release of the line, which releases its copies the same day.
+  Open: no schedule runs the export yet (a copy can still fall behind when no session runs it); `fork/status.sh` names
+  the export as the next step whenever a copy is past a day. The export needs the shared transfer audit and its marker
+  file, which live on the operator's MacBook, not in this repository; the copies' clones are recreated with
+  `gh repo clone` when missing.
 - Upstream `v0.9.50` taken on 2026-11-15 (merge `e9a4357ff`, clean; ten upstream releases had waited since 2026-11-13 with no session to take them): `fork-v0.9.50-sshlg.1` (built on the Studio, published from there because this MacBook had 2 GB free), `fork-v0.9.50-appvillis.1` (copy `67cc733`) and `fork-v0.9.50-passioncode.1` (copy `8e7a219`, also installed for use in the `passioncode` space: `hyperframes --version` reads `0.9.50+passioncode.1`). Then `v0.9.52` the same night (merge `4bda67cac`, clean, no new workflow): `fork-v0.9.52-sshlg.1`, `fork-v0.9.52-appvillis.1` (copy `8eee98f`) and `fork-v0.9.52-passioncode.1` (copy `07bb2c3`, installed in the `passioncode` space, `0.9.52+passioncode.1`); last published 03:51 UTC, upstream's newest at that time. The architect's audit of `e9a4357ff` (`audits/2026-11-15-5dd226906db5` in the agents database, `audit.py check` OK) found 13 confirmed, the earlier candidate and one optimisation (P2): take upstream releases with a durable watcher, board task `51f83c68`; left in the base's checkout for its review (board thread `327019ed`).
 - Branching pipeline pattern does not apply here (decided 2026-11-16, board request `cfb02380`, thread `81248193`: move
   "this agent's step pipeline" to the agents database pattern `pipeline-branching` 1.0.0). The line is an engine with no
