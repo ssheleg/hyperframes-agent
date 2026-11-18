@@ -130,7 +130,11 @@ ours touches them. Releases made before the rename (2026-10-19) name `sshlg/heyg
 ## Visual types and style presets
 
 Agents above the engine show a person what kinds of video it can make before a generation, and keep the taste the
-person chose so later videos repeat it (board request `b948516e`, 2026-11-08).
+person chose so later videos repeat it (board request `b948516e`, 2026-11-08). They show it only to an order that asks
+for choices: with no mode set, the order runs to the end without stops, the agent picks, a second model of another
+family checks the pick and the picks go into the delivery note (the agents database's R33 O12, decision D-62,
+2026-11-18; the catalogue's `default_mode` is `no_stops`). The line's `hyperframes` skills carry the same default: the
+storyline pick and the stop at the Studio preview hold only when the order's mode has stops.
 
 - `visual-types-<base>-<line>.<n>.json`, an asset of every release, written by `node fork/visual-types.mjs` from that
   commit's registry: 11 visual types (kinetic typography; data, charts, maps and diagrams; interface and product; code;

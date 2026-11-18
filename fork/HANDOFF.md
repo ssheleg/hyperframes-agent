@@ -7,6 +7,19 @@ publish tarball releases that consumers pin.
 
 ## Now (2026-11-11)
 
+- No mode set means no stops (2026-11-18, board request `c05514fa`, thread `d6f3b394`: the agents database's R33 O12,
+  decision D-62, the operator's words of 2026-11-18 relayed there; rollout rows RO-686 for this line and RO-685 for the
+  PassionCode copy). Found four defaults that held an order with no mode for a person's pick, all now behind an order
+  that asks for stops: the `hyperframes` skill's storyline pick and stop at the Studio preview
+  (`skills/hyperframes/SKILL.md`, Work loop, with a new first line on the mode), `references/story.md`, the storyboard's
+  `mode` key (unset: autonomous) and `hyperframes-cli` `references/conventions.md` (pause at the final preview). The
+  visual types catalogue gains `default_mode: "no_stops"` and a `how_to_use` that shows the types only to an order asking
+  for choices (`fork/visual-types.mjs`); `fork/style-preset.mjs` and the README say the same. Picks with no mode go to
+  the agent, are checked by a second model of another family and land in the delivery note; money, a person's own steps
+  and publishing keep their gates. Two new cases in `fork/test.sh` (116 pass), one fails if an upstream merge brings any
+  of the old stop sentences back. These are patches on upstream skill files: expect them at each upstream merge. Open:
+  the next release (`fork-v<base>-sshlg.<n+1>`) and the copies' export carry it; neither was run by this board-started
+  run (a release publishes on GitHub and the export pushes to the organizations' repositories).
 - Copies follow main within a day, with a receipt (2026-11-18, board request `9636bd15`, thread `1c53279e`, from
   frame-agent on the operator's order to improve the media agents and their organization copies in step; the base's
   answer `35544db2`: `media-production` 1.25.0, `org-copy-export` 1.2.0, D-58). Added: `template-receipt.json`

@@ -14,4 +14,4 @@
 - For `shader_unbounded_cosine_pow`, clamp the cosine to `[0, 1]` before `pow(1 - cosine, exponent)`; a lower-only `max` is insufficient. Then preview and export on the affected GPU to confirm. Lint only recognizes static shader expressions, and software rendering can miss hardware-specific invalid pixels.
 - JSON paths redact the home directory as `$HOME`; do not try to reverse the redaction.
 - When a hosted cloud project approaches or exceeds the 200 MB upload limit, use `cloud render --dry-run --json` and follow the `.hyperframesignore` investigation in `references/cloud.md`. Never ignore an asset merely because it is large.
-- Never render merely because checks pass. Pause at the final preview and wait for approval.
+- Render once checks and review pass. Pause at the final preview and wait for approval only when the order's mode has stops; with no mode set the work runs to the end (`/hyperframes`, Work loop).

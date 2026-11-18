@@ -517,8 +517,11 @@ const catalog = {
     release: opt("--release") || null,
     commit: opt("--commit") || null,
   },
+  // No mode set means no stops (the agents database's R33 O12, decision D-62, 2026-11-18): the types go in front of a
+  // person only for an order that asks for choices (board request c05514fa).
+  default_mode: "no_stops",
   how_to_use:
-    "Show the types (label, shows, a poster of the first items) to the person before a generation and let them choose, or record that they left it to the agent. Install an item with its `install` command, or without the network copy the files of its `mirror_dir` from the registry mirror to their targets; set a project's taste with a style preset (fork/style-preset.mjs).",
+    "Show the types (label, shows, a poster of the first items) to the person before a generation only when the order or its caller asks for choices (a trial). With no mode set, pick the type yourself, have a second model of another family check the pick (a third decides when they differ), and record the pick with its reason in the delivery note. Install an item with its `install` command, or without the network copy the files of its `mirror_dir` from the registry mirror to their targets; set a project's taste with a style preset (fork/style-preset.mjs).",
   totals: { items: items.length, typed: typed.size, untyped: items.length - typed.size },
   files: POSTERS
     ? {

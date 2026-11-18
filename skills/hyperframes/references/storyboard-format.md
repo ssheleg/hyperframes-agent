@@ -15,7 +15,7 @@ YAML block at the top. Unknown keys are kept under `globals.extra`.
 | `message`  | One-line thesis                                              | `Ship a launch video in an afternoon`     |
 | `arc`      | Narrative arc                                                | `Hook → Problem → Solution → Proof → CTA` |
 | `audience` | Who it's for                                                 | `indie devs on X`                         |
-| `mode`     | Interaction mode (default collaborative)                     | `autonomous`                              |
+| `mode`     | Interaction mode (unset: autonomous)                         | `autonomous`                              |
 
 Set `duration` when the storyboard is first written. It is an expectation, not a gate: compare where the cut actually lands against it — judge whether the drift serves the piece, and update the value when the intended length genuinely changes.
 

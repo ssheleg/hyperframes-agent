@@ -17,7 +17,8 @@
 //   transitions   optional: registry items tagged transition or transition-primitive, in the order to prefer them
 //   text_density  optional: low | medium | high (words on screen per beat; the tokens cannot say it)
 //   decided_by    who set it and when: [{field, by: person|agent, at: YYYY-MM-DD, note?}]; a field a person never
-//                 decided stays the agent's suggestion, which the first generations show again
+//                 decided stays the agent's suggestion; it is shown again only to an order that asks for choices,
+//                 with no mode set the generation runs on it without a stop (R33 O12, D-62)
 import fs from "node:fs";
 import path from "node:path";
 

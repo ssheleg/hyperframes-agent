@@ -185,6 +185,12 @@ if printf '%s' "$VTJ" | node -e '
   process.exit(ok?0:1) })'; then ok "visual-types: groups items by tag, names libraries, reads tokens, packs and presets"
 else fail "visual-types: groups items by tag, names libraries, reads tokens, packs and presets" "$(printf '%s' "$VTJ" | head -c 300)"; fi
 expect "visual-types: the same tree gives the same bytes" 0 "" -- test "$(node fork/visual-types.mjs --root "$VT" --base v1.2.3)" = "$VTJ"
+# R33 O12 (D-62): with no mode set an order runs without stops; the catalogue and the line's skills say so.
+expect "visual-types: no mode set means no stops" 0 "" -- node -e '
+  const c=JSON.parse(process.argv[1]); process.exit(c.default_mode==="no_stops" && /only when the order or its caller asks for choices/.test(c.how_to_use) ? 0 : 1)' "$VTJ"
+STOPS="$(grep -rnE "otherwise stop at the preview and wait|Pause at the final preview and wait for approval\.$|the person picks unless they asked|Interaction mode \(default collaborative\)" skills/ 2>/dev/null)"
+if [ -z "$STOPS" ]; then ok "skills: no stop for a person's pick holds an order with no mode (an upstream merge brings none back)"
+else fail "skills: no stop for a person's pick holds an order with no mode (an upstream merge brings none back)" "$STOPS"; fi
 # --files: one frame reachable, one not; the recipe is copied and named by its path inside the archive.
 mkdir -p "$VT/fork/recipes/presenter-over-diagram" "$WORK/frames"
 printf '<html></html>\n' > "$VT/fork/recipes/presenter-over-diagram/index.html"
