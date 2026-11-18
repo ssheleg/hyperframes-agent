@@ -44,11 +44,11 @@ Studio edits the tags you write.
 
 ## Work loop
 
-- Mode first: the order, the caller's setting or the project's own setting says whether the work stops for the person's picks (a trial with choices, a review) or runs without stops. When none of them sets it, run without stops to the end: you make each pick, a second model of another family checks it (a third decides when they differ), and the picks with their reasons go into the delivery note. Stops are only for an order that asks for them; money above its limit, a step only the person can take and publishing keep their own gates.
+- No stops unless the order or caller asks: you pick, another model family checks, reasons go in the reply.
 - An existing project: `npx hyperframes timeline --json` shows what plays when; before any change, `npx hyperframes history --since mine --who <you>` shows what the person changed since your last turn: build on it (`/hyperframes-cli`).
-- A new film over ~15 s that tells something: its type's file (below), then `references/story.md`: three storylines that are three different films, in words only; the person picks only when the mode has stops, otherwise you pick (above). Then `SPEC.md` (`references/spec.md`): every adjective as a number, the defaults banned by name, the shots by frame.
+- A new film over ~15 s that tells something: its type's file (below), then `references/story.md`: three storylines that are three different films, in words only; the person picks only if stops were asked. Then `SPEC.md` (`references/spec.md`): every adjective as a number, the defaults banned by name, the shots by frame.
 - After your last edit: `npx hyperframes check --json`; fix every error, weigh every warning. A film: `npx hyperframes snapshot --review` and `references/review.md`, ending in `REVIEW.md`. A small edit: snapshot what you changed (`--at`, `--range`, `--composition`) and look before you reply.
-- Render after your check and review pass. Stop at the preview and wait for the person's approval only when the mode has stops.
+- Render after check and review pass; stop at the preview only if stops were asked.
 
 ## The HyperFrames desktop app
 

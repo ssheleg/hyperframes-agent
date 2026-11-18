@@ -27,6 +27,19 @@ any change to branches, versions or releases, and [`fork/HANDOFF.md`](fork/HANDO
   this line's own grant, never the notification channel. The line's only sender today is `fork/deliver.mjs`, which posts
   generations to a channel through the gateway (README, "Delivery of generations"); its scripts notify the operator of
   nothing. A copy for an organization reports to its own administrator through that organization's channel.
+- A wait is improvement time (the operator's rule, 2026-11-16; the agents database's R33 O10, decision D-56). When a
+  session of this line waits (for a person, another agent, a build or a run) and no independent task is ready by
+  priority, it gives the agents database's architect what it learned since its last exchange (a trap, a fix, a pattern,
+  a measured win, with its commit, `file:line` or test), asks the architect what the base and the other copies of the
+  `media-production` template have that this line has not taken (the version in `template-receipt.json` against the
+  current one), and turns what applies into backlog rows done by priority. The architect advises and never holds; copies
+  in different organizations exchange only through the template, never an organization's data.
+- Etalons live on PassionCode.ai (the operator's rule, 2026-11-17; the agents database's R33 O11, decision D-61). The
+  etalon of this line's kind is its template repository on PassionCode.ai, rendered from the agents database. The line
+  and each organization's copy are built, adapted or restored from the etalon at the template's current version, never
+  from another copy; an improvement goes to the base first, the etalon is rendered again, then the line and its copies
+  take the version in their `template-receipt.json`. A change to this line ends with the base's stale check empty for its
+  template. The copies carry this through `fork/export.sh`, which prepends their header to this file.
 - A fix worth sharing upstream goes as a PR from a branch of this repository to `heygen-com/hyperframes`, only on the
   operator's explicit instruction to send it. Upstream requires signed commits: see [`fork/upstream-prs.md`](fork/upstream-prs.md).
 

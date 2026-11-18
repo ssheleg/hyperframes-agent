@@ -7,6 +7,16 @@ publish tarball releases that consumers pin.
 
 ## Now (2026-11-11)
 
+- R33 O10 and O11 carried (2026-11-18, board requests `8fd0f78f`, thread `c68e7026`, and `e9da1da5`, thread `9ce74f78`:
+  the agents database's decisions D-56, a wait is improvement time, and D-61, etalons live on PassionCode.ai; the
+  operator's words of 2026-11-16 and 2026-11-17 relayed there). Both rules are in `AGENTS.md` and `CLAUDE.md`; the copies
+  take them at the next export, which prepends their header to the line's `AGENTS.md` (`fork/export.sh`). Open: the
+  export of both copies (the same open step as the receipt item below) and moving `template-receipt.json` from 1.25.0 to
+  the template's current version when its other rows are taken.
+  The same commit fixes a red `bun run lint` left by the O12 change (`99d47be15`): its Work loop lines put
+  `skills/hyperframes/SKILL.md` at 7993 B over the 7488 B budget of `scripts/check-core-skills.mjs`, which blocked every
+  commit. The three lines are shortened to 7487 B with the same rule (no stops unless the order or caller asks, another
+  model family checks the pick); the detail stays in `references/story.md`. `fork/test.sh` all passed, lint green.
 - No mode set means no stops (2026-11-18, board request `c05514fa`, thread `d6f3b394`: the agents database's R33 O12,
   decision D-62, the operator's words of 2026-11-18 relayed there; rollout rows RO-686 for this line and RO-685 for the
   PassionCode copy). Found four defaults that held an order with no mode for a person's pick, all now behind an order
