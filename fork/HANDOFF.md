@@ -50,6 +50,15 @@ publish tarball releases that consumers pin.
   file, which live on the operator's MacBook, not in this repository; the copies' clones are recreated with
   `gh repo clone` when missing.
 - Upstream `v0.9.50` taken on 2026-11-15 (merge `e9a4357ff`, clean; ten upstream releases had waited since 2026-11-13 with no session to take them): `fork-v0.9.50-sshlg.1` (built on the Studio, published from there because this MacBook had 2 GB free), `fork-v0.9.50-appvillis.1` (copy `67cc733`) and `fork-v0.9.50-passioncode.1` (copy `8e7a219`, also installed for use in the `passioncode` space: `hyperframes --version` reads `0.9.50+passioncode.1`). Then `v0.9.52` the same night (merge `4bda67cac`, clean, no new workflow): `fork-v0.9.52-sshlg.1`, `fork-v0.9.52-appvillis.1` (copy `8eee98f`) and `fork-v0.9.52-passioncode.1` (copy `07bb2c3`, installed in the `passioncode` space, `0.9.52+passioncode.1`); last published 03:51 UTC, upstream's newest at that time. The architect's audit of `e9a4357ff` (`audits/2026-11-15-5dd226906db5` in the agents database, `audit.py check` OK) found 13 confirmed, the earlier candidate and one optimisation (P2): take upstream releases with a durable watcher, board task `51f83c68`; left in the base's checkout for its review (board thread `327019ed`).
+- Costs section pattern does not apply here (decided 2026-11-19, board request `3cfed805`, thread `6b1cf830`, rows
+  RO-856 and RO-857: `media-production` 1.28.2, the agents database's R33 O16, decision D-74, pattern `costs-panel`
+  1.0.0). The pattern is for an agent that spends and has a dashboard; this line is neither. It runs no service and
+  registers no dashboard (the same reading as the dashboard badges rule, item 3 under "Next task" below), takes no orders
+  and holds no provider key or spend ledger of its own: it ships release tarballs. A paid call the CLI can make (HeyGen
+  through `packages/cli/src/auth/`) runs under the key and the budget of the agent that invoked it, so that agent's
+  Costs section counts and limits it (the template already reads `engine-line` this way for delivery: its 1.24.0
+  entry gives it "nothing" to post). The receipt stays at 1.25.0: 1.28.2 is text in the agent prompt's Never list,
+  with no code for this variant, and `template_repo.py stale` lists nothing for `media-production`.
 - Branching pipeline pattern does not apply here (decided 2026-11-16, board request `cfb02380`, thread `81248193`: move
   "this agent's step pipeline" to the agents database pattern `pipeline-branching` 1.0.0). The line is an engine with no
   step pipeline of its own: it has no steps with settings, no versions of steps and no runs to branch, and the base files
